@@ -1,0 +1,31 @@
+# --- Java (Spring Boot) ---
+target/
+*.class
+*.jar
+*.war
+.loader
+.factorypath
+
+# --- Python (FastAPI & Scrapy) ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.env
+.pytest_cache/
+*.log
+
+# --- Scrapy & Data ---
+# 屏蔽你代码中生成的 data 目录和日志
+crawler-service/app/crawler/ecommerce_spider/data/
+crawler-service/app/crawler/ecommerce_spider/logs/
+*.xlsx
+*.csv
+
+# --- IDE & OS ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
