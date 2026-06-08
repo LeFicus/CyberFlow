@@ -17,8 +17,12 @@ class ProductConsumer(BaseConsumer):
     def __init__(self, rabbitmq_url: str):
         super().__init__(QUEUE_PRODUCT_CRAWL, rabbitmq_url)
         self.repo = CursorRepository()
-        # Scrapy project is at the same level as crawler-consumer
-        self.scrapy_project = Path(__file__).parent.parent.parent / "crawler-service" / "app" / "crawler" / "ecommerce_spider"
+        # Scrapy project path: env var for Docker, fallback for local dev
+        env_path = os.environ.get("SCRAPY_PROJECT_PATH")
+        if env_path:
+            self.scrapy_project = Path(env_path)
+        else:
+            self.scrapy_project = Path(__file__).parent.parent.parent / "crawler-service" / "app" / "crawler" / "ecommerce_spider"
 
     async def process(self, message: dict):
         task_id = message["task_id"]

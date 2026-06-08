@@ -12,6 +12,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:123456@localhost:
 SCRAPED_DB_URL = os.getenv("SCRAPED_DB_URL", "mysql+pymysql://root:123456@localhost:3306/scraped_data")
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+SCRAPY_PROJECT_PATH = os.getenv("SCRAPY_PROJECT_PATH", "")  # Docker override
 
 # Exchange & Queue names — must match Spring Boot RabbitMQConfig
 EXCHANGE_TASKS = "crawler.tasks"
