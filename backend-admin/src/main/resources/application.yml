@@ -8,21 +8,6 @@ spring:
     password: ${MYSQL_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
-mybatis-plus:
-  mapper-locations: classpath*:/mapper/**/*.xml
-  configuration:
-    map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
-  global-config:
-    db-config:
-      id-type: auto
-
-springdoc:
-  api-docs:
-    path: /admin/api-docs
-  swagger-ui:
-    path: /admin/swagger-ui.html
-
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
@@ -45,13 +30,25 @@ springdoc:
           threadPool:
             threadCount: 3
 
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+
+springdoc:
+  api-docs:
+    path: /admin/api-docs
+  swagger-ui:
+    path: /admin/swagger-ui.html
+
 cyberflow:
   crawler:
     site-cron: "0 0 2 * * ?"       # 每天凌晨2点
     order-cron: "0 0 */6 * * ?"    # 每6小时整点
-  crawler-api:
-    base-url: ${CRAWLER_API_BASE_URL:http://localhost:8000}
-    internal-token: ${INTERNAL_API_TOKEN:change-me-in-production}
   jwt:
     secret: ${JWT_SECRET:cyberflow-admin-jwt-secret-key-2026}
     expiration: 14400000
