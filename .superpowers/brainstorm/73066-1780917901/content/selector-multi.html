@@ -1,0 +1,137 @@
+<h2>🔧 选择器模板库 — 多模板支持</h2>
+<p class="subtitle">一个站点可关联多个模板，Python Consumer 按优先级尝试匹配</p>
+
+<div class="section">
+  <h3>数据模型修正</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">❌ 之前：1对1</div>
+      <div class="mockup-body" style="font-size:12px;">
+        <pre style="background:#263238;color:#ef9a9a;padding:8px;border-radius:4px;font-size:11px;margin:0;">
+crawl_site_config
+├── domain
+├── type
+├── template_id  ← 只能选一个
+└── selector_overrides</pre>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">✅ 现在：多对多</div>
+      <div class="mockup-body" style="font-size:12px;">
+        <pre style="background:#263238;color:#aed581;padding:8px;border-radius:4px;font-size:11px;margin:0;">
+crawl_site_config
+├── domain
+├── type (shopify / woo / custom)
+├── category
+└── status
+
+🆕 site_template_mapping (关联表)
+├── site_config_id
+├── template_id
+├── priority (排序，越小越优先)
+└── selector_overrides (JSON, 可选)</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>匹配策略</h3>
+  <div class="mockup">
+    <div class="mockup-header">Python Consumer 按优先级尝试，首次命中即采用</div>
+    <div class="mockup-body" style="font-size:13px;line-height:1.8;padding:12px;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+        <div style="padding:6px 12px;background:#e8f5e9;border-radius:4px;text-align:center;">
+          <b>Priority 1</b><br>Magnolia Theme
+        </div>
+        <span>→</span>
+        <div style="padding:6px 12px;background:#e8f5e9;border-radius:4px;text-align:center;">
+          尝试 title 选择器<br>✅ 命中
+        </div>
+        <span>→</span>
+        <div style="padding:6px 12px;background:#c8e6c9;border-radius:4px;font-weight:bold;">
+          使用此模板<br>解析全部字段
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div style="padding:6px 12px;background:#fff3e0;border-radius:4px;text-align:center;">
+          <b>Priority 1</b><br>Magnolia Theme
+        </div>
+        <span>→</span>
+        <div style="padding:6px 12px;background:#fff3e0;border-radius:4px;text-align:center;">
+          尝试 title 选择器<br>❌ 无结果
+        </div>
+        <span>→</span>
+        <div style="padding:6px 12px;background:#fff3e0;border-radius:4px;text-align:center;">
+          <b>Fallback Priority 2</b><br>WooCommerce Default
+        </div>
+        <span>→</span>
+        <div style="padding:6px 12px;background:#fff3e0;border-radius:4px;text-align:center;">
+          尝试 title 选择器<br>✅ 命中
+        </div>
+        <span>→</span>
+        <div style="padding:6px 12px;background:#c8e6c9;border-radius:4px;font-weight:bold;">
+          使用此模板
+        </div>
+      </div>
+      <div style="margin-top:10px;padding:8px;background:#ffcdd2;border-radius:4px;font-size:12px;">
+        ⚠️ 所有模板都未命中 → 记录失败，写 error 到 task_history
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>前端界面调整</h3>
+  <div class="mockup">
+    <div class="mockup-header">站点注册 — 多选模板</div>
+    <div class="mockup-body">
+      <div style="padding:12px;font-size:12px;line-height:2;">
+        <b>域名:</b> <input class="mock-input" placeholder="example.com" style="width:200px;"><br>
+        <b>类型:</b>
+        <select class="mock-input"><option>woo</option><option>shopify</option><option>custom</option></select><br>
+        <b>分类:</b>
+        <select class="mock-input"><option>服饰与配饰</option><option>电子产品</option></select><br>
+        <b>选择器模板:</b><br>
+        <div style="margin-left:16px;margin-top:4px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span style="color:#999;font-size:11px;">#1</span>
+            <select class="mock-input" style="width:180px;">
+              <option>Magnolia Theme</option>
+              <option selected>WooCommerce Default</option>
+            </select>
+            <button class="mock-button" style="font-size:10px;padding:2px 8px;">覆写选择器</button>
+            <span style="color:#999;cursor:pointer;">✕</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span style="color:#999;font-size:11px;">#2</span>
+            <select class="mock-input" style="width:180px;">
+              <option selected>Sachdeva Beauty</option>
+            </select>
+            <button class="mock-button" style="font-size:10px;padding:2px 8px;">覆写选择器</button>
+            <span style="color:#999;cursor:pointer;">✕</span>
+          </div>
+          <button class="mock-button" style="font-size:11px;margin-top:4px;">+ 添加模板</button>
+        </div>
+        <br>
+        <button class="mock-button">注册并爬取</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>完整数据表汇总（含本次新增）</h3>
+  <table style="width:100%;font-size:12px;border-collapse:collapse;">
+    <tr style="background:#f5f5f5;">
+      <th style="padding:6px;text-align:left;">表</th>
+      <th style="padding:6px;text-align:left;">用途</th>
+      <th style="padding:6px;text-align:left;">归属</th>
+    </tr>
+    <tr><td style="padding:6px;"><code>selector_template</code></td><td style="padding:6px;">选择器模板库（预置 + 用户新增）</td><td style="padding:6px;">🆕</td></tr>
+    <tr><td style="padding:6px;"><code>site_template_mapping</code></td><td style="padding:6px;">站点↔模板多对多关联（含优先级和覆写）</td><td style="padding:6px;">🆕</td></tr>
+    <tr><td style="padding:6px;"><code>crawl_site_config</code></td><td style="padding:6px;">商品爬取站点注册</td><td style="padding:6px;">🆕</td></tr>
+    <tr><td style="padding:6px;"><code>task_history</code></td><td style="padding:6px;">任务执行历史（持久化追踪）</td><td style="padding:6px;">🆕</td></tr>
+    <tr><td style="padding:6px;"><code>crawl_cursor</code></td><td style="padding:6px;">增量游标（站点/订单最后同步位置）</td><td style="padding:6px;">🆕</td></tr>
+  </table>
+</div>

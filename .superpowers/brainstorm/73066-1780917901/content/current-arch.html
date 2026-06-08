@@ -1,0 +1,71 @@
+<h2>CyberFlow 当前架构</h2>
+<p class="subtitle">Vue.js → Spring Boot → FastAPI → Celery → 外部平台</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">当前请求流：3 层代理，FastAPI 仅做薄层转发</div>
+    <div class="mockup-body">
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:center;padding:20px;">
+
+        <div style="width:280px;padding:12px;background:#e8f5e9;border-radius:8px;text-align:center;font-weight:bold;">
+          🖥️ Vue.js 前端 (Vite)
+        </div>
+        <div style="font-size:20px;color:#666;">⬇ JWT + REST</div>
+
+        <div style="width:280px;padding:12px;background:#e3f2fd;border-radius:8px;text-align:center;font-weight:bold;">
+          🔒 Spring Boot Admin :8080
+          <div style="font-size:12px;color:#666;margin-top:4px;">RBAC · JWT · Dashboard · 爬虫控制器</div>
+        </div>
+        <div style="font-size:20px;color:#666;">⬇ X-Internal-Token (RestTemplate)</div>
+
+        <div style="width:280px;padding:12px;background:#fff3e0;border-radius:8px;text-align:center;font-weight:bold;">
+          ⚡ FastAPI :8000
+          <div style="font-size:12px;color:#666;margin-top:4px;">仅做 Token 校验 + Celery 派发</div>
+        </div>
+        <div style="font-size:20px;color:#666;">⬇ Redis Broker</div>
+
+        <div style="width:280px;padding:12px;background:#fce4ec;border-radius:8px;text-align:center;font-weight:bold;">
+          🔧 Celery Worker (sync httpx)
+          <div style="font-size:12px;color:#666;margin-top:4px;">登录外部平台 · 分页抓取 · 去重入库</div>
+        </div>
+        <div style="font-size:20px;color:#666;">⬇</div>
+
+        <div style="display:flex;gap:8px;">
+          <div style="padding:8px 16px;background:#f3e5f5;border-radius:6px;font-size:13px;">管理平台</div>
+          <div style="padding:8px 16px;background:#f3e5f5;border-radius:6px;font-size:13px;">支付平台</div>
+          <div style="padding:8px 16px;background:#f3e5f5;border-radius:6px;font-size:13px;">Shopify</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>已识别的 6 大痛点</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:14px;">
+    <tr style="background:#ffebee;"><td style="padding:8px;">🔴 1</td><td style="padding:8px;"><b>三层调用链</b></td><td style="padding:8px;">Spring Boot → FastAPI → Celery，FastAPI 为纯转发层，增加延迟和故障面</td></tr>
+    <tr style="background:#fff3e0;"><td style="padding:8px;">🟠 2</td><td style="padding:8px;"><b>全量抓取无增量</b></td><td style="padding:8px;">每次分页遍历全量数据，日均万级订单下性能恶化严重</td></tr>
+    <tr style="background:#fff3e0;"><td style="padding:8px;">🟠 3</td><td style="padding:8px;"><b>Scrapy 手动运行</b></td><td style="padding:8px;">独立脚本手动运行，未集成到调度系统</td></tr>
+    <tr style="background:#fff9c4;"><td style="padding:8px;">🟡 4</td><td style="padding:8px;"><b>同步 httpx 阻塞</b></td><td style="padding:8px;">Celery Worker 同步阻塞，concurrency=1 时完全无法并发</td></tr>
+    <tr style="background:#fff9c4;"><td style="padding:8px;">🟡 5</td><td style="padding:8px;"><b>内存任务追踪</b></td><td style="padding:8px;">ConcurrentHashMap 存任务状态，重启丢失，无持久化</td></tr>
+    <tr style="background:#e8f5e9;"><td style="padding:8px;">🟢 6</td><td style="padding:8px;"><b>数据库双轨制</b></td><td style="padding:8px;">SQLAlchemy + mysql-connector 并存，两库无外键</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>你的目标方向</h3>
+  <div style="display:flex;gap:12px;">
+    <div class="card" style="flex:1;">
+      <div class="card-body">
+        <h3>🧠 Spring Boot 为核心调度大脑</h3>
+        <p>直接控制所有爬虫任务，而非通过 FastAPI 转发</p>
+      </div>
+    </div>
+    <div class="card" style="flex:1;">
+      <div class="card-body">
+        <h3>📊 增量爬取</h3>
+        <p>站点、订单服务基于时间戳/游标做增量同步，避免全量拉取</p>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,181 @@
+<h2>🔧 选择器模板库 设计</h2>
+<p class="subtitle">从零散的 JSON 文件升级为系统化的、可复用的选择器模板库</p>
+
+<div class="section">
+  <h3>现状 → 目标</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">❌ 现状：散落 JSON 文件</div>
+      <div class="mockup-body" style="font-size:12px;line-height:1.8;">
+        <pre style="background:#263238;color:#ef9a9a;padding:8px;border-radius:4px;font-size:11px;margin:0;">
+configs/selectors/
+├── magnolia.json
+├── sachdevabeauty_com.json
+└── test.json</pre>
+        <ul style="margin: 8px 0 0 18px; padding: 0;">
+          <li>文件散落，无版本管理</li>
+          <li>无法在前端增删改查</li>
+          <li>每个站点一个文件，无法复用</li>
+          <li>WooCrawlSpider 通过 config_file 参数手动指定</li>
+        </ul>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">✅ 目标：选择器模板库</div>
+      <div class="mockup-body" style="font-size:12px;line-height:1.8;">
+        <div style="background:#e8f5e9;padding:8px;border-radius:4px;font-size:12px;margin-bottom:8px;">
+          <b>selector_template</b> — 预置模板（系统维护）<br>
+          <b>crawl_site_config</b> — 站点关联模板 + 覆写
+        </div>
+        <ul style="margin: 0; padding: 0 0 0 18px;">
+          <li>Spring Boot 提供模板 CRUD 管理界面</li>
+          <li>用户注册站点时从模板库选取</li>
+          <li>支持按站点覆写个别选择器</li>
+          <li>Python Consumer 从 DB 读取配置（不再读文件）</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>数据模型</h3>
+  <table style="width:100%;font-size:12px;border-collapse:collapse;">
+    <tr style="background:#f5f5f5;">
+      <th style="padding:6px;text-align:left;">表</th>
+      <th style="padding:6px;text-align:left;">字段</th>
+      <th style="padding:6px;text-align:left;">说明</th>
+    </tr>
+    <tr>
+      <td style="padding:6px;vertical-align:top;" rowspan="9"><code>selector_template</code></td>
+      <td style="padding:6px;">id</td>
+      <td style="padding:6px;">主键</td>
+    </tr>
+    <tr><td style="padding:6px;">name</td><td style="padding:6px;">模板名，如 "WooCommerce Default" / "Magnolia Theme" / "Shopify Dawn"</td></tr>
+    <tr><td style="padding:6px;">platform</td><td style="padding:6px;">平台: woo / shopify / magento / custom</td></tr>
+    <tr><td style="padding:6px;">title_selector</td><td style="padding:6px;">商品标题 XPath/CSS</td></tr>
+    <tr><td style="padding:6px;">price_selector</td><td style="padding:6px;">价格 XPath/CSS</td></tr>
+    <tr><td style="padding:6px;">description_selector</td><td style="padding:6px;">描述 XPath/CSS</td></tr>
+    <tr><td style="padding:6px;">images_selector</td><td style="padding:6px;">图片 XPath/CSS</td></tr>
+    <tr><td style="padding:6px;">breadcrumb_links_selector</td><td style="padding:6px;">面包屑链接 XPath/CSS</td></tr>
+    <tr><td style="padding:6px;">site_map_selector</td><td style="padding:6px;">Sitemap 定位 XPath (仅 woo/custom)</td></tr>
+    <tr style="background:#ffecb3;">
+      <td style="padding:6px;vertical-align:top;" rowspan="5"><code>crawl_site_config</code><br>🆕 增强版</td>
+      <td style="padding:6px;">domain</td><td style="padding:6px;">站点域名</td>
+    </tr>
+    <tr style="background:#ffecb3;"><td style="padding:6px;">type</td><td style="padding:6px;">shopify / woo / custom</td></tr>
+    <tr style="background:#ffecb3;"><td style="padding:6px;">template_id</td><td style="padding:6px;">FK → selector_template.id（选模板）</td></tr>
+    <tr style="background:#ffecb3;"><td style="padding:6px;">selector_overrides</td><td style="padding:6px;">JSON 字段，按站点覆写个别选择器</td></tr>
+    <tr style="background:#ffecb3;"><td style="padding:6px;">status</td><td style="padding:6px;">active / paused</td></tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>使用流程</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:16px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;font-size:13px;">
+        <div style="padding:8px 14px;background:#e3f2fd;border-radius:6px;">用户在前端输入域名</div>
+        <span>→</span>
+        <div style="padding:8px 14px;background:#e3f2fd;border-radius:6px;">选择平台类型 (shopify/woo/custom)</div>
+        <span>→</span>
+        <div style="padding:8px 14px;background:#fff3e0;border-radius:6px;">
+          <b>从模板库选取</b><br>
+          <span style="font-size:11px;">如 "WooCommerce Default"<br>或 "Magnolia Theme"</span>
+        </div>
+        <span>→</span>
+        <div style="padding:8px 14px;background:#e8f5e9;border-radius:6px;">
+          可选：微调个别选择器<br>
+          <span style="font-size:11px;">存入 selector_overrides (JSON)</span>
+        </div>
+        <span>→</span>
+        <div style="padding:8px 14px;background:#fce4ec;border-radius:6px;">
+          Spring Boot 下发 MQ<br>
+          Python Consumer 读配置 → 执行
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>预置模板（从现有 JSON 迁移）</h3>
+  <table style="width:100%;font-size:12px;border-collapse:collapse;">
+    <tr style="background:#f5f5f5;">
+      <th style="padding:6px;">模板名</th>
+      <th style="padding:6px;">平台</th>
+      <th style="padding:6px;">来源</th>
+      <th style="padding:6px;">覆盖字段</th>
+    </tr>
+    <tr>
+      <td style="padding:6px;">WooCommerce Default</td>
+      <td style="padding:6px;">woo</td>
+      <td style="padding:6px;">woo_crawl.py 内置默认值</td>
+      <td style="padding:6px;">全字段（通用备选链）</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">WooCommerce - Sachdeva Beauty</td>
+      <td style="padding:6px;">woo</td>
+      <td style="padding:6px;">sachdevabeauty_com.json</td>
+      <td style="padding:6px;">price, description, images, breadcrumb</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">Magnolia Theme</td>
+      <td style="padding:6px;">woo</td>
+      <td style="padding:6px;">magnolia.json</td>
+      <td style="padding:6px;">price (class='prices' span), description (card-body)</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;">Generic Woo Test</td>
+      <td style="padding:6px;">woo</td>
+      <td style="padding:6px;">test.json</td>
+      <td style="padding:6px;">price (og:price), description (wc-tab panel)</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;background:#ffecb3;">🆕 Shopify Default</td>
+      <td style="padding:6px;background:#ffecb3;">shopify</td>
+      <td style="padding:6px;background:#ffecb3;">新增（无需选择器，用 products.json API）</td>
+      <td style="padding:6px;background:#ffecb3;">— （仅需 domain + category）</td>
+    </tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>选择器模板管理界面</h3>
+  <div class="mockup">
+    <div class="mockup-header">Spring Boot 新增页面：选择器模板库管理</div>
+    <div class="mockup-body">
+      <div style="display:flex;gap:12px;">
+        <div style="flex:1;padding:12px;background:#f5f5f5;border-radius:6px;">
+          <div class="mock-nav">模板列表 | 新建模板 | 导入 JSON</div>
+          <div style="margin-top:8px;font-size:12px;line-height:1.8;">
+            <b>Magnolia Theme</b> <span style="color:#999;">— woo</span><br>
+            title: //h1/text()<br>
+            price: //div[contains(@class,'prices')]...<br>
+            description: //div[contains(@class, 'card-body...<br>
+            images: //meta[@property='og:image']/@content<br>
+            site_map: //*[local-name()='sitemap']...
+          </div>
+          <div style="margin-top:8px;display:flex;gap:6px;">
+            <button class="mock-button" style="font-size:11px;">编辑</button>
+            <button class="mock-button" style="font-size:11px;">克隆</button>
+            <button class="mock-button" style="font-size:11px;">测试</button>
+          </div>
+        </div>
+        <div style="flex:1;padding:12px;background:#f5f5f5;border-radius:6px;">
+          <div class="mock-nav">站点注册</div>
+          <div style="margin-top:8px;font-size:12px;line-height:1.8;">
+            <b>域名:</b> <input class="mock-input" placeholder="example.com" style="width:180px;"><br>
+            <b>类型:</b> <select class="mock-input"><option>woo</option><option>shopify</option><option>custom</option></select><br>
+            <b>模板:</b> <select class="mock-input"><option>Magnolia Theme</option><option>WooCommerce Default</option></select><br>
+            <b>分类:</b> <input class="mock-input" placeholder="服饰与配饰" style="width:140px;"><br>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:6px;">
+            <button class="mock-button" style="font-size:11px;">注册并立即爬取</button>
+            <button class="mock-button" style="font-size:11px;background:#999;">仅保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

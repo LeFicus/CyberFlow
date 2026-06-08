@@ -1,0 +1,11 @@
+{
+  "title": "//h1/text()",
+  "price": "//div[contains(@class,'prices')]//div//div//span//span/@content",
+  "price_regex": "[\\d.,]+",
+  "description": "//div[contains(@class, 'card-body collapsible-body pdp-feature-body')]/text()",
+  "images": "//meta[@property='og:image']/@content",
+  "currency": "USD",
+  "breadcrumb_links": "//ol[contains(@class, 'breadcrumb')]//a/text()",
+  "breadcrumb_last": "//ol[contains(@class, 'breadcrumb')]//span/text()",
+  "site_map": "//*[local-name()='sitemap']/*[local-name()='loc'][contains(text(), '/sitemap_products_')]/text()"
+}

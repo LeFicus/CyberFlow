@@ -1,0 +1,82 @@
+<h2>Spring Boot → Python 任务下发机制</h2>
+<p class="subtitle">砍掉 FastAPI 后，Spring Boot 如何直接调度 Python 爬虫？</p>
+
+<div class="section">
+  <div class="options">
+    <div class="option" data-choice="a" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>直连 Redis/Celery 队列</h3>
+        <p>Spring Boot 用 Lettuce/Jedis 直接向 Redis Broker 推送 Celery 任务消息（JSON）。Python Celery Worker 保持不变，继续从 Redis 拉取执行。Spring Boot 也直接读 Redis Backend 获取结果。</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>Pros</h4><ul><li>Python 侧改动最小（Celery Worker 不动）</li><li>砍掉 FastAPI，减少一跳</li><li>Redis 已有基础设施</li></ul></div>
+          <div class="cons"><h4>Cons</h4><ul><li>Spring Boot 需理解 Celery 消息协议</li><li>Java ↔ Python 任务序列化兼容性</li><li>结果回读需自维护</li></ul></div>
+        </div>
+      </div>
+    </div>
+    <div class="option" data-choice="b" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>消息队列解耦 (RabbitMQ/Kafka)</h3>
+        <p>Spring Boot 发布任务到 RabbitMQ Topic。Python 消费任务并发布结果到 Result Queue。Spring Boot 消费结果写库。完全异步、双方不直接感知对方存在。</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>Pros</h4><ul><li>完全解耦，双方各自独立演进</li><li>天然支持重试/死信/延迟队列</li><li>可观测性强（消息堆积、消费速率）</li></ul></div>
+          <div class="cons"><h4>Cons</h4><ul><li>引入新中间件，运维成本增加</li><li>Python 侧需从 Celery 改为纯 pika/kafka 消费者</li><li>异步回调链路长，调试复杂</li></ul></div>
+        </div>
+      </div>
+    </div>
+    <div class="option" data-choice="c" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>轻量 Python 执行器 + gRPC/HTTP</h3>
+        <p>FastAPI 缩为一个无状态的 Python 微服务（不经过 Celery），暴露 gRPC 或 REST 端点，Spring Boot 直接调用。Python 侧用 asyncio + aiohttp 并发执行爬取逻辑。</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>Pros</h4><ul><li>同步/异步调用均可，调试直观</li><li>gRPC 序列化强类型，Java 原生支持</li><li>Python 用 async 解决阻塞问题</li></ul></div>
+          <div class="cons"><h4>Cons</h4><ul><li>仍保留一层 HTTP/gRPC 调用（虽然更薄）</li><li>长任务（站点全量同步）需要流式或超时处理</li><li>需要将 Celery 逻辑提取为独立可调用函数</li></ul></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>架构对比一览</h3>
+  <table style="width:100%;font-size:13px;border-collapse:collapse;">
+    <tr style="background:#f5f5f5;">
+      <th style="padding:8px;text-align:left;">维度</th>
+      <th style="padding:8px;text-align:center;">A: 直连 Redis</th>
+      <th style="padding:8px;text-align:center;">B: 消息队列</th>
+      <th style="padding:8px;text-align:center;">C: gRPC 执行器</th>
+    </tr>
+    <tr>
+      <td style="padding:8px;">Python 改造量</td>
+      <td style="padding:8px;text-align:center;background:#e8f5e9;">🟢 最小</td>
+      <td style="padding:8px;text-align:center;background:#fff3e0;">🟠 中等</td>
+      <td style="padding:8px;text-align:center;background:#fff9c4;">🟡 中等</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;">解耦程度</td>
+      <td style="padding:8px;text-align:center;background:#fff9c4;">🟡 紧 (Redis)</td>
+      <td style="padding:8px;text-align:center;background:#e8f5e9;">🟢 松 (消息)</td>
+      <td style="padding:8px;text-align:center;background:#fff9c4;">🟡 中等</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;">新中间件</td>
+      <td style="padding:8px;text-align:center;background:#e8f5e9;">🟢 无</td>
+      <td style="padding:8px;text-align:center;background:#ffebee;">🔴 需引入</td>
+      <td style="padding:8px;text-align:center;background:#e8f5e9;">🟢 无</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;">实时性</td>
+      <td style="padding:8px;text-align:center;">Worker 拉取</td>
+      <td style="padding:8px;text-align:center;">即时推送</td>
+      <td style="padding:8px;text-align:center;">同步/流式</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;">任务追踪</td>
+      <td style="padding:8px;text-align:center;">Redis Backend</td>
+      <td style="padding:8px;text-align:center;">DB 持久化</td>
+      <td style="padding:8px;text-align:center;">DB 持久化</td>
+    </tr>
+  </table>
+</div>

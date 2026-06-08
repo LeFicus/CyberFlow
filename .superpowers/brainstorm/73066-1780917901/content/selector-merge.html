@@ -1,0 +1,84 @@
+<h2>🔧 选择器模板库 — 合并策略</h2>
+<p class="subtitle">多模板的相同键值用 | 合并为一个或选择器链，一次性匹配</p>
+
+<div class="section">
+  <h3>策略对比</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">❌ 之前：优先级逐个尝试</div>
+      <div class="mockup-body" style="font-size:11px;line-height:1.6;">
+        模板1 title → 不命中 ↓<br>
+        模板2 title → 命中 → 用模板2解析全部<br><br>
+        问题：可能模板1的 price 更好，但被跳过了
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">✅ 现在：或选择器合并</div>
+      <div class="mockup-body" style="font-size:11px;line-height:1.6;">
+        <b>title</b> = 模板1.title | 模板2.title | 模板3.title<br>
+        <b>price</b> = 模板1.price | 模板2.price | 模板3.price<br>
+        <b>desc</b> = 模板1.desc | 模板2.desc | 模板3.desc<br>
+        ...<br><br>
+        每个字段独立取最先命中的值，最大化兼容性
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>合并示例</h3>
+  <div class="mockup">
+    <div class="mockup-header">站点关联: Magnolia + WooCommerce Default</div>
+    <div class="mockup-body" style="font-size:12px;line-height:1.8;padding:12px;">
+      <b>合并前（两个独立模板）:</b>
+      <pre style="background:#263238;color:#90caf9;padding:8px;border-radius:4px;font-size:11px;margin:4px 0;">
+Magnolia:   title = "//h1/text()"
+            price = "//div[contains(@class,'prices')]//span//span/@content"
+Woo Default: title = "//h1[@class='product_title']/text() | //h1[contains(@class, 'product-title')]/text()"
+            price = "//p[@class='price']//bdi/text() | //meta[@itemprop='price']/@content"</pre>
+      <b>合并后（一个联合表达式，每个字段独立）:</b>
+      <pre style="background:#263238;color:#aed581;padding:8px;border-radius:4px;font-size:11px;margin:4px 0;">
+title = "//h1/text() | //h1[@class='product_title']/text() | //h1[contains(@class, 'product-title')]/text()"
+price = "//div[contains(@class,'prices')]//span//span/@content | //p[@class='price']//bdi/text() | //meta[@itemprop='price']/@content"</pre>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>数据模型（修正后）</h3>
+  <table style="width:100%;font-size:12px;border-collapse:collapse;">
+    <tr style="background:#f5f5f5;">
+      <th style="padding:6px;text-align:left;">表</th>
+      <th style="padding:6px;text-align:left;">关键字段</th>
+    </tr>
+    <tr>
+      <td style="padding:6px;vertical-align:top;"><code>selector_template</code></td>
+      <td style="padding:6px;font-size:11px;">
+        name · platform · title_selector · price_selector · price_regex · description_selector · images_selector · currency · breadcrumb_links_selector · breadcrumb_last_selector · site_map_selector
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:6px;vertical-align:top;"><code>crawl_site_config</code></td>
+      <td style="padding:6px;font-size:11px;">domain · type (shopify/woo/custom) · category · status</td>
+    </tr>
+    <tr>
+      <td style="padding:6px;vertical-align:top;"><code>site_template_mapping</code></td>
+      <td style="padding:6px;font-size:11px;">
+        site_config_id · template_id · <span style="background:#c8e6c9;padding:1px 4px;border-radius:2px;">extra_selectors (JSON)</span><br>
+        <span style="color:#666;">无需 priority，所有模板平等合并</span>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div class="section">
+  <h3>完整合并流程</h3>
+  <div class="mockup">
+    <div class="mockup-body" style="padding:12px;font-size:13px;line-height:1.8;">
+      <b>1.</b> 读取站点关联的所有模板 + 每个 mapping 的 extra_selectors<br>
+      <b>2.</b> 对每个字段键，收集所有非空选择器值 → 去重 → 用 <code> | </code> 连接<br>
+      <b>3.</b> 一次性执行 XPath 查询，每个字段取第一个非空结果<br>
+      <b>4.</b> 全部无结果 → 记录警告日志，字段留空，不影响其他字段
+    </div>
+  </div>
+</div>

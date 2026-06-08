@@ -1,0 +1,55 @@
+<h2>增量爬取策略选择</h2>
+<p class="subtitle">决定每次爬取如何只同步变化的数据，而非全量拉取</p>
+
+<div class="section">
+  <h3>当前方式 vs 增量方式</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">❌ 当前：全量拉取</div>
+      <div class="mockup-body" style="font-size:13px;line-height:1.8;">
+        每次触发 → 登录平台 → 从第1页开始分页 →<br>
+        遍历全部N页 → 内存去重 → 逐条UPSERT<br><br>
+        <b>站点爬取:</b> 全量域名列表（可能上千页）<br>
+        <b>订单爬取:</b> 全时间范围分页 <br>
+        <b>问题:</b> 90% 的数据没有变化，浪费带宽和时间
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">✅ 目标：增量同步</div>
+      <div class="mockup-body" style="font-size:13px;line-height:1.8;">
+        定时触发 → 读取上次游标/时间 →<br>
+        仅拉取变更数据 → 批量 UPSERT<br><br>
+        <b>站点:</b> 按 updated_at 拉取变更的域名<br>
+        <b>订单:</b> 按上次最大 order_id 或时间增量<br>
+        <b>预期:</b> 每次只处理 ~5-10% 的数据量
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>选择增量策略</h3>
+  <div class="options">
+    <div class="option" data-choice="a" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>定时轮询 — Cron 增量窗口</h3>
+        <p>Spring Boot 内置 Quartz/XXL-Job 定时触发，每次爬取「上次成功截止时间 → 当前时间」窗口内的增量数据。适用于站点和订单数据。简单可靠，但最小间隔受限于一轮爬取耗时。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="b" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>游标增量 — 基于 ID/时间戳</h3>
+        <p>记录上次成功抓取的最大 ID 或 updated_at，下次从该游标续抓。比时间窗口更精确（不漏不重），但需要外部 API 支持按游标排序分页。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="c" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>混合策略 — 按数据源选择</h3>
+        <p>站点爬取用时间窗口（数据变化慢），订单爬取用游标（数据增长快、不可漏单）。每种数据源选择最合适的增量机制。</p>
+      </div>
+    </div>
+  </div>
+</div>
