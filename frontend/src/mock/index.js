@@ -44,6 +44,21 @@ Mock.mock(/\/admin\/crawler\/order\/start/, 'post', crawlerData.triggerOrderCraw
 Mock.mock(/\/admin\/crawler\/status\//, 'get', crawlerData.status)
 Mock.mock(/\/admin\/crawler\/tasks/, 'get', crawlerData.tasks)
 
+// ========== Selector Template ==========
+Mock.mock(/\/admin\/selector\/template(\?|$)/, 'get', crawlerData.selectorTemplateList)
+Mock.mock(/\/admin\/selector\/template\/\d+$/, 'get', crawlerData.selectorTemplateGet)
+Mock.mock(/\/admin\/selector\/template$/, 'post', crawlerData.selectorTemplateCreate)
+Mock.mock(/\/admin\/selector\/template\/\d+$/, 'put', crawlerData.selectorTemplateUpdate)
+Mock.mock(/\/admin\/selector\/template\/\d+$/, 'delete', crawlerData.selectorTemplateDelete)
+Mock.mock(/\/admin\/selector\/template\/\d+\/clone/, 'post', crawlerData.selectorTemplateClone)
+
+// ========== Site Config ==========
+Mock.mock(/\/admin\/crawler\/site-config(\?|$)/, 'get', crawlerData.siteConfigList)
+Mock.mock(/\/admin\/crawler\/site-config\/\d+$/, 'get', crawlerData.siteConfigGet)
+Mock.mock(/\/admin\/crawler\/site-config$/, 'post', crawlerData.siteConfigCreate)
+Mock.mock(/\/admin\/crawler\/site-config\/\d+$/, 'delete', crawlerData.siteConfigDelete)
+Mock.mock(/\/admin\/crawler\/site-config\/\d+\/crawl/, 'post', crawlerData.siteConfigCrawl)
+
 // ========== System: User ==========
 Mock.mock(/\/admin\/system\/user(\?|$)/, 'get', systemData.userList)
 Mock.mock(/\/admin\/system\/user$/, 'post', (options) => systemData.userCreate(JSON.parse(options.body || '{}')))
