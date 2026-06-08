@@ -23,7 +23,32 @@ springdoc:
   swagger-ui:
     path: /admin/swagger-ui.html
 
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:admin}
+    password: ${RABBITMQ_PASS:admin123}
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3
+        default-requeue-rejected: false
+
+  quartz:
+    job-store-type: memory
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: CyberFlowScheduler
+          threadPool:
+            threadCount: 3
+
 cyberflow:
+  crawler:
+    site-cron: "0 0 2 * * ?"       # 每天凌晨2点
+    order-cron: "0 0 */6 * * ?"    # 每6小时整点
   crawler-api:
     base-url: ${CRAWLER_API_BASE_URL:http://localhost:8000}
     internal-token: ${INTERNAL_API_TOKEN:change-me-in-production}

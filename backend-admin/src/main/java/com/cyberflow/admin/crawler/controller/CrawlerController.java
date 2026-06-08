@@ -44,10 +44,4 @@ public class CrawlerController {
     public Result<Map<String, Object>> status(@PathVariable String taskId) {
         return Result.ok(crawlerService.getTaskStatus(taskId));
     }
-
-    @GetMapping("/tasks")
-    @PreAuthorize("hasAnyAuthority('crawler:site:start', 'crawler:collect:start', 'crawler:order:start')")
-    public Result<Map<String, Map<String, Object>>> tasks() {
-        return Result.ok(crawlerService.getRecentTasks());
-    }
 }

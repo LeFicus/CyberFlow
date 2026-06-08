@@ -14,6 +14,7 @@ import java.util.Map;
 
 @Slf4j
 @Service
+@Deprecated(since = "2.0", forRemoval = true)
 public class CrawlerApiClient {
 
     @Value("${cyberflow.crawler-api.base-url}")
