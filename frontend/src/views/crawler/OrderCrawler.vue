@@ -1,59 +1,229 @@
 <template>
-  <el-card>
-    <template #header>订单爬取</template>
-    <el-form :model="form" :rules="rules" label-width="120px" style="max-width: 500px;">
-      <el-form-item label="开始时间" prop="startTime">
-        <el-date-picker v-model="form.startTime" type="datetime" placeholder="选择开始时间" value-format="YYYY-MM-DD HH:mm:ss" />
-      </el-form-item>
-      <el-form-item label="结束时间" prop="endTime">
-        <el-date-picker v-model="form.endTime" type="datetime" placeholder="选择结束时间" value-format="YYYY-MM-DD HH:mm:ss" />
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" :loading="loading" @click="handleTrigger">启动订单爬虫</el-button>
-      </el-form-item>
-    </el-form>
+  <div class="crawler-page">
+    <el-card>
+      <template #header>
+        <div class="card-header">
+          <span>订单采集</span>
+          <div>
+            <el-button type="primary" :loading="triggering === 'A'" @click="handleTrigger('A')">采集 A 组</el-button>
+            <el-button type="success" :loading="triggering === 'B'" @click="handleTrigger('B')">采集 B 组</el-button>
+          </div>
+        </div>
+      </template>
 
-    <el-divider />
+      <el-form :model="form" label-width="150px" class="config-form">
+        <el-divider content-position="left">A 组 Payment API</el-divider>
+        <el-form-item label="A组 Base URL">
+          <el-input v-model="form.paymentApiA.baseUrl" placeholder="https://a.example.com" />
+        </el-form-item>
+        <el-form-item label="A组账号">
+          <el-input v-model="form.paymentApiA.account" />
+        </el-form-item>
+        <el-form-item label="A组密码">
+          <el-input v-model="form.paymentApiA.password" type="password" show-password />
+        </el-form-item>
+        <el-form-item label="A组 SSL 校验">
+          <el-switch v-model="form.paymentApiA.verifySsl" />
+        </el-form-item>
 
-    <div v-if="taskResult" class="task-result">
-      <el-alert :type="taskResult.state === 'SUCCESS' ? 'success' : 'info'" :closable="false">
-        <template #title>
-          任务状态: {{ taskResult.state }}
-          <span style="margin-left: 16px; font-size: 13px;">Task ID: {{ taskResult.task_id }}</span>
-        </template>
-        {{ taskResult.result || '等待任务结果...' }}
-      </el-alert>
-    </div>
-  </el-card>
+        <el-divider content-position="left">B 组 Payment API</el-divider>
+        <el-form-item label="B组 Base URL">
+          <el-input v-model="form.paymentApiB.baseUrl" placeholder="https://b.example.com" />
+        </el-form-item>
+        <el-form-item label="B组账号">
+          <el-input v-model="form.paymentApiB.account" />
+        </el-form-item>
+        <el-form-item label="B组密码">
+          <el-input v-model="form.paymentApiB.password" type="password" show-password />
+        </el-form-item>
+        <el-form-item label="B组 SSL 校验">
+          <el-switch v-model="form.paymentApiB.verifySsl" />
+        </el-form-item>
+
+        <el-divider content-position="left">增量策略</el-divider>
+        <el-form-item label="初始订单 ID">
+          <el-input v-model="form.orderStrategy.initialOrderId" />
+        </el-form-item>
+        <el-form-item label="分页大小">
+          <el-input-number v-model="form.orderStrategy.pageSize" :min="20" :max="500" :step="20" />
+        </el-form-item>
+        <el-form-item label="排除卡号">
+          <el-input v-model="excludedCardsText" type="textarea" :rows="3" />
+        </el-form-item>
+
+        <el-divider content-position="left">收入参数</el-divider>
+        <el-form-item label="实时汇率">
+          <el-input-number v-model="form.revenue.exchangeRate" :precision="4" :step="0.01" />
+        </el-form-item>
+        <el-form-item label="折算系数">
+          <el-input-number v-model="form.revenue.rateFactor" :precision="4" :step="0.01" />
+        </el-form-item>
+        <el-form-item label="组长提成">
+          <el-input-number v-model="form.revenue.leaderCommissionRate" :precision="4" :step="0.01" />
+        </el-form-item>
+        <el-form-item label="提成阶梯">
+          <el-input v-model="commissionTiersText" type="textarea" :rows="5" />
+        </el-form-item>
+        <el-form-item label="组长配置">
+          <el-input v-model="leaderConfigText" type="textarea" :rows="3" placeholder='{"A":"A-黄伟","B":"B-李榕"}' />
+        </el-form-item>
+        <el-form-item label="导师后缀映射">
+          <el-input v-model="teacherMapText" type="textarea" :rows="7" placeholder='{"B-许晓龙":"-xxl"}' />
+        </el-form-item>
+        <el-form-item label="多账号合并">
+          <el-input v-model="userMergeMapText" type="textarea" :rows="5" placeholder='{"B-姓名":["B-账号1","B-账号2"]}' />
+        </el-form-item>
+
+        <el-divider content-position="left">定时任务</el-divider>
+        <el-form-item label="启用">
+          <el-switch v-model="schedule.enabled" />
+        </el-form-item>
+        <el-form-item label="Cron">
+          <el-input v-model="schedule.cronExpression" />
+        </el-form-item>
+
+        <el-form-item>
+          <el-button type="primary" :loading="saving" @click="handleSave">保存配置</el-button>
+        </el-form-item>
+      </el-form>
+
+      <TaskProgress :task="task" />
+    </el-card>
+  </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
-import { triggerOrderCrawler, getTaskStatus } from '@/api/crawler'
+import { onMounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import TaskProgress from '@/components/TaskProgress.vue'
+import { useTaskProgress } from '@/composables/useTaskProgress'
+import {
+  getCrawlerConfig,
+  listCrawlerSchedules,
+  triggerOrderCrawler,
+  updateCrawlerConfig,
+  updateCrawlerSchedule,
+} from '@/api/crawler'
 
-const loading = ref(false)
-const taskResult = ref(null)
+const saving = ref(false)
+const triggering = ref('')
+const { task, track } = useTaskProgress()
+const excludedCardsText = ref('')
+const commissionTiersText = ref('')
+const leaderConfigText = ref('')
+const teacherMapText = ref('')
+const userMergeMapText = ref('')
+
 const form = reactive({
-  startTime: '2026-04-01 00:00:00',
-  endTime: '2026-04-29 23:59:59',
+  paymentApiA: { baseUrl: '', account: '', password: '', verifySsl: true },
+  paymentApiB: { baseUrl: '', account: '', password: '', verifySsl: true },
+  orderStrategy: {
+    initialOrderId: '0',
+    pageSize: 100,
+    filterCardNumberExclude: [],
+  },
+  revenue: {
+    exchangeRate: 6.73,
+    rateFactor: 0.42,
+    leaderCommissionRate: 0.02,
+    commissionTiers: [],
+    leaderConfig: {},
+    teacherMap: {},
+    userMergeMap: {},
+  },
 })
-const rules = {
-  startTime: [{ required: true, message: '请选择开始时间', trigger: 'change' }],
-  endTime: [{ required: true, message: '请选择结束时间', trigger: 'change' }],
-}
 
-async function handleTrigger() {
-  loading.value = true
-  taskResult.value = null
-  try {
-    const res = await triggerOrderCrawler(form.startTime, form.endTime)
-    await sleep(1000)
-    const statusRes = await getTaskStatus(res.data.task_id)
-    taskResult.value = { ...statusRes.data, task_id: res.data.task_id }
-  } finally {
-    loading.value = false
+const schedule = reactive({
+  enabled: true,
+  cronExpression: '0 0 3 * * ?',
+})
+
+async function loadConfig() {
+  const [configRes, schedulesRes] = await Promise.all([
+    getCrawlerConfig(),
+    listCrawlerSchedules(),
+  ])
+  Object.assign(form.paymentApiA, configRes.data?.paymentApiA || {})
+  Object.assign(form.paymentApiB, configRes.data?.paymentApiB || {})
+  Object.assign(form.orderStrategy, configRes.data?.orderStrategy || {})
+  Object.assign(form.revenue, configRes.data?.revenue || {})
+  excludedCardsText.value = (form.orderStrategy.filterCardNumberExclude || []).join('\n')
+  commissionTiersText.value = JSON.stringify(form.revenue.commissionTiers || [], null, 2)
+  leaderConfigText.value = JSON.stringify(form.revenue.leaderConfig || {}, null, 2)
+  teacherMapText.value = JSON.stringify(form.revenue.teacherMap || {}, null, 2)
+  userMergeMapText.value = JSON.stringify(form.revenue.userMergeMap || {}, null, 2)
+  const orderSchedule = (schedulesRes.data || []).find(item => item.taskType === 'order_crawl')
+  if (orderSchedule) {
+    schedule.enabled = orderSchedule.enabled === 1
+    schedule.cronExpression = orderSchedule.cronExpression
   }
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
+async function handleSave() {
+  saving.value = true
+  try {
+    form.orderStrategy.filterCardNumberExclude = excludedCardsText.value
+      .split(/\n|,/)
+      .map(item => item.trim())
+      .filter(Boolean)
+    form.revenue.commissionTiers = JSON.parse(commissionTiersText.value || '[]')
+    form.revenue.leaderConfig = JSON.parse(leaderConfigText.value || '{}')
+    form.revenue.teacherMap = JSON.parse(teacherMapText.value || '{}')
+    form.revenue.userMergeMap = JSON.parse(userMergeMapText.value || '{}')
+    await updateCrawlerConfig({
+      paymentApiA: form.paymentApiA,
+      paymentApiB: form.paymentApiB,
+      orderStrategy: form.orderStrategy,
+      revenue: form.revenue,
+    })
+    await updateCrawlerSchedule('order_crawl', {
+      enabled: schedule.enabled,
+      cronExpression: schedule.cronExpression,
+    })
+    ElMessage.success('保存成功')
+    await loadConfig()
+  } catch {
+    ElMessage.error('保存失败，请检查提成阶梯 JSON')
+  } finally {
+    saving.value = false
+  }
+}
+
+async function handleTrigger(userGroup) {
+  triggering.value = userGroup
+  try {
+    const res = await triggerOrderCrawler(userGroup)
+    track(res.data.task_id)
+    ElMessage.success(`${userGroup} 组订单任务已下发`)
+  } finally {
+    triggering.value = ''
+  }
+}
+
+onMounted(loadConfig)
 </script>
+
+<style scoped>
+.crawler-page {
+  max-width: 900px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.config-form {
+  max-width: 680px;
+}
+
+.task-result {
+  margin-top: 16px;
+}
+
+.task-id {
+  margin-left: 16px;
+  font-size: 13px;
+}
+</style>

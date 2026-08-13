@@ -1,3 +1,17 @@
+"""
+订单爬虫服务模块 — 从支付平台抓取订单数据并写入 MySQL
+
+本模块实现订单数据的批量采集全流程：
+    1. 登录支付平台 c4partypay.com 获取 Token 认证
+    2. 分页遍历订单列表接口，按时间范围筛选
+    3. 过滤测试订单（排除指定支付渠道和测试信用卡号）
+    4. 查询本地 site_info 表获取站点维度元数据
+    5. 按订单 ID 去重后批量写入 MySQL orders 表
+
+数据流:
+    支付平台 API → 订单列表分页遍历 → 过滤清洗 → 站点维度关联 → orders 表
+"""
+
 import time
 from datetime import datetime
 
@@ -10,7 +24,30 @@ from app.model.site_info import SiteInfo
 
 
 class OrderCrawler:
+    """
+    订单爬虫 — 从支付平台抓取订单流水并去重入库
+
+    工作流程:
+        1. login()       — 调用 /platformapi/login/account 获取 Token
+        2. run()         — 分页遍历 /platformapi/pay.pay_order/lists 获取订单列表
+        3. save_to_db()  — 与 site_info 表关联维度后去重批量写入 orders 表
+
+    属性:
+        base_url (str)           : 支付平台基础地址
+        account  (str)           : 支付平台登录账号
+        password (str)           : 支付平台登录密码
+        log      (Logger)        : 绑定了账号的 loguru Logger 实例
+        headers  (dict)          : 默认 HTTP 请求头（Accept、User-Agent）
+    """
+
     def __init__(self, account, password):
+        """
+        初始化订单爬虫
+
+        Args:
+            account  (str): 支付平台登录账号
+            password (str): 支付平台登录密码
+        """
         self.base_url = "https://c4partypay.com"
         self.account = account
         self.password = password
@@ -21,7 +58,19 @@ class OrderCrawler:
         }
 
     def login(self, client):
-        """登录获取 Token"""
+        """
+        登录支付平台获取认证 Token
+
+        调用 /platformapi/login/account 接口进行身份验证，
+        成功后将 token 字段注入 HTTP 客户端请求头。
+
+        Args:
+            client (httpx.Client): HTTP 客户端实例
+
+        Raises:
+            ValueError: 登录响应中未包含 token
+            httpx.HTTPError: HTTP 请求失败
+        """
         url = f"{self.base_url}/platformapi/login/account"
         payload = {"account": self.account, "password": self.password, "googleCode": "", "terminal": 1}
 
@@ -36,7 +85,22 @@ class OrderCrawler:
         self.log.success("🔓 登录成功，Token 已就绪")
 
     def save_to_db(self, data_list):
-        """批量去重并写入数据库（高性能版）"""
+        """
+        批量去重后将订单数据写入 MySQL 数据库
+
+        处理流程:
+            1. 查询 site_info 表，构建域名 → 维度信息（admin/theme/category）的映射
+            2. 提取所有待入库订单的 ID 集合
+            3. 一次性查询数据库中已存在的订单 ID（IN 查询，高效去重）
+            4. 过滤出需要新增的订单，关联站点维度数据
+            5. 使用 bulk_save_objects 批量插入（性能优于逐条 add）
+
+        Args:
+            data_list (list[dict]): 订单数据列表，每条记录来自支付平台 API
+
+        Raises:
+            Exception: 数据库操作异常，事务回滚后向上抛出
+        """
         if not data_list:
             return
 
@@ -97,6 +161,27 @@ class OrderCrawler:
                 raise
 
     def run(self, start_time, end_time):
+        """
+        执行完整的订单抓取任务（主入口方法）
+
+        执行步骤:
+            1. 创建 HTTP 客户端（上下文管理器自动关闭）
+            2. 登录支付平台获取认证 Token
+            3. 分页遍历订单列表，按时间范围筛选
+            4. 过滤测试订单: 排除指定支付渠道名称和测试信用卡号
+            5. 对 API 返回的 JSON 结构进行防御性类型校验
+            6. 批量去重后写入 MySQL orders 表
+
+        Args:
+            start_time (str): 订单查询起始时间（格式: YYYY-MM-DD HH:MM:SS）
+            end_time   (str): 订单查询截止时间（格式: YYYY-MM-DD HH:MM:SS）
+
+        Returns:
+            dict 或 None: 无数据时返回 {"file_path": None, "count": 0}
+
+        Raises:
+            Exception: 任务执行异常，记录关键错误日志后向上抛出
+        """
         self.log.info(f"🚀 订单抓取启动 | 时间范围: {start_time} 至 {end_time}")
 
         # 使用上下文管理器自动处理 HTTP 客户端的开启和关闭

@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Python deps
 COPY crawler-consumer/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir scrapy aiohttp aiomysql beautifulsoup4 lxml
+    --prefer-binary
 
 # Consumer code
 COPY crawler-consumer/config.py .

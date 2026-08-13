@@ -1,3 +1,16 @@
+# Project-local generated files
+.DS_Store
+**/.DS_Store
+.env.docker
+.idea/
+**/.idea/
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+target/
+**/target/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

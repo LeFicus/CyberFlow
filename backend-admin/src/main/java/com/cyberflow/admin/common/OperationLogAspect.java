@@ -18,14 +18,37 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
+/**
+ * 操作日志 AOP 切面。
+ * <p>
+ * 通过环绕通知拦截所有被 {@code @RestController} 注解标记的 Controller 方法，
+ * 自动记录每次请求的操作日志，包括请求方法、URL、IP、用户、耗时、执行状态等信息。
+ * 日志保存采用异步方式，避免阻塞主业务线程。
+ * </p>
+ *
+ * @author CyberFlow Team
+ * @since 1.0.0
+ */
 @Slf4j
 @Aspect
 @Component
 @RequiredArgsConstructor
 public class OperationLogAspect {
 
+    /** 操作日志服务，用于持久化日志记录 */
     private final SysOperationLogService logService;
 
+    /**
+     * 环绕通知：拦截所有 RestController 的公开方法，记录操作日志。
+     * <p>
+     * 在方法执行前提取请求信息和用户信息，执行后记录耗时和状态。
+     * 若方法执行抛出异常，同样记录错误信息后重新抛出，不吞掉异常。
+     * </p>
+     *
+     * @param joinPoint 切入点，代表被拦截的方法
+     * @return 被拦截方法的原始返回值
+     * @throws Throwable 被拦截方法可能抛出的任何异常
+     */
     @Around("@within(org.springframework.web.bind.annotation.RestController)")
     public Object logOperation(ProceedingJoinPoint joinPoint) throws Throwable {
         var startTime = System.currentTimeMillis();
@@ -71,6 +94,15 @@ public class OperationLogAspect {
         }
     }
 
+    /**
+     * 异步保存操作日志。
+     * <p>
+     * 仅记录非 GET 请求（增删改操作），GET 类型的查询请求不记录。
+     * 日志保存失败时仅输出警告日志，不影响主业务流程。
+     * </p>
+     *
+     * @param logEntry 待保存的操作日志实体
+     */
     @Async
     void saveLog(SysOperationLog logEntry) {
         try {
@@ -83,6 +115,12 @@ public class OperationLogAspect {
         }
     }
 
+    /**
+     * 根据 HTTP 方法推断操作类型。
+     *
+     * @param method HTTP 方法（GET/POST/PUT/DELETE）
+     * @return 对应的操作类型：CREATE / UPDATE / DELETE / QUERY
+     */
     private String inferOperation(String method) {
         return switch (method.toUpperCase()) {
             case "POST" -> "CREATE";
@@ -92,6 +130,12 @@ public class OperationLogAspect {
         };
     }
 
+    /**
+     * 根据请求 URL 推断所属业务模块。
+     *
+     * @param url 请求 URL 路径
+     * @return 模块标识：SYSTEM / CRAWLER / DASHBOARD / UNKNOWN
+     */
     private String inferModule(String url) {
         if (url.contains("/system/")) return "SYSTEM";
         if (url.contains("/crawler/")) return "CRAWLER";
@@ -99,6 +143,12 @@ public class OperationLogAspect {
         return "UNKNOWN";
     }
 
+    /**
+     * 截取请求参数字符串，限制最大长度为 1000 字符。
+     *
+     * @param queryString URL 中的查询参数字符串
+     * @return 截断后的参数字符串，若输入为 null 则返回 null
+     */
     private String extractParams(String queryString) {
         if (queryString == null || queryString.length() > 1000) {
             return queryString != null ? queryString.substring(0, 1000) : null;

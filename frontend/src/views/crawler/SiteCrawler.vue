@@ -1,58 +1,159 @@
 <template>
-  <el-card>
-    <template #header>站点信息爬取</template>
-    <el-form :model="form" :rules="rules" label-width="120px" style="max-width: 500px;">
-      <el-form-item label="管理平台账号" prop="username">
-        <el-input v-model="form.username" placeholder="登录管理平台的账号" />
-      </el-form-item>
-      <el-form-item label="管理平台密码" prop="password">
-        <el-input v-model="form.password" type="password" placeholder="登录管理平台的密码" show-password />
-      </el-form-item>
-      <el-form-item>
-        <el-button type="primary" :loading="loading" @click="handleTrigger">启动站点爬虫</el-button>
-      </el-form-item>
-    </el-form>
+  <div class="crawler-page">
+    <el-card>
+      <template #header>
+        <div class="card-header">
+          <span>站点采集</span>
+          <el-button type="primary" :loading="triggering" @click="handleTrigger">立即采集</el-button>
+        </div>
+      </template>
 
-    <el-divider />
+      <el-form :model="form" label-width="140px" class="config-form">
+        <el-divider content-position="left">Admin API</el-divider>
+        <el-form-item label="Base URL">
+          <el-input v-model="form.adminApi.baseUrl" placeholder="http://216.152.147.6" />
+        </el-form-item>
+        <el-form-item label="账号">
+          <el-input v-model="form.adminApi.username" />
+        </el-form-item>
+        <el-form-item label="密码">
+          <el-input v-model="form.adminApi.password" type="password" show-password />
+        </el-form-item>
+        <el-form-item label="SSL 校验">
+          <el-switch v-model="form.adminApi.verifySsl" />
+        </el-form-item>
 
-    <div v-if="taskResult" class="task-result">
-      <el-alert :type="taskResult.state === 'SUCCESS' ? 'success' : 'info'" :closable="false">
-        <template #title>
-          任务状态: {{ taskResult.state }}
-          <span style="margin-left: 16px; font-size: 13px;">Task ID: {{ taskResult.task_id }}</span>
-        </template>
-        {{ taskResult.result || '等待任务结果...' }}
-      </el-alert>
-    </div>
-  </el-card>
+        <el-divider content-position="left">增量策略</el-divider>
+        <el-form-item label="跳过站点检测">
+          <el-switch v-model="form.siteStrategy.skipSiteCheck" />
+        </el-form-item>
+        <el-form-item label="获取后台登录地址">
+          <el-switch v-model="form.siteStrategy.fetchAdminLoginUrl" />
+        </el-form-item>
+        <el-form-item label="仅已建站">
+          <el-switch v-model="form.siteStrategy.filterBuiltOnly" />
+        </el-form-item>
+        <el-form-item label="分页大小">
+          <el-input-number v-model="form.siteStrategy.pageSize" :min="20" :max="500" :step="20" />
+        </el-form-item>
+
+        <el-divider content-position="left">定时任务</el-divider>
+        <el-form-item label="启用">
+          <el-switch v-model="schedule.enabled" />
+        </el-form-item>
+        <el-form-item label="Cron">
+          <el-input v-model="schedule.cronExpression" />
+        </el-form-item>
+
+        <el-form-item>
+          <el-button type="primary" :loading="saving" @click="handleSave">保存配置</el-button>
+        </el-form-item>
+      </el-form>
+
+      <TaskProgress :task="task" />
+    </el-card>
+  </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
-import { triggerSiteCrawler, getTaskStatus } from '@/api/crawler'
+import { onMounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import TaskProgress from '@/components/TaskProgress.vue'
+import { useTaskProgress } from '@/composables/useTaskProgress'
+import {
+  getCrawlerConfig,
+  listCrawlerSchedules,
+  triggerSiteCrawler,
+  updateCrawlerConfig,
+  updateCrawlerSchedule,
+} from '@/api/crawler'
 
-const loading = ref(false)
-const taskResult = ref(null)
-const form = reactive({ username: 'admin', password: 'password123' })
-const rules = {
-  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
-}
+const saving = ref(false)
+const triggering = ref(false)
+const { task, track } = useTaskProgress()
 
-async function handleTrigger() {
-  loading.value = true
-  taskResult.value = null
-  try {
-    const res = await triggerSiteCrawler(form.username, form.password)
-    const taskId = res.data.task_id
-    // 模拟轮询
-    await sleep(1000)
-    const statusRes = await getTaskStatus(taskId)
-    taskResult.value = { ...statusRes.data, task_id: taskId }
-  } finally {
-    loading.value = false
+const form = reactive({
+  adminApi: { baseUrl: '', username: '', password: '', verifySsl: true },
+  siteStrategy: {
+    skipSiteCheck: true,
+    fetchAdminLoginUrl: false,
+    filterBuiltOnly: false,
+    pageSize: 100,
+  },
+})
+
+const schedule = reactive({
+  enabled: true,
+  cronExpression: '0 0 2 * * ?',
+})
+
+async function loadConfig() {
+  const [configRes, schedulesRes] = await Promise.all([
+    getCrawlerConfig(),
+    listCrawlerSchedules(),
+  ])
+  Object.assign(form.adminApi, configRes.data?.adminApi || {})
+  Object.assign(form.siteStrategy, configRes.data?.siteStrategy || {})
+  const siteSchedule = (schedulesRes.data || []).find(item => item.taskType === 'site_crawl')
+  if (siteSchedule) {
+    schedule.enabled = siteSchedule.enabled === 1
+    schedule.cronExpression = siteSchedule.cronExpression
   }
 }
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
+async function handleSave() {
+  saving.value = true
+  try {
+    await updateCrawlerConfig({
+      adminApi: form.adminApi,
+      siteStrategy: form.siteStrategy,
+    })
+    await updateCrawlerSchedule('site_crawl', {
+      enabled: schedule.enabled,
+      cronExpression: schedule.cronExpression,
+    })
+    ElMessage.success('保存成功')
+    await loadConfig()
+  } finally {
+    saving.value = false
+  }
+}
+
+async function handleTrigger() {
+  triggering.value = true
+  try {
+    const res = await triggerSiteCrawler()
+    track(res.data.task_id)
+    ElMessage.success('任务已下发')
+  } finally {
+    triggering.value = false
+  }
+}
+
+onMounted(loadConfig)
 </script>
+
+<style scoped>
+.crawler-page {
+  max-width: 860px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.config-form {
+  max-width: 640px;
+}
+
+.task-result {
+  margin-top: 16px;
+}
+
+.task-id {
+  margin-left: 16px;
+  font-size: 13px;
+}
+</style>

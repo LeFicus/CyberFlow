@@ -1,3 +1,9 @@
+<!--
+  SelectorTemplatePage - 选择器模板管理页面
+  管理商品信息爬取用的 CSS/XPath 选择器模板，支持按平台类型筛选。
+  功能包括：新建、编辑、克隆、删除模板。
+  系统内置模板（isSystem=1）不可删除但可克隆，防止误删基础配置。
+-->
 <template>
   <el-card>
     <template #header>
@@ -7,19 +13,25 @@
       </div>
     </template>
 
-    <!-- 筛选 -->
+    <el-alert
+      style="margin-bottom:12px;"
+      type="info"
+      :closable="false"
+      title="除 Shopify 外，BigCommerce、OpenCart、Magento 等商城引擎暂统一复用 WooCommerce 选择器模板。"
+      show-icon
+    />
+
+    <!-- 平台筛选 -->
     <el-form inline style="margin-bottom:12px;">
       <el-form-item label="平台">
         <el-select v-model="filterPlatform" clearable placeholder="全部" @change="fetchList" style="width:160px;">
-          <el-option label="WooCommerce" value="woo" />
           <el-option label="Shopify" value="shopify" />
-          <el-option label="Magento" value="magento" />
-          <el-option label="自定义" value="custom" />
+          <el-option label="WooCommerce（非 Shopify 通用）" value="woocommerce" />
         </el-select>
       </el-form-item>
     </el-form>
 
-    <!-- 列表 -->
+    <!-- 模板列表 -->
     <el-table :data="templates" border stripe v-loading="loading" style="width:100%;">
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="name" label="模板名" min-width="160" />
@@ -48,7 +60,7 @@
       </el-table-column>
     </el-table>
 
-    <!-- 编辑弹窗 -->
+    <!-- 编辑/新建弹窗 -->
     <el-dialog
       v-model="dialogVisible"
       :title="isEditing ? '编辑模板' : '新建模板'"
@@ -59,16 +71,14 @@
         <el-row :gutter="16">
           <el-col :span="14">
             <el-form-item label="模板名" required>
-              <el-input v-model="form.name" placeholder="如 WooCommerce Default" />
+              <el-input v-model="form.name" placeholder="如 Shopify Default" />
             </el-form-item>
           </el-col>
           <el-col :span="10">
             <el-form-item label="平台" required>
               <el-select v-model="form.platform" style="width:100%;">
-                <el-option label="WooCommerce" value="woo" />
                 <el-option label="Shopify" value="shopify" />
-                <el-option label="Magento" value="magento" />
-                <el-option label="Custom" value="custom" />
+                <el-option label="WooCommerce（非 Shopify 通用）" value="woocommerce" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -116,17 +126,24 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listTemplates, createTemplate, updateTemplate, deleteTemplate, cloneTemplate } from '@/api/selector'
 
+/** 模板列表数据 */
 const templates = ref([])
+/** 列表加载状态 */
 const loading = ref(false)
+/** 保存按钮 loading */
 const saving = ref(false)
+/** 编辑弹窗是否可见 */
 const dialogVisible = ref(false)
+/** 是否为编辑模式 */
 const isEditing = ref(false)
+/** 平台筛选值 */
 const filterPlatform = ref('')
 
+/** 模板表单数据 */
 const form = reactive({
   id: null,
   name: '',
-  platform: 'woo',
+  platform: 'shopify',
   currency: 'USD',
   titleSelector: '',
   priceSelector: '',
@@ -138,10 +155,13 @@ const form = reactive({
   siteMapSelector: '',
 })
 
+/**
+ * 重置表单数据到初始值
+ */
 function resetForm() {
   form.id = null
   form.name = ''
-  form.platform = 'woo'
+  form.platform = 'shopify'
   form.currency = 'USD'
   form.titleSelector = ''
   form.priceSelector = ''
@@ -153,6 +173,9 @@ function resetForm() {
   form.siteMapSelector = ''
 }
 
+/**
+ * 获取模板列表（可按平台筛选）
+ */
 async function fetchList() {
   loading.value = true
   try {
@@ -163,18 +186,29 @@ async function fetchList() {
   }
 }
 
+/**
+ * 打开新建模板弹窗
+ */
 function handleCreate() {
   isEditing.value = false
   resetForm()
   dialogVisible.value = true
 }
 
+/**
+ * 打开编辑模板弹窗，将行数据复制到表单
+ * @param {Object} row - 模板行数据
+ */
 function handleEdit(row) {
   isEditing.value = true
   Object.assign(form, row)
   dialogVisible.value = true
 }
 
+/**
+ * 克隆模板
+ * @param {Object} row - 源模板行数据
+ */
 async function handleClone(row) {
   try {
     await cloneTemplate(row.id)
@@ -185,6 +219,9 @@ async function handleClone(row) {
   }
 }
 
+/**
+ * 保存模板（新建或更新）
+ */
 async function handleSave() {
   saving.value = true
   try {
@@ -204,6 +241,10 @@ async function handleSave() {
   }
 }
 
+/**
+ * 删除模板（需二次确认，系统模板不可删除）
+ * @param {Object} row - 模板行数据
+ */
 async function handleDelete(row) {
   try {
     await ElMessageBox.confirm(`确定删除模板「${row.name}」？`, '确认删除', { type: 'warning' })
