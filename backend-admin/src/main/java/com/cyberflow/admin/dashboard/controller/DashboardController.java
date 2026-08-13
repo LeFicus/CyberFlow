@@ -1,0 +1,174 @@
+package com.cyberflow.admin.dashboard.controller;
+
+import com.cyberflow.admin.common.Result;
+import com.cyberflow.admin.dashboard.service.DashboardService;
+import com.cyberflow.admin.dashboard.service.ProductExportService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
+import java.util.Map;
+
+/**
+ * 仪表盘数据展示 REST 控制器。
+ * <p>
+ * 提供系统总览、站点列表、订单列表、商品列表及图表数据的 HTTP 查询接口，
+ * 所有接口均需要相应的权限才能访问。
+ * </p>
+ *
+ * <h3>权限列表</h3>
+ * <ul>
+ *   <li>dashboard:overview     - 查看系统总览和图表数据</li>
+ *   <li>dashboard:site:view    - 查看站点列表</li>
+ *   <li>dashboard:order:view   - 查看订单列表</li>
+ *   <li>dashboard:product:view - 查看商品列表</li>
+ * </ul>
+ *
+ * @author CyberFlow
+ */
+@RestController
+@RequestMapping("/admin/dashboard")
+@RequiredArgsConstructor
+public class DashboardController {
+
+    /** 仪表盘业务服务 */
+    private final DashboardService dashboardService;
+    private final ProductExportService productExportService;
+
+    /**
+     * 获取系统总览数据。
+     * <p>
+     * 返回站点总数、订单总数、商品总数、今日订单数及今日交易金额等关键指标。
+     * </p>
+     *
+     * @return 总览数据 Map，包含 total_sites、total_orders、total_products、today_orders、today_amount 等字段
+     */
+    @GetMapping("/overview")
+    @PreAuthorize("hasAuthority('dashboard:overview')")
+    public Result<Map<String, Object>> overview() {
+        return Result.ok(dashboardService.getOverview());
+    }
+
+    /**
+     * 分页查询站点列表，支持按管理员名称或模板名称过滤。
+     *
+     * @param page      页码，默认 1
+     * @param size      每页大小，默认 10
+     * @param adminName 管理员名称，可选，用于筛选指定管理员的站点
+     * @param themeName 模板名称，可选，用于筛选指定模板的站点
+     * @return 分页结果，包含 total（总数）和 list（站点列表）
+     */
+    @GetMapping("/sites")
+    @PreAuthorize("hasAuthority('dashboard:site:view')")
+    public Result<Map<String, Object>> sites(@RequestParam(defaultValue = "1") int page,
+                                             @RequestParam(defaultValue = "10") int size,
+                                             @RequestParam(required = false) String adminName,
+                                             @RequestParam(required = false) String domain,
+                                             @RequestParam(required = false) String startDate,
+                                             @RequestParam(required = false) String endDate) {
+        return Result.ok(dashboardService.getSites(page, size, adminName, domain, startDate, endDate));
+    }
+
+    /**
+     * 分页查询订单列表，支持按日期范围或管理员名称过滤。
+     *
+     * @param page      页码，默认 1
+     * @param size      每页大小，默认 10
+     * @param startDate 查询起始日期，可选
+     * @param endDate   查询结束日期，可选
+     * @param adminName 管理员名称，可选
+     * @return 分页结果，包含 total（总数）和 list（订单列表）
+     */
+    @GetMapping("/orders")
+    @PreAuthorize("hasAuthority('dashboard:order:view')")
+    public Result<Map<String, Object>> orders(@RequestParam(defaultValue = "1") int page,
+                                              @RequestParam(defaultValue = "10") int size,
+                                              @RequestParam(required = false) String orderId,
+                                              @RequestParam(required = false) String startDate,
+                                              @RequestParam(required = false) String endDate,
+                                              @RequestParam(required = false) String adminName,
+                                              @RequestParam(required = false) String domain,
+                                              @RequestParam(required = false) String payStatus,
+                                              @RequestParam(required = false) String currency,
+                                              @RequestParam(required = false) String country) {
+        return Result.ok(dashboardService.getOrders(page, size, orderId, startDate, endDate,
+                adminName, domain, payStatus, currency, country));
+    }
+
+    /**
+     * 分页查询商品列表，支持按域名过滤。
+     *
+     * @param page   页码，默认 1
+     * @param size   每页大小，默认 10
+     * @param domain 商品来源域名，可选，用于筛选指定域名的商品
+     * @return 分页结果，包含 total（总数）和 list（商品列表）
+     */
+    @GetMapping("/products")
+    @PreAuthorize("hasAuthority('dashboard:product:view')")
+    public Result<Map<String, Object>> products(@RequestParam(defaultValue = "1") int page,
+                                                @RequestParam(defaultValue = "10") int size,
+                                                @RequestParam(required = false) String domain) {
+        return Result.ok(dashboardService.getProducts(page, size, domain));
+    }
+
+    /** Export normalized products to the CSV layout required by the selected engine. */
+    @GetMapping(value = "/products/export", produces = "text/csv")
+    @PreAuthorize("hasAuthority('dashboard:product:view')")
+    public void exportProducts(@RequestParam String engine,
+                               @RequestParam(required = false) String domain,
+                               HttpServletResponse response) throws IOException {
+        String normalizedEngine = engine.toLowerCase();
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType("text/csv; charset=UTF-8");
+        response.setHeader("Content-Disposition", "attachment; filename=products-" + normalizedEngine + ".csv");
+        var writer = response.getWriter();
+        writer.write("\\uFEFF"); // Excel UTF-8 BOM
+        writeCsv(writer, productExportService.headers(normalizedEngine));
+        for (var row : productExportService.buildRows(normalizedEngine, domain)) writeCsv(writer, row);
+    }
+
+    private void writeCsv(java.io.Writer writer, java.util.List<String> row) throws IOException {
+        for (int i = 0; i < row.size(); i++) {
+            if (i > 0) writer.write(',');
+            writer.write('"');
+            writer.write(row.get(i).replace("\"", "\"\""));
+            writer.write('"');
+        }
+        writer.write("\\r\\n");
+    }
+
+    @GetMapping("/site-index-history")
+    @PreAuthorize("hasAuthority('dashboard:site:view')")
+    public Result<Object> siteIndexHistory(@RequestParam String domain) {
+        return Result.ok(dashboardService.getSiteIndexHistory(domain));
+    }
+
+    @GetMapping("/orders-by-domain")
+    @PreAuthorize("hasAuthority('dashboard:order:view')")
+    public Result<Map<String, Object>> ordersByDomain(@RequestParam(defaultValue = "1") int page,
+                                                      @RequestParam(defaultValue = "10") int size,
+                                                      @RequestParam String domain,
+                                                      @RequestParam(required = false) String startDate,
+                                                      @RequestParam(required = false) String endDate) {
+        return Result.ok(dashboardService.getOrdersByDomain(page, size, domain, startDate, endDate));
+    }
+
+    /**
+     * 获取图表统计数据。
+     * <p>
+     * 返回订单趋势、收录趋势、按管理员分布、按分类分布、按域名分布、
+     * 按币种分布及订单摘要等多项图表所需数据。
+     * </p>
+     *
+     * @return 图表数据 Map，包含 order_trend、index_trend、orders_by_admin、sites_by_admin 等字段
+     */
+    @GetMapping("/charts")
+    @PreAuthorize("hasAuthority('dashboard:overview')")
+    public Result<Map<String, Object>> charts() {
+        return Result.ok(dashboardService.getChartData());
+    }
+}

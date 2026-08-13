@@ -1,0 +1,105 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: cyberflow-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-admin123}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql:
+    image: mysql:8.0
+    container_name: cyberflow-mysql
+    restart: unless-stopped
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./script/init_all_databases.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: cyberflow-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend-admin:
+    build: ./backend-admin
+    container_name: cyberflow-admin
+    restart: unless-stopped
+    ports:
+      - "${ADMIN_PORT:-8080}:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/cyberflow?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      MYSQL_USER: ${MYSQL_USER:-root}
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin123}
+      JWT_SECRET: ${JWT_SECRET:-cyberflow-admin-jwt-secret-key-2026}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+
+  crawler-consumer:
+    build:
+      context: .
+      dockerfile: crawler-consumer/Dockerfile
+    container_name: cyberflow-consumer
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_ROOT_PASSWORD:-123456}@mysql:3306/cyberflow
+      SCRAPED_DB_URL: mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_ROOT_PASSWORD:-123456}@mysql:3306/scraped_data
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASS: ${RABBITMQ_PASS:-admin123}
+      ADMIN_API_BASE_URL: ${ADMIN_API_BASE_URL:-}
+      ADMIN_API_USERNAME: ${ADMIN_API_USERNAME:-}
+      ADMIN_API_PASSWORD: ${ADMIN_API_PASSWORD:-}
+      PAYMENT_API_BASE_URL: ${PAYMENT_API_BASE_URL:-}
+      PAYMENT_API_ACCOUNT: ${PAYMENT_API_ACCOUNT:-}
+      PAYMENT_API_PASSWORD: ${PAYMENT_API_PASSWORD:-}
+      VERIFY_SSL: ${VERIFY_SSL:-true}
+      SCRAPY_PROJECT_PATH: /app/scrapy_app
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  rabbitmq_data:
+  mysql_data:
+  redis_data:

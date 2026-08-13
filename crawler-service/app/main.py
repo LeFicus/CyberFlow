@@ -1,6 +1,12 @@
-from fastapi import FastAPI
-from app.api.crawler import router
+"""
+CyberFlow Crawler Service — 爬虫服务主入口 (v2.0)
 
-app = FastAPI(title="Crawler Platform")
+架构说明:
+    - 服务已迁移至 Spring Boot + RabbitMQ + Python asyncio consumers 架构
+    - Scrapy 商品爬虫仍在此目录下运行，由 crawler-consumer/product_consumer.py 子进程调度
+    - 原 FastAPI 端点 (POST /crawler/site/start 等) 已废弃
+    - 任务触发请通过 Spring Boot Admin :8080 操作
 
-app.include_router(router)
+本文件保留 FastAPI 入口，供将来可能的健康检查或管理端点使用。
+"""
+# FastAPI 入口保留，供将来可能的健康检查或管理端点使用

@@ -1,3 +1,23 @@
+"""
+Shopify 平台商品爬虫 — 通过 products.json API 高速采集商品数据
+
+本爬虫专为 Shopify 电商平台设计，利用 Shopify 内置的 products.json
+和 meta.json 接口获取完整的商品信息，避免了逐页解析 HTML 的低效方式。
+
+核心特性:
+    1. 高速采集   — 通过 /products.json 接口批量获取商品（每页 250 条）
+    2. 自动变体   — 解析 product options 生成 cf_opingts 属性字符串
+    3. 唯一 SKU   — 基于分类前缀 + MD5 哈希生成全局唯一 SKU
+    4. 多币种支持  — 通过 meta.json 获取店铺货币 + exchange_rates.json 汇率换算
+    5. 深度清洗   — BeautifulSoup 白名单过滤 + 表格结构保留描述内容
+    6. 合并策略   — 每个产品只产出 1 个 Item（不含变体拆分）
+
+数据流:
+    meta.json (货币) → products.json (商品列表) → 逐产品构建 Item
+        → clean_description() 清洗描述 → generate_unique_sku() 生成SKU
+        → format_shopify_options() 格式化属性 → build_item() 组装 Item
+"""
+
 import hashlib
 import json
 import os
@@ -10,12 +30,27 @@ from bs4 import BeautifulSoup
 
 class ShopifyCrawlFastSpider(scrapy.Spider):
     """
-    Shopify快速爬虫
-    特点：
-    1. 爬取products.json接口，速度快
-    2. 自动处理变体和属性
-    3. 生成唯一SKU
-    4. 支持多币种转换
+    Shopify 快速商品爬虫
+
+    通过 Shopify 标准 API 接口采集商品信息：
+        - /meta.json      — 获取店铺货币代码
+        - /products.json  — 分页获取商品列表（含变体、选项、图片等完整数据）
+
+    特点:
+        - 速度极快（绕过 HTML 解析，直接获取 JSON 结构化数据）
+        - 自动处理变体和属性，生成统一的 cf_opingts 格式
+        - 基于 MD5 哈希生成全局唯一 SKU（避免不同站点 SKU 冲突）
+        - 支持多币种汇率转换（USD 基准）
+
+    属性:
+        domain              (str) : 目标 Shopify 站点 URL
+        export_file         (str) : 导出文件路径（预留）
+        custom_category     (str) : 业务自定义分类名称
+        page                (int) : 当前分页页码（从 1 开始）
+        limit               (int) : 每页商品数（默认 250）
+        shop_currency       (str) : 店铺货币代码（如 USD、EUR）
+        exchange_rates      (dict): 汇率字典（货币代码 → 汇率倍率）
+        processed_product_ids (set): 已处理产品 ID 集合（去重）
     """
     name = "shopify_crawl_fast"
 
@@ -42,6 +77,17 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
     }
 
     def __init__(self, domain=None, category="未知分类", export_file=None, *args, **kwargs):
+        """
+        初始化 Shopify Spider
+
+        Args:
+            domain      (str): 目标 Shopify 站点 URL（必填，如 "https://example.com"）
+            category    (str): 业务自定义分类名称（默认 "未知分类"）
+            export_file (str): 导出文件路径（可选，预留扩展）
+
+        Raises:
+            ValueError: 未提供 domain 参数
+        """
         super().__init__(*args, **kwargs)
 
         # 参数验证
@@ -62,7 +108,17 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         self.processed_product_ids = set()
 
     def load_exchange_rates(self):
-        """加载汇率文件"""
+        """
+        从本地 exchange_rates.json 文件加载汇率数据
+
+        汇率文件位于与爬虫脚本同目录下，JSON 格式：
+            {"USD": 1.0, "EUR": 1.08, "GBP": 1.27, ...}
+
+        若文件不存在或加载失败，回退为 {"USD": 1.0}。
+
+        Returns:
+            dict: 货币代码 → 对美元汇率的映射字典
+        """
         try:
             base_dir = os.path.dirname(os.path.abspath(__file__))
             rate_path = os.path.join(base_dir, "exchange_rates.json")
@@ -74,18 +130,44 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         return {"USD": 1.0}
 
     def clean_text_regex(self, text):
-        """通用正则清洗"""
+        """
+        使用正则表达式清理文本中的特殊字符和空格
+
+        处理内容:
+            - 移除各类引号（单引号、双引号、中文引号）
+            - 移除控制字符（ASCII 0-31, 127-159）
+            - 合并连续空白字符为单个空格
+
+        Args:
+            text (str): 原始文本
+
+        Returns:
+            str: 清理后的干净文本，空输入返回空字符串
+        """
         if not text:
             return ""
         text = str(text)
         # 移除引号和控制字符
-        text = re.sub(r"['\"`‘’“”]", "", text)
+        text = re.sub(r"['\"`''""]", "", text)
         text = re.sub(r"[\x00-\x1F\x7F-\x9F]", "", text)
         # 合并空格
         return re.sub(r"\s+", " ", text).strip()
 
     def clean_variant_options(self, variant):
-        """清洗变体选项"""
+        """
+        清洗变体选项字符串（options1/option2/option3）
+
+        处理逻辑:
+            - 过滤掉 "Default Title" 和 "None" 等无效选项
+            - 去重并保持顺序
+            - 每个选项首字母大写
+
+        Args:
+            variant (dict): Shopify 变体数据（含 option1/option2/option3 字段）
+
+        Returns:
+            str: 清洗后的变体选项字符串（空格分隔）
+        """
         options = []
         for i in range(1, 4):
             opt = str(variant.get(f"option{i}", "")).strip()
@@ -105,10 +187,21 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
 
     def clean_description(self, html_content):
         """
-        深度清洗描述内容：
-        1. 标签白名单控制
-        2. 彻底移除 a, img, video, script 等
-        3. 特殊优化表格：移除所有宽度、高度及内联样式，仅保留纯净结构
+        深度清洗 HTML 商品描述内容
+
+        清洗策略:
+            1. 移除 HTML 注释
+            2. 标签白名单控制：仅保留 div, span, p, br, table 等结构标签
+            3. 彻底移除: a（保留文字文本）, img, video, script（完全删除）
+            4. 表格特殊优化: 移除所有宽度/高度/内联样式，仅保留纯净结构
+            5. 单元格保留 colspan/rowspan 合并属性
+            6. 移除无文本内容的空标签
+
+        Args:
+            html_content (str): 原始 HTML 内容
+
+        Returns:
+            str: 清洗后的 HTML 字符串，保留基础结构标签
         """
         if not html_content:
             return ""
@@ -161,7 +254,23 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         return cleaned_html.strip()
 
     def generate_unique_sku(self, product_id, variant_id=None):
-        """生成唯一SKU（解决原SKU重复问题）"""
+        """
+        生成全局唯一 SKU 编码
+
+        SKU 格式:
+            {分类前缀}-{产品MD5前6位}[-{变体MD5前3位}]
+
+        示例:
+            ELEC-A1B2C3       (无变体)
+            ELEC-A1B2C3-D4E   (有变体)
+
+        Args:
+            product_id  (int/str): Shopify 产品 ID
+            variant_id  (int/str): Shopify 变体 ID（可选）
+
+        Returns:
+            str: 全局唯一的 SKU 字符串
+        """
         # 基础前缀
         prefix = self.CATEGORY_SKU_MAP.get(self.custom_category, 'GEN')
 
@@ -176,7 +285,13 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
             return f"{prefix}-{product_hash}"
 
     def start_requests(self):
-        """开始请求"""
+        """
+        爬虫起始入口 — 首先请求 meta.json 获取店铺货币信息
+
+        Scrapy 会首先调用此方法获取初始请求列表。
+        优先使用高优先级 (priority=10) 请求 meta.json，
+        获取货币信息后再请求 products.json。
+        """
         self.logger.info(f"🔍 开始爬取: {self.domain}")
         self.logger.info(f"📦 自定义分类: {self.custom_category}")
 
@@ -190,7 +305,15 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         )
 
     def parse_meta(self, response):
-        """解析meta信息"""
+        """
+        解析 meta.json 响应 — 提取店铺货币代码
+
+        Shopify 的 meta.json 返回格式:
+            {"currency": "USD", ...}
+
+        Args:
+            response (scrapy.http.Response): meta.json 的 HTTP 响应
+        """
         try:
             meta_data = json.loads(response.text)
             self.shop_currency = meta_data.get("currency", "USD").upper()
@@ -202,12 +325,26 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         yield from self.request_page()
 
     def meta_failed(self, failure):
-        """meta请求失败的处理"""
+        """
+        处理 meta.json 请求失败的错误回调
+
+        如果 meta.json 请求失败，使用默认货币 USD 继续爬取。
+
+        Args:
+            failure (scrapy.http.Failure): 请求失败信息
+        """
         self.logger.warning(f"⚠️  获取meta信息失败，使用默认货币USD")
         yield from self.request_page()
 
     def request_page(self):
-        """请求指定页码的产品数据"""
+        """
+        请求指定页码的产品数据
+
+        构造 Shopify products.json API 请求 URL:
+            {domain}/products.json?limit={limit}&page={page}
+
+        使用 dont_filter=True 确保不因 URL 重复请求而被过滤。
+        """
         url = f"{self.domain}/products.json?limit={self.limit}&page={self.page}"
         self.logger.info(f"📄 请求第 {self.page} 页: {url}")
 
@@ -220,8 +357,26 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
 
     def format_shopify_options(self, options):
         """
-        将 options 列表转换为 Shopify 格式字符串
-        例如: Size^S#XS#L|||Color^Red#Blue
+        将 Shopify product options 列表转换为统一的属性格式字符串
+
+        输出格式:
+            Name1^Val1#Val2|||Name2^Val3
+
+        示例:
+            Size^S#M#L|||Color^Red#Blue
+
+        处理逻辑:
+            - 过滤掉 "Title" 和 "Default Title" 等无效选项名
+            - 每个选项的值去重并保持顺序
+            - 使用 "^" 连接选项名和值，使用 "#" 分隔多个值
+            - 使用 "|||" 连接多个选项
+
+        Args:
+            options (list[dict]): Shopify product options 列表，
+                                  每条含 name 和 values 字段
+
+        Returns:
+            str: 格式化后的属性字符串，空列表返回空字符串
         """
         if not options:
             return ""
@@ -259,8 +414,22 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
 
         # 4. 用 ||| 连接所有属性段
         return "|||".join(option_segments)
+
     def parse_products(self, response):
-        """解析产品数据 - 优化版：确保所有变体均被抓取"""
+        """
+        解析 products.json 响应 — 遍历产品列表并构建 Item
+
+        处理流程:
+            1. 解析 JSON 获取 products 列表
+            2. 遍历每个产品，使用 processed_product_ids 去重
+            3. 提取标题、描述、分类、首图、价格（含汇率换算）
+            4. 使用 format_shopify_options() 格式化产品属性
+            5. 调用 build_item() 组装 Scrapy Item
+            6. 若当前页满（== limit），继续请求下一页
+
+        Args:
+            response (scrapy.http.Response): products.json 的 HTTP 响应
+        """
         try:
             data = json.loads(response.text)
         except json.JSONDecodeError as e:
@@ -326,7 +495,34 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
             yield from self.request_page()
 
     def build_item(self, sku, name, desc, price, category, image, attr_str):
-        """构建Item"""
+        """
+        构建标准格式的商品 Item 字典
+
+        Item 字段说明:
+            SKU          : 全局唯一库存编码（由 generate_unique_sku 生成）
+            Name         : 商品名称
+            Description  : 清洗后的 HTML 描述
+            Regular price: 汇率换算后的价格（保留 2 位小数）
+            Categories   : 商品分类（来自 Shopify product_type）
+            Images       : 首图 URL
+            cf_opingts   : 商品属性选项（格式: Name^Val1#Val2|||...）
+            自定义分类    : 业务自定义分类
+            原站域名      : 原始站点域名（使用 urlparse 提取）
+            分布网站识别  : 固定值 0（预留字段）
+            语言          : 默认 "en"
+
+        Args:
+            sku      (str) : 商品 SKU 编码
+            name     (str) : 商品名称
+            desc     (str) : 商品描述 HTML
+            price    (float): 商品价格
+            category (str) : 商品分类
+            image    (str) : 首图 URL
+            attr_str (str) : 商品属性字符串
+
+        Returns:
+            dict: 标准 Item 字典
+        """
         item = {
             "SKU": sku,
             "Name": name,

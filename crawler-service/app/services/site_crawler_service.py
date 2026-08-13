@@ -1,3 +1,17 @@
+"""
+站点爬虫服务模块 — 从远程管理系统抓取并同步站点信息
+
+本模块实现站点信息的数据采集全流程：
+    1. 登录远程管理系统，获取 Bearer Token 认证
+    2. 构建站点映射表（Site Map），缓存站点维度的详细数据
+    3. 分页遍历域名列表，关联站点映射表中的维度信息
+    4. 过滤掉排除账号、非激活状态的域名
+    5. 将有效站点数据去重后写入 MySQL site_info 表
+
+数据流:
+    远程 API → 站点映射表 (内存) → 域名列表分页遍历 → 关联合并 → site_info 表
+"""
+
 import time
 
 import httpx
@@ -6,13 +20,39 @@ from loguru import logger
 from app.core.database import SessionLocal
 from app.model.site_info import SiteInfo
 
+# ========== 常量配置 ==========
+# 远程管理系统基础地址
 BASE_URL = "http://104.233.194.18"
+# 需要排除的管理员账号名称列表（这些账号的站点不采集）
 EXCLUDE_NAMES = ["super"]
 
 
 class SiteCrawler:
+    """
+    站点爬虫 — 登录远程管理系统并同步站点信息到本地数据库
+
+    工作流程:
+        1. login()          — 调用 /adminapi/login 获取 Token
+        2. fetch_site_map() — 遍历 /adminapi/site/site/list 构建站点维度映射
+        3. run()            — 遍历 /adminapi/domain/domain/list 获取域名列表，
+                             与站点映射关联后保存到 MySQL
+        4. save_to_mysql()  — 去重入库（新增或更新）
+
+    属性:
+        username (str): 远程管理系统登录用户名
+        password (str): 远程管理系统登录密码
+        log (Logger)  : 绑定了用户名的 loguru Logger 实例
+        client (httpx.Client): HTTP 客户端（复用连接，支持 HTTPS 证书跳过）
+    """
 
     def __init__(self, username, password):
+        """
+        初始化站点爬虫
+
+        Args:
+            username (str): 远程管理系统登录用户名
+            password (str): 远程管理系统登录密码
+        """
         self.username = username
         self.password = password
         # bind 会在后续所有 self.log 的输出中自动附带 [user: username]
@@ -20,6 +60,22 @@ class SiteCrawler:
         self.client = httpx.Client(verify=False, timeout=30)
 
     def save_to_mysql(self, data_list):
+        """
+        将站点数据批量写入 MySQL 数据库
+
+        入库逻辑:
+            - 遍历数据列表，按域名查询 site_info 表
+            - 已有域名：更新 theme_name、product_category、admin_name 维度字段
+            - 新域名：创建新的 SiteInfo 记录
+            - 异常时回滚事务，确保数据一致性
+
+        Args:
+            data_list (list[dict]): 站点数据列表，每条记录包含:
+                site_domain, admin_name, theme_name, product_category, created_at
+
+        Raises:
+            Exception: 数据库操作异常，事务回滚后向上抛出
+        """
         db = SessionLocal()
         try:
             self.log.info(f"💾 准备处理 {len(data_list)} 条记录")
@@ -58,6 +114,16 @@ class SiteCrawler:
             db.close()
 
     def login(self):
+        """
+        登录远程管理系统并获取认证 Token
+
+        调用 /adminapi/login 接口进行身份验证，
+        成功后将 Bearer Token 注入 HTTP 客户端请求头中。
+
+        Raises:
+            ValueError: 响应中未包含 access_token
+            httpx.HTTPError: HTTP 请求失败
+        """
         try:
             self.log.info(f"🔑 正在尝试登录管理系统...")
             resp = self.client.post(
@@ -76,10 +142,16 @@ class SiteCrawler:
             self.log.error(f"🚫 登录认证失败: {str(e)}")
             raise e
 
-
-
-
     def fetch_site_map(self):
+        """
+        从远程接口分页获取所有站点信息，构建域名 → 维度数据的映射表
+
+        访问 /adminapi/site/site/list 接口，分页获取所有站点数据，
+        过滤掉 EXCLUDE_NAMES 中的管理员站点，以域名为键构建字典。
+
+        Returns:
+            dict: 站点映射表，格式为 {域名: {site_domain, admin_name, theme_name, ...}}
+        """
         self.log.info("🗺️ 开始构建站点映射表 (Site Map)...")
         site_map = {}
         page = 1
@@ -115,6 +187,20 @@ class SiteCrawler:
         return site_map
 
     def run(self):
+        """
+        执行完整的站点爬虫任务（主入口方法）
+
+        执行步骤:
+            1. 登录远程管理系统获取认证 Token
+            2. 构建站点映射表（含站点详细维度信息）
+            3. 分页遍历域名列表，与站点映射关联
+            4. 过滤条件: 排除 EXCLUDE_NAMES 中的管理员、排除非 status=2 的域名
+            5. 最终将数据批量写入 MySQL
+
+        异常处理和资源清理:
+            - 捕获所有异常记录日志
+            - finally 块确保 HTTP 客户端被关闭，释放网络资源
+        """
         self.log.info("🚀 爬虫任务正式启动")
         try:
             self.login()
