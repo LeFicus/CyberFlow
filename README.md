@@ -13,7 +13,7 @@ CyberFlow/
 ├── crawler-consumer/       # Python 爬虫消费者 (RabbitMQ 消费端)
 ├── crawler-service/        # Scrapy 爬虫项目 (由消费者调度)
 ├── docker-compose.yml      # 一键部署编排
-├── .env.docker             # Docker 环境变量模板
+├── .env.docker.example     # Docker 环境变量模板（不含真实凭据）
 ├── script/                 # SQL 初始化脚本
 └── docs/                   # 项目文档
 ```
@@ -257,7 +257,7 @@ crawler-service/
 
 ```bash
 # 1. 配置环境变量
-cp .env.docker .env
+cp .env.docker.example .env
 # 按需编辑 .env 中的密码和端口
 
 # 2. 启动基础设施服务
