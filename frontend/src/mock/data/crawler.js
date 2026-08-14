@@ -28,7 +28,8 @@ let configNextId = 2
 
 const crawlerConfig = {
   adminApi: { baseUrl: 'http://216.152.147.6', username: 'yg001', password: '******', verifySsl: true },
-  paymentApi: { baseUrl: 'https://c4partypay.com', account: 'lingui', password: '******', verifySsl: true },
+  paymentApiA: { baseUrl: '', account: '', password: '', verifySsl: true },
+  paymentApiB: { baseUrl: 'https://payment-b.example.com', account: 'group-b', password: '******', verifySsl: true },
   siteStrategy: { skipSiteCheck: true, fetchAdminLoginUrl: false, filterBuiltOnly: false, pageSize: 100 },
   orderStrategy: { filterCardNumberExclude: ['400000******0000', '411111******1111', '411111111111'], pageSize: 100, initialOrderId: '0' },
   revenue: {

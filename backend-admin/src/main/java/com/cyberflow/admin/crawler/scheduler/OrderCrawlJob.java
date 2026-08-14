@@ -57,29 +57,32 @@ public class OrderCrawlJob implements Job {
             return;
         }
 
-        CrawlCursor cursor = cursorMapper.selectOne(
-            new LambdaQueryWrapper<CrawlCursor>().eq(CrawlCursor::getCursorKey, "order_crawler")
-        );
-        String maxOrderId = cursor != null
-            ? cursor.getCursorValue()
-            : String.valueOf(crawlerConfigService.getOrderStrategy().getOrDefault("initialOrderId", "0"));
+        for (String userGroup : java.util.List.of("A", "B")) {
+            CrawlCursor cursor = cursorMapper.selectOne(
+                new LambdaQueryWrapper<CrawlCursor>().eq(CrawlCursor::getCursorKey, "order_crawler_" + userGroup)
+            );
+            String maxOrderId = cursor != null
+                ? cursor.getCursorValue()
+                : String.valueOf(crawlerConfigService.getOrderStrategy().getOrDefault("initialOrderId", "0"));
 
-        String taskId = publisher.publishOrderCrawl(
-            crawlerConfigService.getPaymentPlatform(),
-            crawlerConfigService.getOrderStrategy(),
-            maxOrderId,
-            "cron"
-        );
+            String taskId = publisher.publishOrderCrawl(
+                crawlerConfigService.getPaymentPlatform(userGroup),
+                crawlerConfigService.getOrderStrategy(),
+                maxOrderId,
+                "cron",
+                userGroup
+            );
 
-        TaskHistory history = new TaskHistory();
-        history.setTaskId(taskId);
-        history.setType("order_crawl");
-        history.setTriggerType("cron");
-        history.setStatus("PENDING");
-        history.setCursorBefore(maxOrderId);
-        taskHistoryService.save(history);
+            TaskHistory history = new TaskHistory();
+            history.setTaskId(taskId);
+            history.setType("order_crawl");
+            history.setTriggerType("cron");
+            history.setTriggeredBy("group-" + userGroup);
+            history.setStatus("PENDING");
+            history.setCursorBefore(maxOrderId);
+            taskHistoryService.save(history);
+            log.info("Order crawl task dispatched: {} group={}", taskId, userGroup);
+        }
         crawlerConfigService.markTriggered("order_crawl");
-
-        log.info("Order crawl task dispatched: {}", taskId);
     }
 }

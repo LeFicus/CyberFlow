@@ -185,6 +185,7 @@ CREATE TABLE IF NOT EXISTS task_history (
     cursor_after    VARCHAR(255),
     rows_affected   INT DEFAULT 0,
     error_msg       TEXT,
+    crawl_log       LONGTEXT COMMENT '完整爬虫 stdout/stderr 日志',
     duration_ms     BIGINT,
     started_at      DATETIME,
     finished_at     DATETIME,
@@ -325,10 +326,12 @@ CREATE TABLE IF NOT EXISTS site_info (
     username         VARCHAR(100) COMMENT '电商平台用户名',
     site_domain      VARCHAR(255) NOT NULL UNIQUE COMMENT '站点域名',
     admin_name       VARCHAR(100) COMMENT '管理员名称',
+    user_group       VARCHAR(1) COMMENT '负责人用户组: A/B',
     theme_name       VARCHAR(100) COMMENT '主题名称',
     product_category VARCHAR(100) COMMENT '商品分类',
     created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_site_domain (site_domain)
+    UNIQUE KEY uk_site_domain (site_domain),
+    INDEX idx_site_user_group (user_group)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='站点信息';
 
 -- ------------------------------------------------------------
@@ -348,11 +351,13 @@ CREATE TABLE IF NOT EXISTS orders (
     customer_ip_country   VARCHAR(100) COMMENT '客户IP国家',
     shipping_email        VARCHAR(255) COMMENT '收货邮箱',
     admin_name            VARCHAR(100) COMMENT '店铺管理员',
+    user_group            VARCHAR(1) NOT NULL COMMENT '订单所属负责人用户组/来源平台: A/B',
     theme_name            VARCHAR(100) COMMENT '主题',
     product_category      VARCHAR(100) COMMENT '商品分类',
-    PRIMARY KEY (id),
+    PRIMARY KEY (user_group, id),
     INDEX idx_create_time (create_time),
-    INDEX idx_product_host (product_host)
+    INDEX idx_product_host (product_host),
+    INDEX idx_order_user_group (user_group)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单信息';
 
 -- ------------------------------------------------------------
@@ -382,7 +387,8 @@ CREATE TABLE IF NOT EXISTS site_indexing_history (
 -- ------------------------------------------------------------
 INSERT INTO sys_role (id, role_name, role_code, description) VALUES
 (1, '超级管理员', 'ROLE_ADMIN', '拥有所有权限'),
-(2, '运营人员', 'ROLE_OPERATOR', '可查看数据看板、触发爬虫')
+(2, '运营人员', 'ROLE_OPERATOR', '可查看数据看板、触发爬虫'),
+(3, '普通用户', 'ROLE_USER', '仅可查看经营数据和执行 A/B 订单爬取')
 ON DUPLICATE KEY UPDATE
     role_name=VALUES(role_name),
     role_code=VALUES(role_code),
@@ -437,6 +443,7 @@ INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, path, component, icon
 (12, 1, '站点列表', 1, '/dashboard/sites', 'dashboard/SiteList', NULL, 2),
 (13, 1, '订单列表', 1, '/dashboard/orders', 'dashboard/OrderList', NULL, 3),
 (14, 1, '商品列表', 1, '/dashboard/products', 'dashboard/ProductList', NULL, 4),
+(15, 14, '删除商品', 2, NULL, NULL, NULL, 1),
 -- 爬虫子菜单
 (21, 2, '站点爬虫', 1, '/crawler/site', 'crawler/SiteCrawler', NULL, 1),
 (22, 2, '收录统计', 1, '/crawler/collect', 'crawler/CollectCrawler', NULL, 2),
@@ -467,9 +474,17 @@ UPDATE sys_menu SET perms = 'dashboard:overview'      WHERE id = 11;
 UPDATE sys_menu SET perms = 'dashboard:site:view'     WHERE id = 12;
 UPDATE sys_menu SET perms = 'dashboard:order:view'    WHERE id = 13;
 UPDATE sys_menu SET perms = 'dashboard:product:view'  WHERE id = 14;
+UPDATE sys_menu SET perms = 'dashboard:product:delete' WHERE id = 15;
 UPDATE sys_menu SET perms = 'crawler:site:start'      WHERE id = 25;
 UPDATE sys_menu SET perms = 'crawler:collect:start'   WHERE id = 26;
 UPDATE sys_menu SET perms = 'crawler:order:start'     WHERE id = 27;
+UPDATE sys_menu SET perms = 'crawler:order:view'      WHERE id = 23;
+UPDATE sys_menu SET perms = 'crawler:history:view'    WHERE id = 24;
+INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, perms, status, sort_order) VALUES
+(49, 24, '任务控制', 2, 'crawler:task:control', 1, 1),
+(50, 24, '删除任务', 2, 'crawler:task:delete', 1, 2),
+(51, 23, '修改订单配置', 2, 'crawler:order:config', 1, 2)
+ON DUPLICATE KEY UPDATE perms=VALUES(perms), status=1;
 UPDATE sys_menu SET perms = 'system:user:list'        WHERE id = 31;
 UPDATE sys_menu SET perms = 'system:role:list'        WHERE id = 32;
 UPDATE sys_menu SET perms = 'system:menu:list'        WHERE id = 33;
@@ -485,6 +500,19 @@ DELETE FROM sys_role_menu WHERE role_id = 2 AND menu_id IN (3, 31, 32, 33, 34);
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES (2, 1), (2, 2);
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) SELECT 2, id FROM sys_menu WHERE menu_type = 1 AND parent_id IN (1, 2);
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) SELECT 2, id FROM sys_menu WHERE id IN (25, 26, 27);
+INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES (2, 15);
+INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES
+(1, 49), (1, 50), (1, 51), (2, 49), (2, 50), (2, 51);
+
+DELETE FROM sys_role_menu WHERE role_id = 3;
+INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES
+(3, 1), (3, 11), (3, 12), (3, 13), (3, 2), (3, 23), (3, 24), (3, 27);
+
+INSERT INTO sys_user (id, username, password, nickname, status) VALUES
+(2, 'normal_user', '$2b$12$VA8lCR9fDcXkscYPUls7.O6dGD67C1FKpx9HtTIwuX3nzq5fVJ7KC', '普通用户', 1)
+ON DUPLICATE KEY UPDATE nickname=VALUES(nickname), status=1;
+DELETE FROM sys_user_role WHERE user_id = 2;
+INSERT INTO sys_user_role (user_id, role_id) VALUES (2, 3);
 
 -- ------------------------------------------------------------
 -- 预置选择器模板: Shopify 平台（标记为系统模板，无需配置选择器）
@@ -507,13 +535,13 @@ INSERT IGNORE INTO crawl_cursor (cursor_key, cursor_value, last_sync_at) VALUES
 -- 初始化平台、策略和收入配置
 -- ------------------------------------------------------------
 INSERT INTO crawler_runtime_config (config_group, config_key, config_value, is_sensitive, remark) VALUES
-('adminApi', 'baseUrl', 'http://216.152.147.6', 0, 'Admin API Base URL'),
-('adminApi', 'username', 'yg001', 0, 'Admin API username'),
-('adminApi', 'password', '123456', 1, 'Admin API password'),
+('adminApi', 'baseUrl', '', 0, 'Admin API Base URL (configure in the admin UI or environment)'),
+('adminApi', 'username', '', 0, 'Admin API username (configure in the admin UI or environment)'),
+('adminApi', 'password', '', 1, 'Admin API password (configure in the admin UI or environment)'),
 ('adminApi', 'verifySsl', 'true', 0, 'Verify SSL certificates'),
-('paymentApi', 'baseUrl', 'https://c4partypay.com', 0, 'Payment API Base URL'),
-('paymentApi', 'account', 'lingui', 0, 'Payment API account'),
-('paymentApi', 'password', 'lingui123', 1, 'Payment API password'),
+('paymentApi', 'baseUrl', '', 0, 'Payment API Base URL (configure in the admin UI or environment)'),
+('paymentApi', 'account', '', 0, 'Payment API account (configure in the admin UI or environment)'),
+('paymentApi', 'password', '', 1, 'Payment API password (configure in the admin UI or environment)'),
 ('paymentApi', 'verifySsl', 'true', 0, 'Verify SSL certificates'),
 ('siteStrategy', 'skipSiteCheck', 'true', 0, 'Skip site availability check'),
 ('siteStrategy', 'fetchAdminLoginUrl', 'false', 0, 'Fetch admin login URL'),
@@ -529,8 +557,9 @@ INSERT INTO crawler_runtime_config (config_group, config_key, config_value, is_s
 ON DUPLICATE KEY UPDATE config_value=VALUES(config_value);
 
 INSERT INTO crawler_schedule_config (task_type, cron_expression, enabled) VALUES
-('site_crawl', '0 0 2 * * ?', 1),
-('order_crawl', '0 0 3 * * ?', 1)
+    ('site_crawl', '0 0 2 * * ?', 1),
+    ('site_index', '0 30 2 * * ?', 1),
+    ('order_crawl', '0 0 3 * * ?', 1)
 ON DUPLICATE KEY UPDATE task_type=task_type;
 
 -- ============================================================
@@ -569,10 +598,14 @@ CREATE TABLE IF NOT EXISTS ecommerce_products (
     regular_price   DECIMAL(10, 2),
     categories      VARCHAR(500),
     images          TEXT,
-    cf_opingts      VARCHAR(500),
+    cf_opingts      TEXT,
     custom_category VARCHAR(100),
     source_domain   VARCHAR(255),
     language        VARCHAR(10) DEFAULT 'en',
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_product_created_id (created_at, id),
+    INDEX idx_product_domain_created (source_domain, created_at, id),
+    INDEX idx_product_category_created (custom_category, created_at, id),
+    INDEX idx_product_name_prefix (name(100))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

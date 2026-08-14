@@ -32,8 +32,8 @@ export function triggerCollectCrawler() {
  * @param {string} endTime - 查询结束时间（格式: YYYY-MM-DD HH:mm:ss）
  * @returns {Promise<Object>} 返回任务 ID 及下发状态
  */
-export function triggerOrderCrawler() {
-  return request.post('/admin/crawler/order/start')
+export function triggerOrderCrawler(userGroup) {
+  return request.post('/admin/crawler/order/start', null, { params: { userGroup } })
 }
 
 export function getCrawlerConfig() {
@@ -69,6 +69,32 @@ export function getTaskStatus(taskId) {
  * 获取最近的爬虫任务列表
  * @returns {Promise<Object>} 返回最近 20 条任务记录
  */
-export function getRecentTasks() {
-  return request.get('/admin/crawler/task-history/tasks')
+export function getRecentTasks(params) {
+  return request.get('/admin/crawler/task-history/tasks', { params })
+}
+
+export function getTaskSummary() {
+  return request.get('/admin/crawler/task-history/summary')
+}
+
+export function pauseTask(taskId) {
+  return request.post(`/admin/crawler/task-history/tasks/${taskId}/pause`)
+}
+
+export function resumeTask(taskId) {
+  return request.post(`/admin/crawler/task-history/tasks/${taskId}/resume`)
+}
+
+export function deleteTask(taskId) {
+  return request.delete(`/admin/crawler/task-history/tasks/${taskId}`)
+}
+
+/** 增量获取指定任务的爬虫日志。 */
+export function getTaskCrawlLog(taskId, params) {
+  return request.get(`/admin/crawler/task-history/tasks/${taskId}/log`, { params })
+}
+
+/** 下载指定任务的完整日志。 */
+export function downloadTaskCrawlLog(taskId) {
+  return request.get(`/admin/crawler/task-history/tasks/${taskId}/log/download`, { responseType: 'blob' })
 }

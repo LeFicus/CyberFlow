@@ -8,6 +8,9 @@
   <el-card>
     <!-- 筛选栏 -->
     <el-form :inline="true" :model="filters" class="site-filter" @submit.prevent="handleSearch">
+      <el-form-item label="用户组">
+        <el-segmented v-model="filters.userGroup" :options="groupOptions" @change="handleSearch" />
+      </el-form-item>
       <el-form-item label="管理员">
         <el-input v-model="filters.adminName" placeholder="输入管理员名称" clearable @keyup.enter="handleSearch" />
       </el-form-item>
@@ -84,6 +87,9 @@
       <el-table-column prop="id" label="ID" width="84" />
       <el-table-column prop="site_domain" label="域名" min-width="200" />
       <el-table-column prop="admin_name" label="管理员" width="100" />
+      <el-table-column label="用户组" width="86" align="center">
+        <template #default="{ row }"><el-tag v-if="row.user_group" :type="row.user_group === 'A' ? 'primary' : 'success'">{{ row.user_group }}组</el-tag><span v-else>—</span></template>
+      </el-table-column>
       <el-table-column prop="theme_name" label="主题" width="100" />
       <el-table-column prop="product_category" label="产品分类" width="100" />
       <el-table-column prop="created_at" label="创建时间" width="180" />
@@ -97,8 +103,10 @@
     <el-pagination
       style="margin-top: 16px; justify-content: flex-end;"
       v-model:current-page="page" :page-size="size"
-      :total="total" layout="total, prev, pager, next"
+      :page-sizes="[10, 20, 50, 100]"
+      :total="total" layout="total, sizes, prev, pager, next"
       @current-change="fetchData"
+      @size-change="handleSizeChange"
     />
 
     <!-- 收录详情抽屉 — ECharts 趋势图 -->
@@ -158,8 +166,9 @@ const size = ref(10)
 /** 总条数 */
 const total = ref(0)
 /** 筛选条件 */
-const filters = reactive({ adminName: '', domain: '', dateRange: [] })
-const activeFilterCount = computed(() => [filters.adminName, filters.domain, filters.dateRange?.length].filter(Boolean).length)
+const groupOptions = [{ label: '全部', value: '' }, { label: 'A组', value: 'A' }, { label: 'B组', value: 'B' }]
+const filters = reactive({ userGroup: '', adminName: '', domain: '', dateRange: [] })
+const activeFilterCount = computed(() => [filters.userGroup, filters.adminName, filters.domain, filters.dateRange?.length].filter(Boolean).length)
 
 // 展开行的订单数据缓存 (key: row.id)
 /** @type {import('vue').Ref<Object>} 订单数据缓存 { [rowId]: { list, total } } */
@@ -328,6 +337,7 @@ async function fetchData() {
       page: page.value,
       size: size.value,
       adminName: filters.adminName.trim() || undefined,
+      userGroup: filters.userGroup || undefined,
       domain: filters.domain.trim() || undefined,
       startDate: filters.dateRange?.[0] || undefined,
       endDate: filters.dateRange?.[1] || undefined,
@@ -348,10 +358,17 @@ function handleSearch() {
   fetchData()
 }
 
+function handleSizeChange(value) {
+  size.value = value
+  page.value = 1
+  fetchData()
+}
+
 /**
  * 重置筛选条件并重新加载
  */
 function resetFilters() {
+  filters.userGroup = ''
   filters.adminName = ''
   filters.domain = ''
   filters.dateRange = []

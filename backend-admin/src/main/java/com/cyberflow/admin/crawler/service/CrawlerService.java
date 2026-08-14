@@ -97,19 +97,27 @@ public class CrawlerService {
      * @param endTime   订单查询结束时间（当前未在消息中使用）
      * @return 包含 task_id 和状态信息的 Map
      */
-    public Map<String, Object> triggerOrderCrawler() {
+    public Map<String, Object> triggerOrderCrawler(String rawUserGroup) {
+        String userGroup = normalizeUserGroup(rawUserGroup);
         String maxOrderId = cursorValue(
-            "order_crawler",
+            "order_crawler_" + userGroup,
             String.valueOf(crawlerConfigService.getOrderStrategy().getOrDefault("initialOrderId", "0"))
         );
         String taskId = publisher.publishOrderCrawl(
-            crawlerConfigService.getPaymentPlatform(),
+            crawlerConfigService.getPaymentPlatform(userGroup),
             crawlerConfigService.getOrderStrategy(),
             maxOrderId,
-            "manual"
+            "manual",
+            userGroup
         );
-        saveTaskHistory(taskId, "order_crawl", "manual", null);
-        return Map.of("task_id", taskId, "status", "Task dispatched");
+        saveTaskHistory(taskId, "order_crawl", "manual", "group-" + userGroup);
+        return Map.of("task_id", taskId, "user_group", userGroup, "status", "Task dispatched");
+    }
+
+    public Map<String, Object> triggerAllOrderCrawlers() {
+        Map<String, Object> groupA = triggerOrderCrawler("A");
+        Map<String, Object> groupB = triggerOrderCrawler("B");
+        return Map.of("A", groupA, "B", groupB, "status", "Both group tasks dispatched");
     }
 
     /**
@@ -146,7 +154,8 @@ public class CrawlerService {
      * @param triggeredBy  触发者用户 ID
      * @return 包含 task_id 和状态信息的 Map
      */
-    public Map<String, Object> triggerProductCrawl(Long siteConfigId, String domain, String type, String category, Long triggeredBy) {
+    public Map<String, Object> triggerProductCrawl(Long siteConfigId, String domain, String type,
+                                                   String category, Long triggeredBy) {
         if (!java.util.Set.of("shopify", "woocommerce", "bigcommerce").contains(type.toLowerCase())) {
             return Map.of("status", "Rejected", "message", "Unsupported product crawl engine");
         }
@@ -178,5 +187,13 @@ public class CrawlerService {
             new LambdaQueryWrapper<CrawlCursor>().eq(CrawlCursor::getCursorKey, cursorKey)
         );
         return cursor != null ? cursor.getCursorValue() : defaultValue;
+    }
+
+    private static String normalizeUserGroup(String value) {
+        String normalized = value == null ? "" : value.trim().toUpperCase();
+        if (!java.util.Set.of("A", "B").contains(normalized)) {
+            throw new IllegalArgumentException("userGroup must be A or B");
+        }
+        return normalized;
     }
 }

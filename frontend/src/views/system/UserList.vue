@@ -30,6 +30,15 @@
       </el-table-column>
     </el-table>
 
+    <el-pagination
+      style="margin-top: 16px; justify-content: flex-end;"
+      v-model:current-page="page" :page-size="size"
+      :page-sizes="[10, 20, 50, 100]"
+      :total="total" layout="total, sizes, prev, pager, next"
+      @current-change="fetchData"
+      @size-change="handleSizeChange"
+    />
+
     <!-- 新增/编辑弹窗 -->
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新增用户'" width="500px">
       <el-form :model="form" label-width="80px">
@@ -86,6 +95,9 @@ const loading = ref(false)
 const saving = ref(false)
 /** @type {import('vue').Ref<Array>} 用户列表数据 */
 const tableData = ref([])
+const page = ref(1)
+const size = ref(10)
+const total = ref(0)
 /** @type {import('vue').Ref<boolean>} 用户编辑弹窗是否可见 */
 const dialogVisible = ref(false)
 /** @type {import('vue').Ref<boolean>} 角色分配弹窗是否可见 */
@@ -103,14 +115,21 @@ const selectedRoles = ref([])
 const form = reactive({ username: '', nickname: '', email: '', password: '', status: 1 })
 
 /**
- * 获取用户列表（不分页，取前 100 条）
+ * 获取用户列表
  */
 async function fetchData() {
   loading.value = true
   try {
-    const res = await getUsers({ page: 1, size: 100 })
+    const res = await getUsers({ page: page.value, size: size.value })
     tableData.value = res.data.records || []
+    total.value = Number(res.data.total || 0)
   } finally { loading.value = false }
+}
+
+function handleSizeChange(value) {
+  size.value = value
+  page.value = 1
+  fetchData()
 }
 
 /**

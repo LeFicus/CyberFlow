@@ -8,6 +8,9 @@ Scrapy 配置文件 — ecommerce_spider 项目的全局默认设置
 详细配置参考: https://docs.scrapy.org/en/latest/topics/settings.html
 """
 
+import os
+from urllib.parse import unquote, urlparse
+
 # ========== 项目基本配置 ==========
 # 爬虫机器人名称，用于标识该项目
 BOT_NAME = "ecommerce_spider"
@@ -74,9 +77,48 @@ DOWNLOAD_DELAY = 1
 # ========== Item Pipelines 配置 ==========
 # 数据管道的处理链，数值越小优先级越高（范围 0-1000）
 # 实际运行中由启动脚本动态设置 MySQLRedisPipeline
-# ITEM_PIPELINES = {
-#     "ecommerce_spider.pipelines.EcommerceSpiderPipeline": 300,
-# }
+ITEM_PIPELINES = {
+    "ecommerce_spider.pipelines.MySQLRedisPipeline": 300,
+}
+
+
+def _mysql_config():
+    parsed = urlparse(
+        os.getenv(
+            "SCRAPED_DB_URL",
+            "mysql+pymysql://root:123456@localhost:3306/scraped_data",
+        )
+    )
+    return {
+        "host": parsed.hostname or "localhost",
+        "port": parsed.port or 3306,
+        "user": unquote(parsed.username or "root"),
+        "password": unquote(parsed.password or ""),
+        "database": parsed.path.lstrip("/") or "scraped_data",
+        "charset": "utf8mb4",
+        "autocommit": False,
+    }
+
+
+def _redis_config():
+    parsed = urlparse(os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"))
+    config = {
+        "host": parsed.hostname or "127.0.0.1",
+        "port": parsed.port or 6379,
+        "db": int(parsed.path.lstrip("/") or 0),
+        "decode_responses": True,
+    }
+    if parsed.password:
+        config["password"] = unquote(parsed.password)
+    if parsed.scheme == "rediss":
+        config["ssl"] = True
+    return config
+
+
+MYSQL_CONFIG = _mysql_config()
+REDIS_CONFIG = _redis_config()
+DB_BATCH_SIZE = int(os.getenv("DB_BATCH_SIZE", "250"))
+TELNETCONSOLE_ENABLED = False
 
 # ========== AutoThrottle 自动限速 ==========
 # AutoThrottle 根据服务器负载动态调整下载延迟，是友好的爬取策略

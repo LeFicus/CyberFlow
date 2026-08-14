@@ -2,12 +2,17 @@ server:
   port: 8080
 
 spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
   sql:
     init:
       mode: always
 
   datasource:
-    url: jdbc:mysql://localhost:3306/cyberflow?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://localhost:3306/cyberflow?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useCursorFetch=true&defaultFetchSize=500
     username: ${MYSQL_USER:root}
     password: ${MYSQL_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -52,6 +57,7 @@ springdoc:
 cyberflow:
   crawler:
     site-cron: "0 0 2 * * ?"       # 每天凌晨2点
+    index-cron: "0 30 2 * * ?"     # 每天凌晨2:30采集站点收录快照
     order-cron: "0 0 */6 * * ?"    # 每6小时整点
   jwt:
     secret: ${JWT_SECRET:cyberflow-admin-jwt-secret-key-2026}

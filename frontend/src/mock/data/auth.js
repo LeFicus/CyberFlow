@@ -52,7 +52,7 @@ export default {
           {
             id: 4, parentId: 0, menuName: '商品采集', menuType: 0, icon: 'Goods',
             children: [
-              { id: 41, parentId: 4, menuName: '采集站点', menuType: 1, path: '/crawler/site-config', component: 'crawler/SiteConfig' },
+              { id: 41, parentId: 4, menuName: '数据源站点', menuType: 1, path: '/crawler/site-config', component: 'crawler/SiteConfig' },
               { id: 42, parentId: 4, menuName: '选择器模板', menuType: 1, path: '/crawler/selector-template', component: 'crawler/SelectorTemplate' },
             ],
           },

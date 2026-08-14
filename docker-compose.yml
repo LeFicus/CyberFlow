@@ -55,18 +55,22 @@ services:
     ports:
       - "${ADMIN_PORT:-8080}:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/cyberflow?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/cyberflow?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useCursorFetch=true&defaultFetchSize=500
       MYSQL_USER: ${MYSQL_USER:-root}
       MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_USER:-admin}
       RABBITMQ_PASS: ${RABBITMQ_PASS:-admin123}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       JWT_SECRET: ${JWT_SECRET:-cyberflow-admin-jwt-secret-key-2026}
     depends_on:
       rabbitmq:
         condition: service_healthy
       mysql:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   crawler-consumer:
@@ -91,6 +95,7 @@ services:
       PAYMENT_API_PASSWORD: ${PAYMENT_API_PASSWORD:-}
       VERIFY_SSL: ${VERIFY_SSL:-true}
       SCRAPY_PROJECT_PATH: /app/scrapy_app
+      PRODUCT_CRAWL_TIMEOUT_SECONDS: ${PRODUCT_CRAWL_TIMEOUT_SECONDS:-1800}
     depends_on:
       rabbitmq:
         condition: service_healthy

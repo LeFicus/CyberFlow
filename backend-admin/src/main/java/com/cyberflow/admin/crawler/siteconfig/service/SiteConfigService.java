@@ -1,6 +1,7 @@
 package com.cyberflow.admin.crawler.siteconfig.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cyberflow.admin.crawler.siteconfig.entity.CrawlSiteConfig;
 import com.cyberflow.admin.crawler.siteconfig.entity.SiteTemplateMapping;
 import com.cyberflow.admin.crawler.siteconfig.mapper.CrawlSiteConfigMapper;
@@ -38,6 +39,13 @@ public class SiteConfigService {
      */
     public List<CrawlSiteConfig> list() {
         return configMapper.selectList(
+            new LambdaQueryWrapper<CrawlSiteConfig>().orderByDesc(CrawlSiteConfig::getCreatedAt)
+        );
+    }
+
+    public Page<CrawlSiteConfig> page(int pageNum, int pageSize) {
+        return configMapper.selectPage(
+            new Page<>(pageNum, pageSize),
             new LambdaQueryWrapper<CrawlSiteConfig>().orderByDesc(CrawlSiteConfig::getCreatedAt)
         );
     }

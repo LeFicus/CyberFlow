@@ -97,12 +97,14 @@ public class TaskMessagePublisher {
      * @param maxOrderId 增量爬取的起始订单 ID（作为光标使用）
      * @return 生成的任务唯一标识（UUID）
      */
-    public String publishOrderCrawl(Map<String, Object> platform, Map<String, Object> strategy, String maxOrderId, String trigger) {
+    public String publishOrderCrawl(Map<String, Object> platform, Map<String, Object> strategy,
+                                    String maxOrderId, String trigger, String userGroup) {
         String taskId = UUID.randomUUID().toString();
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("platform", platform);
         payload.put("strategy", strategy);
         payload.put("cursor", Map.of("max_order_id", maxOrderId));
+        payload.put("user_group", userGroup);
         Map<String, Object> message = Map.of(
             "task_id", taskId,
             "type", "order_crawl",
@@ -125,7 +127,8 @@ public class TaskMessagePublisher {
      * @param triggeredBy  触发者用户 ID
      * @return 生成的任务唯一标识（UUID）
      */
-    public String publishProductCrawl(Long siteConfigId, String domain, String type, String category, Long triggeredBy) {
+    public String publishProductCrawl(Long siteConfigId, String domain, String type,
+                                      String category, Long triggeredBy) {
         String taskId = UUID.randomUUID().toString();
         Map<String, Object> message = Map.of(
             "task_id", taskId,

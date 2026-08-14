@@ -19,23 +19,24 @@
       <div v-if="isMobile || !appStore.sidebarCollapsed" class="workspace-label">工作空间</div>
       <el-menu
         :default-active="route.path"
+        :default-openeds="openMenus"
+        :unique-opened="true"
         :collapse="!isMobile && appStore.sidebarCollapsed"
         :collapse-transition="false"
         class="app-menu"
-        router
         @select="handleMenuSelect"
       >
         <template v-for="menu in menuTree" :key="menu.id">
-          <el-sub-menu v-if="menu.children?.length" :index="String(menu.id)">
+          <el-sub-menu v-if="visibleChildren(menu).length" :index="String(menu.id)">
             <template #title>
               <el-icon><component :is="menu.icon || 'Menu'" /></el-icon>
               <span>{{ menu.menuName }}</span>
             </template>
-            <el-menu-item v-for="child in menu.children" :key="child.id" :index="child.path">
+            <el-menu-item v-for="child in visibleChildren(menu)" :key="child.id" :index="child.path">
               <span>{{ child.menuName }}</span>
             </el-menu-item>
           </el-sub-menu>
-          <el-menu-item v-else :index="menu.path">
+          <el-menu-item v-else-if="canViewPath(menu.path)" :index="menu.path">
             <el-icon><component :is="menu.icon || 'Menu'" /></el-icon>
             <span>{{ menu.menuName }}</span>
           </el-menu-item>
@@ -118,6 +119,41 @@ const userStore = useUserStore()
 const appStore = useAppStore()
 const isMobile = useMediaQuery('(max-width: 860px)')
 const mobileNavOpen = ref(false)
+const openMenus = computed(() => {
+  const parent = menuTree.value.find(menu => menu.children?.some(child => child.path === route.path))
+  return parent ? [String(parent.id)] : []
+})
+const routePermissions = {
+  '/dashboard/overview': 'dashboard:overview',
+  '/dashboard/sites': 'dashboard:site:view',
+  '/dashboard/orders': 'dashboard:order:view',
+  '/dashboard/products': 'dashboard:product:view',
+  '/crawler/site': 'crawler:site:start',
+  '/crawler/collect': 'crawler:collect:start',
+  '/crawler/order': 'crawler:order:view',
+  '/crawler/history': 'crawler:history:view',
+  '/crawler/selector-template': 'selector:template:list',
+  '/crawler/site-config': 'crawler:site:config:list',
+  '/system/user': 'system:user:list',
+  '/system/role': 'system:role:list',
+  '/system/menu': 'system:menu:list',
+  '/system/log': 'system:log:view',
+}
+const serverMenuPaths = computed(() => {
+  const paths = new Set()
+  const collect = nodes => (nodes || []).forEach(node => {
+    if (node.path) paths.add(node.path)
+    collect(node.children)
+  })
+  collect(userStore.userInfo?.menus)
+  return paths
+})
+const canViewPath = path => {
+  if (!path) return true
+  if (userStore.userInfo?.menus?.length) return serverMenuPaths.value.has(path)
+  return !routePermissions[path] || userStore.hasPermission(routePermissions[path])
+}
+const visibleChildren = menu => (menu.children || []).filter(child => child && canViewPath(child.path))
 
 // The API can omit menus while a session is being refreshed. Keep navigation
 // usable until the server returns the user's actual menu tree.
@@ -152,7 +188,7 @@ const menuTree = computed(() => {
     ...menu,
     children: menu.path
       ? []
-      : (menu.children || []).filter(child => child.menuType !== 2 && child.menu_type !== 2).map(sanitizeMenu),
+      : (menu.children || []).filter(child => child.menuType !== 2 && child.menu_type !== 2 && canViewPath(child.path)).map(sanitizeMenu),
   })
   const dynamicSource = rawSource.map(sanitizeMenu)
   const source = fallbackMenus.map(fallbackRoot => {
@@ -174,7 +210,9 @@ const menuTree = computed(() => {
   })
 
   const crawlerMenu = source.find(menu => menu.id === 2 || menu.menuName === '爬虫管理')
-  if (!crawlerMenu || crawlerMenu.menuName === '数据同步') return source
+  if (!crawlerMenu || crawlerMenu.menuName === '数据同步') {
+    return source.filter(menu => menu.children?.length || ![1, 2, 3, 4].includes(Number(menu.id)))
+  }
 
   const crawlerChildren = crawlerMenu.children || []
   const findCrawlerItem = (path, fallback) => crawlerChildren.find(item => item.path === path) || fallback
@@ -188,11 +226,15 @@ const menuTree = computed(() => {
   groupedMenus.splice(crawlerIndex, 0,
     {
       id: 'data-sync', menuName: '数据同步', icon: 'RefreshRight',
-      children: syncPaths.map(path => findCrawlerItem(path, fallbackSync.children.find(item => item.path === path))),
+      children: syncPaths
+        .filter(path => canViewPath(path))
+        .map(path => findCrawlerItem(path, fallbackSync.children.find(item => item.path === path))),
     },
     {
       id: 'product-crawl', menuName: '商品采集', icon: 'Goods',
-      children: productPaths.map(path => findCrawlerItem(path, fallbackProduct.children.find(item => item.path === path))),
+      children: productPaths
+        .filter(path => canViewPath(path))
+        .map(path => findCrawlerItem(path, fallbackProduct.children.find(item => item.path === path))),
     },
   )
   return groupedMenus
@@ -224,7 +266,13 @@ function handleSidebarToggle() {
   appStore.toggleSidebar()
 }
 
-function handleMenuSelect() {
+async function handleMenuSelect(path) {
+  // Do not rely on Element Plus' built-in router integration here. The menu
+  // is rendered from a server-side tree while the actual pages are static
+  // nested routes; explicit navigation keeps both in sync after refreshes.
+  if (path && path !== route.path) {
+    await router.push(path)
+  }
   if (isMobile.value) mobileNavOpen.value = false
 }
 </script>

@@ -24,6 +24,15 @@
       </el-table-column>
     </el-table>
 
+    <el-pagination
+      style="margin-top: 16px; justify-content: flex-end;"
+      v-model:current-page="page" :page-size="size"
+      :page-sizes="[10, 20, 50, 100]"
+      :total="total" layout="total, sizes, prev, pager, next"
+      @current-change="fetchData"
+      @size-change="handleSizeChange"
+    />
+
     <!-- 分配菜单弹窗：
          使用 el-tree 展示完整菜单树，支持 show-checkbox 多选节点 -->
     <el-dialog v-model="menuDialogVisible" title="分配菜单权限" width="420px">
@@ -57,6 +66,9 @@ import { getRoles, getMenuTree } from '@/api/system'
 const loading = ref(false)
 /** @type {import('vue').Ref<Array>} 角色列表数据 */
 const tableData = ref([])
+const page = ref(1)
+const size = ref(10)
+const total = ref(0)
 /** @type {import('vue').Ref<boolean>} 菜单分配弹窗是否可见 */
 const menuDialogVisible = ref(false)
 /** @type {import('vue').Ref<number|null>} 当前分配菜单的角色 ID */
@@ -67,14 +79,21 @@ const menuTree = ref([])
 const treeRef = ref(null)
 
 /**
- * 获取角色列表（不分页，取前 100 条）
+ * 获取角色列表
  */
 async function fetchData() {
   loading.value = true
   try {
-    const res = await getRoles({ page: 1, size: 100 })
+    const res = await getRoles({ page: page.value, size: size.value })
     tableData.value = res.data.records || []
+    total.value = Number(res.data.total || 0)
   } finally { loading.value = false }
+}
+
+function handleSizeChange(value) {
+  size.value = value
+  page.value = 1
+  fetchData()
 }
 
 /**

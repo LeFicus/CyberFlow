@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * 站点配置管理 REST 控制器。
@@ -40,6 +41,10 @@ public class SiteConfigController {
         "shopify", "woocommerce", "bigcommerce", "opencart", "magento",
         "prestashop", "shopline", "ecwid", "wix", "squarespace", "custom"
     );
+    private static final Pattern PROHIBITED_CATEGORY = Pattern.compile(
+            "保健品|保健|食品|枪支|枪械|弹药|武器|毒品|烟酒|烟草|烟具|酒精|服装|服饰|成人",
+        Pattern.CASE_INSENSITIVE
+    );
 
     /** 站点配置业务服务 */
     private final SiteConfigService siteConfigService;
@@ -54,8 +59,9 @@ public class SiteConfigController {
      */
     @GetMapping
     @PreAuthorize("hasAuthority('crawler:site:config:list')")
-    public Result<?> list() {
-        return Result.ok(siteConfigService.list());
+    public Result<?> list(@RequestParam(defaultValue = "1") int page,
+                          @RequestParam(defaultValue = "10") int size) {
+        return Result.ok(siteConfigService.page(page, size));
     }
 
     /**
@@ -82,11 +88,40 @@ public class SiteConfigController {
     @PreAuthorize("hasAuthority('crawler:site:config:create')")
     public Result<?> create(@RequestBody Map<String, Object> body) {
         CrawlSiteConfig config = parseConfig(body);
+        if (isProhibitedCategory(config.getCategory())) {
+            return Result.fail("该商品类目不允许使用：保健品、食品、枪支弹药、毒品、烟酒、服装及成人类目");
+        }
         if (!SUPPORTED_ENGINES.contains(config.getType())) {
             return Result.fail("Unsupported product engine: " + config.getType());
         }
         List<SiteTemplateMapping> mappings = parseMappings(body);
         return Result.ok(siteConfigService.create(config, mappings));
+    }
+
+    /**
+     * 更新已有站点配置及其模板映射。
+     *
+     * @param id   站点配置 ID
+     * @param body 请求体，结构与创建接口一致
+     * @return 更新后的站点配置
+     */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('crawler:site:config:create')")
+    public Result<?> update(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        CrawlSiteConfig existing = siteConfigService.getById(id);
+        if (existing == null) {
+            return Result.fail("Site config not found");
+        }
+        CrawlSiteConfig config = parseConfig(body);
+        if (isProhibitedCategory(config.getCategory())) {
+            return Result.fail("该商品类目不允许使用：保健品、食品、枪支弹药、毒品、烟酒、服装及成人类目");
+        }
+        if (!SUPPORTED_ENGINES.contains(config.getType())) {
+            return Result.fail("Unsupported product engine: " + config.getType());
+        }
+        config.setStatus(existing.getStatus());
+        List<SiteTemplateMapping> mappings = parseMappings(body);
+        return Result.ok(siteConfigService.update(id, config, mappings));
     }
 
     /**
@@ -135,7 +170,12 @@ public class SiteConfigController {
             c.setDomain((String) configData.get("domain"));
             String type = String.valueOf(configData.getOrDefault("type", "shopify")).toLowerCase();
             c.setType(type);
-            c.setCategory((String) configData.getOrDefault("category", "未知分类"));
+            Object categoryValue = configData.get("category");
+            String rawCategory = categoryValue == null ? "未知分类" : String.valueOf(categoryValue).trim();
+            if (rawCategory.contains("|||")) {
+                rawCategory = rawCategory.substring(rawCategory.indexOf("|||") + 3);
+            }
+            c.setCategory(rawCategory);
         }
         c.setStatus("active");
         return c;
@@ -161,5 +201,9 @@ public class SiteConfigController {
             result.add(sm);
         }
         return result;
+    }
+
+    private boolean isProhibitedCategory(String category) {
+        return category != null && PROHIBITED_CATEGORY.matcher(category).find();
     }
 }

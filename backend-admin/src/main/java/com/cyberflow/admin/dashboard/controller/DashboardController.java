@@ -3,15 +3,18 @@ package com.cyberflow.admin.dashboard.controller;
 import com.cyberflow.admin.common.Result;
 import com.cyberflow.admin.dashboard.service.DashboardService;
 import com.cyberflow.admin.dashboard.service.ProductExportService;
+import com.cyberflow.admin.dashboard.service.RevenueSummaryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 import java.util.Map;
+import java.util.List;
 
 /**
  * 仪表盘数据展示 REST 控制器。
@@ -38,6 +41,7 @@ public class DashboardController {
     /** 仪表盘业务服务 */
     private final DashboardService dashboardService;
     private final ProductExportService productExportService;
+    private final RevenueSummaryService revenueSummaryService;
 
     /**
      * 获取系统总览数据。
@@ -49,8 +53,8 @@ public class DashboardController {
      */
     @GetMapping("/overview")
     @PreAuthorize("hasAuthority('dashboard:overview')")
-    public Result<Map<String, Object>> overview() {
-        return Result.ok(dashboardService.getOverview());
+    public Result<Map<String, Object>> overview(@RequestParam(required = false) String userGroup) {
+        return Result.ok(dashboardService.getOverview(userGroup));
     }
 
     /**
@@ -67,10 +71,11 @@ public class DashboardController {
     public Result<Map<String, Object>> sites(@RequestParam(defaultValue = "1") int page,
                                              @RequestParam(defaultValue = "10") int size,
                                              @RequestParam(required = false) String adminName,
+                                             @RequestParam(required = false) String userGroup,
                                              @RequestParam(required = false) String domain,
                                              @RequestParam(required = false) String startDate,
                                              @RequestParam(required = false) String endDate) {
-        return Result.ok(dashboardService.getSites(page, size, adminName, domain, startDate, endDate));
+        return Result.ok(dashboardService.getSites(page, size, adminName, userGroup, domain, startDate, endDate));
     }
 
     /**
@@ -91,44 +96,87 @@ public class DashboardController {
                                               @RequestParam(required = false) String startDate,
                                               @RequestParam(required = false) String endDate,
                                               @RequestParam(required = false) String adminName,
+                                              @RequestParam(required = false) String userGroup,
                                               @RequestParam(required = false) String domain,
                                               @RequestParam(required = false) String payStatus,
                                               @RequestParam(required = false) String currency,
                                               @RequestParam(required = false) String country) {
         return Result.ok(dashboardService.getOrders(page, size, orderId, startDate, endDate,
-                adminName, domain, payStatus, currency, country));
+                adminName, userGroup, domain, payStatus, currency, country));
     }
 
     /**
-     * 分页查询商品列表，支持按域名过滤。
+     * 分页查询商品列表，支持按域名、分类和商品名称组合过滤。
      *
      * @param page   页码，默认 1
      * @param size   每页大小，默认 10
      * @param domain 商品来源域名，可选，用于筛选指定域名的商品
+     * @param category 商品分类，可选
+     * @param name 商品名称，可选
      * @return 分页结果，包含 total（总数）和 list（商品列表）
      */
     @GetMapping("/products")
     @PreAuthorize("hasAuthority('dashboard:product:view')")
     public Result<Map<String, Object>> products(@RequestParam(defaultValue = "1") int page,
                                                 @RequestParam(defaultValue = "10") int size,
-                                                @RequestParam(required = false) String domain) {
-        return Result.ok(dashboardService.getProducts(page, size, domain));
+                                                @RequestParam(required = false) List<String> domain,
+                                                @RequestParam(required = false) List<String> category,
+                                                @RequestParam(required = false) String name) {
+        return Result.ok(dashboardService.getProducts(page, size, domain, category, name));
+    }
+
+    /** Delete only the products explicitly selected in the product table. */
+    @DeleteMapping("/products")
+    @PreAuthorize("hasAuthority('dashboard:product:delete')")
+    public Result<Map<String, Object>> deleteProducts(@RequestBody java.util.List<Long> ids) {
+        return Result.ok(dashboardService.deleteProducts(ids));
+    }
+
+    /** Delete all products matching the current domain/category/name filters. */
+    @DeleteMapping("/products/clear")
+    @PreAuthorize("hasAuthority('dashboard:product:delete')")
+    public Result<Map<String, Object>> clearProducts(@RequestParam(required = false) List<String> domain,
+                                                      @RequestParam(required = false) List<String> category,
+                                                      @RequestParam(required = false) String name) {
+        return Result.ok(dashboardService.clearProducts(domain, category, name));
     }
 
     /** Export normalized products to the CSV layout required by the selected engine. */
     @GetMapping(value = "/products/export", produces = "text/csv")
     @PreAuthorize("hasAuthority('dashboard:product:view')")
     public void exportProducts(@RequestParam String engine,
-                               @RequestParam(required = false) String domain,
+                               @RequestParam(required = false) List<String> domain,
+                               @RequestParam(required = false) List<String> category,
+                               @RequestParam(required = false) String name,
                                HttpServletResponse response) throws IOException {
         String normalizedEngine = engine.toLowerCase();
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType("text/csv; charset=UTF-8");
         response.setHeader("Content-Disposition", "attachment; filename=products-" + normalizedEngine + ".csv");
         var writer = response.getWriter();
-        writer.write("\\uFEFF"); // Excel UTF-8 BOM
-        writeCsv(writer, productExportService.headers(normalizedEngine));
-        for (var row : productExportService.buildRows(normalizedEngine, domain)) writeCsv(writer, row);
+        writer.write("\uFEFF"); // Excel UTF-8 BOM
+        productExportService.writeCsv(normalizedEngine, domain, category, name, writer);
+    }
+
+    /** Export the normalized crawler fields as XLSX, filtered by domain/custom category. */
+    @GetMapping(value = "/products/export/excel",
+            produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    @PreAuthorize("hasAuthority('dashboard:product:view')")
+    public void exportProductsExcel(@RequestParam(required = false) List<String> domain,
+                                    @RequestParam(required = false) List<String> category,
+                                    @RequestParam(required = false) String name,
+                                    @RequestParam(required = false) String customCategory,
+                                    HttpServletResponse response) throws IOException {
+        String suffix = domain == null || domain.isEmpty() ? "all"
+                : domain.size() == 1 ? domain.get(0).trim() : "multiple";
+        String fileName = "products-" + suffix.replaceAll("[^a-zA-Z0-9._-]", "-") + ".xlsx";
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" +
+                URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20"));
+        List<String> effectiveCategories = category == null || category.isEmpty()
+                ? (customCategory == null || customCategory.isBlank() ? List.of() : List.of(customCategory))
+                : category;
+        productExportService.writeExcel(domain, effectiveCategories, name, response.getOutputStream());
     }
 
     private void writeCsv(java.io.Writer writer, java.util.List<String> row) throws IOException {
@@ -168,7 +216,17 @@ public class DashboardController {
      */
     @GetMapping("/charts")
     @PreAuthorize("hasAuthority('dashboard:overview')")
-    public Result<Map<String, Object>> charts() {
-        return Result.ok(dashboardService.getChartData());
+    public Result<Map<String, Object>> charts(@RequestParam(required = false) String userGroup) {
+        return Result.ok(dashboardService.getChartData(userGroup));
+    }
+
+    /** Revenue conversion, personal commission and leader commission summary. */
+    @GetMapping("/revenue-summary")
+    @PreAuthorize("hasAuthority('dashboard:overview')")
+    public Result<Map<String, Object>> revenueSummary(@RequestParam(required = false) String userGroup,
+                                                       @RequestParam(required = false) String startDate,
+                                                       @RequestParam(required = false) String endDate,
+                                                       @RequestParam(required = false) String siteCreatedMonth) {
+        return Result.ok(revenueSummaryService.summarize(userGroup, startDate, endDate, siteCreatedMonth));
     }
 }

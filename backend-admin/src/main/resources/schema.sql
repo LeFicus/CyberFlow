@@ -71,14 +71,16 @@ CREATE TABLE IF NOT EXISTS site_info (
     username         VARCHAR(100),
     site_domain      VARCHAR(255) NOT NULL,
     admin_name       VARCHAR(100),
+    user_group       VARCHAR(1),
     theme_name       VARCHAR(100),
     product_category VARCHAR(100),
     created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_site_domain (site_domain)
+    UNIQUE KEY uk_site_domain (site_domain),
+    INDEX idx_site_user_group (user_group)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS orders (
-    id                  BIGINT NOT NULL PRIMARY KEY,
+    id                  BIGINT NOT NULL,
     amount              DECIMAL(10, 2),
     currency            VARCHAR(10),
     create_time         DATETIME,
@@ -87,10 +89,13 @@ CREATE TABLE IF NOT EXISTS orders (
     customer_ip_country VARCHAR(100),
     shipping_email      VARCHAR(255),
     admin_name          VARCHAR(100),
+    user_group          VARCHAR(1) NOT NULL,
     theme_name          VARCHAR(100),
     product_category    VARCHAR(100),
+    PRIMARY KEY (user_group, id),
     INDEX idx_create_time (create_time),
-    INDEX idx_product_host (product_host)
+    INDEX idx_product_host (product_host),
+    INDEX idx_order_user_group (user_group)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS site_indexing_history (
@@ -111,17 +116,24 @@ CREATE TABLE IF NOT EXISTS scraped_data.ecommerce_products (
     regular_price   DECIMAL(10, 2),
     categories      VARCHAR(500),
     images          TEXT,
-    cf_opingts      VARCHAR(500),
+    cf_opingts      TEXT,
     custom_category VARCHAR(100),
     source_domain   VARCHAR(255),
     language        VARCHAR(10) DEFAULT 'en',
+    dedupe_key      VARCHAR(768),
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_sku (sku)
+    INDEX idx_product_created_id (created_at, id),
+    INDEX idx_product_domain_created (source_domain, created_at, id),
+    INDEX idx_product_category_created (custom_category, created_at, id),
+    INDEX idx_product_name_prefix (name(100)),
+    UNIQUE KEY uk_sku (sku),
+    UNIQUE KEY uk_product_dedupe (dedupe_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT IGNORE INTO crawler_schedule_config (task_type, cron_expression, enabled) VALUES
     ('site_crawl', '0 0 2 * * ?', 1),
+    ('site_index', '0 30 2 * * ?', 1),
     ('order_crawl', '0 0 3 * * ?', 1);
 
 INSERT INTO selector_template (
@@ -147,3 +159,13 @@ WHERE NOT EXISTS (
 
 DELETE FROM crawler_runtime_config
 WHERE config_group = 'paymentApi' AND config_key = 'tenantId';
+
+INSERT INTO sys_menu
+    (id, parent_id, menu_name, menu_type, perms, path, component, icon, sort_order, status)
+VALUES
+    (15, 14, '删除商品', 2, 'dashboard:product:delete', NULL, NULL, NULL, 1, 1)
+ON DUPLICATE KEY UPDATE
+    parent_id=VALUES(parent_id), menu_name=VALUES(menu_name), menu_type=VALUES(menu_type),
+    perms=VALUES(perms), status=VALUES(status);
+
+INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES (1, 15), (2, 15);

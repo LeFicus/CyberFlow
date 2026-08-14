@@ -16,6 +16,9 @@ import { ElMessage } from 'element-plus'
 const service = axios.create({
   baseURL: '',
   timeout: 15000,
+  // Serialize arrays as repeated keys (`category=a&category=b`) so Spring's
+  // List<String> request parameters receive multi-select filters directly.
+  paramsSerializer: { indexes: null },
 })
 
 /**
@@ -42,6 +45,8 @@ service.interceptors.request.use(config => {
  */
 service.interceptors.response.use(
   response => {
+    // File downloads are not wrapped in the application's { code, data } JSON envelope.
+    if (response.config.responseType === 'blob') return response
     const res = response.data
     if (res.code !== 200) {
       ElMessage.error(res.msg || '请求失败')

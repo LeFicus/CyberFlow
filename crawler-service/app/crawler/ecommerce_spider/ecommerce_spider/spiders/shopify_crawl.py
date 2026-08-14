@@ -534,7 +534,8 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
             "自定义分类": self.custom_category,
             "原站域名": urlparse(self.domain).netloc,  # 使用urlparse更安全
             "分布网站识别": 0,
-            "语言": "en"
+            "语言": "en",
+            "货币": "USD",
         }
 
         # 调试信息

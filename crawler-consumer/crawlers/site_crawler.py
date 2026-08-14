@@ -188,10 +188,15 @@ class AsyncSiteCrawler:
                         continue
                     if self.filter_built_only and status != 2:
                         continue
+                    add_date = item.get("add_date") or item.get("add_time") or item.get("created_at")
                     record = {
                         "site_domain": domain,
                         "admin_name": admin_name,
+                        "user_group": self._user_group(admin_name),
                         "username": self.username,
+                        # The remote site's add_date is the business creation date.
+                        "add_date": add_date,
+                        "created_at": add_date,
                     }
                     # 从站点映射中合并主题和分类信息
                     if domain in site_map:
@@ -204,6 +209,16 @@ class AsyncSiteCrawler:
                 await asyncio.sleep(0.1)  # 温和的请求间隔，避免触发限流
         logger.info(f"📦 Fetched {len(results)} domains (since={since})")
         return results
+
+    @staticmethod
+    def _user_group(admin_name: str) -> str | None:
+        """Apply the report convention: A-* => A, B-* => B."""
+        normalized = str(admin_name or "").strip().upper()
+        if normalized.startswith("A-"):
+            return "A"
+        if normalized.startswith("B-"):
+            return "B"
+        return None
 
     async def run(self, since: str | None = None) -> tuple[list[dict], str | None]:
         """执行完整的站点爬取流程。

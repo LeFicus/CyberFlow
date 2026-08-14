@@ -1,6 +1,7 @@
 package com.cyberflow.admin.dashboard.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
@@ -35,6 +36,17 @@ public interface SiteIndexingHistoryMapper {
             "WHERE recorded_at >= #{startDate} AND recorded_at < DATE_ADD(#{endDate}, INTERVAL 1 DAY) " +
             "GROUP BY DATE(recorded_at) ORDER BY date")
     List<Map<String, Object>> indexTrend(String startDate, String endDate);
+
+    @Select("SELECT DATE(h.recorded_at) AS date, SUM(h.index_count) AS total_index, " +
+            "SUM(h.product_count) AS total_products, COUNT(DISTINCT h.site_domain) AS site_count " +
+            "FROM site_indexing_history h JOIN site_info s " +
+            "ON LOWER(TRIM(LEADING 'www.' FROM h.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) " +
+            "WHERE h.recorded_at >= #{startDate} AND h.recorded_at < DATE_ADD(#{endDate}, INTERVAL 1 DAY) " +
+            "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR s.user_group = #{userGroup}) " +
+            "GROUP BY DATE(h.recorded_at) ORDER BY date")
+    List<Map<String, Object>> indexTrendByGroup(@Param("startDate") String startDate,
+                                                @Param("endDate") String endDate,
+                                                @Param("userGroup") String userGroup);
 
     /**
      * 分页查询收录历史列表，按收录时间倒序排列。

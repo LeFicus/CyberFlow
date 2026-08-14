@@ -63,6 +63,12 @@ public class TaskResultConsumer {
             new LambdaQueryWrapper<TaskHistory>().eq(TaskHistory::getTaskId, taskId)
         );
         if (history != null) {
+            // An operator pause must not be overwritten by a late result message.
+            if ("PAUSED".equalsIgnoreCase(history.getStatus())
+                    || "CANCELLED".equalsIgnoreCase(history.getStatus())) {
+                log.info("Ignoring result for operator-controlled task {} in {} state", taskId, history.getStatus());
+                return;
+            }
             history.setStatus("success".equals(status) ? "SUCCESS" : "FAILED");
             history.setRowsAffected(result.get("rows_affected") != null
                 ? ((Number) result.get("rows_affected")).intValue() : 0);

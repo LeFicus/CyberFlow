@@ -13,18 +13,14 @@
 """
 
 import time
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 from loguru import logger
 from consumers.base_consumer import BaseConsumer
 from crawlers.order_crawler import AsyncOrderCrawler
-from db.repository import CursorRepository
+from db.repository import CursorRepository, TaskCancelledError
 from config import QUEUE_ORDER_CRAWL, EXCHANGE_TASKS
-from config import (
-    PAYMENT_API_BASE_URL,
-    PAYMENT_API_ACCOUNT,
-    PAYMENT_API_PASSWORD,
-    VERIFY_SSL,
-)
+from config import VERIFY_SSL
 import pika
 import json
 
@@ -68,6 +64,9 @@ class OrderConsumer(BaseConsumer):
         """
         task_id = message["task_id"]
         payload = message["payload"]
+        user_group = str(payload.get("user_group") or payload.get("userGroup") or "").strip().upper()
+        if user_group not in {"A", "B"}:
+            raise ValueError("Order crawl task requires user_group A or B")
         # 提取增量游标——上次爬取的最大订单 ID，默认为 "0"
         since_order_id = payload.get("cursor", {}).get("max_order_id", "0")
 
@@ -75,13 +74,16 @@ class OrderConsumer(BaseConsumer):
         start = time.monotonic()
 
         try:
-            await self.repo.update_task_status(task_id, "RUNNING", progress=10, progress_message="正在连接支付平台")
+            await self.repo.wait_for_task_control(task_id)
+            await self.repo.update_task_status(task_id, "RUNNING", progress=10, progress_message=f"正在连接 {user_group} 组支付平台")
 
             platform = payload.get("platform", {})
             strategy = payload.get("strategy", {})
-            base_url = platform.get("baseUrl") or platform.get("base_url") or PAYMENT_API_BASE_URL
-            username = platform.get("account") or platform.get("username") or PAYMENT_API_ACCOUNT
-            password = platform.get("password") or PAYMENT_API_PASSWORD
+            base_url = str(platform.get("baseUrl") or platform.get("base_url") or "").strip()
+            username = str(platform.get("account") or platform.get("username") or "").strip()
+            password = str(platform.get("password") or "").strip()
+            if not base_url or not username or not password or password == "******":
+                raise ValueError(f"{user_group} 组 Payment API 配置不完整")
             verify_ssl = _as_bool(platform.get("verifySsl", VERIFY_SSL))
             excluded_cards = strategy.get("filterCardNumberExclude") or []
 
@@ -96,9 +98,9 @@ class OrderConsumer(BaseConsumer):
 
             # 将订单写入数据库，同时关联 site_info 表
             await self.repo.update_task_progress(task_id, 75, f"正在保存 {len(records)} 条订单")
-            saved_count = await self._save_orders(records)
+            saved_count = await self._save_orders(records, user_group)
 
-            await self.repo.update_cursor("order_crawler", new_cursor)
+            await self.repo.update_cursor(f"order_crawler_{user_group}", new_cursor)
             duration_ms = int((time.monotonic() - start) * 1000)
             await self.repo.update_task_status(
                 task_id, "SUCCESS", rows_affected=saved_count, duration_ms=duration_ms
@@ -108,6 +110,9 @@ class OrderConsumer(BaseConsumer):
                                 {"max_order_id": new_cursor}, duration_ms)
             logger.success(f"✅ Order crawl done: fetched={len(records)}, saved={saved_count}, cursor={new_cursor}")
 
+        except TaskCancelledError as e:
+            logger.info(f"⏹️ Order crawl cancelled by operator: {task_id} ({e})")
+            return
         except Exception as e:
             duration_ms = int((time.monotonic() - start) * 1000)
             await self.repo.update_task_status(
@@ -119,7 +124,7 @@ class OrderConsumer(BaseConsumer):
         finally:
             await self.repo.close()
 
-    async def _save_orders(self, records: list[dict]) -> int:
+    async def _save_orders(self, records: list[dict], user_group: str) -> int:
         """批量写入订单数据，关联 site_info 表补全站点上下文。
 
         对每条订单记录：
@@ -138,35 +143,63 @@ class OrderConsumer(BaseConsumer):
             async with conn.cursor() as cur:
                 for r in records:
                     # 根据订单的 product_host 查询站点上下文信息
-                    product_host = (r.get("product_host") or "").replace("www.", "")
+                    product_host = self._normalize_domain(r.get("product_host"))
                     admin_name = ""
+                    site_user_group = None
                     theme_name = ""
                     product_category = ""
                     if product_host:
                         await cur.execute(
-                            "SELECT admin_name, theme_name, product_category FROM site_info WHERE site_domain=%s",
-                            (product_host,),
+                            """SELECT admin_name, user_group, theme_name, product_category
+                               FROM site_info
+                               WHERE LOWER(CASE WHEN LEFT(site_domain, 4) = 'www.'
+                                   THEN SUBSTRING(site_domain, 5) ELSE site_domain END)=%s
+                               LIMIT 1""",
+                            (product_host.lower(),),
                         )
                         site_row = await cur.fetchone()
                         if site_row:
-                            admin_name, theme_name, product_category = site_row[0], site_row[1], site_row[2]
+                            admin_name, site_user_group, theme_name, product_category = site_row
                             site_matched += 1
+
+                    effective_user_group = str(site_user_group or user_group).strip().upper()
+                    if effective_user_group not in {"A", "B"}:
+                        effective_user_group = user_group
+
+                    # A/B 平台可能返回相同订单号；站点归属是订单分组的权威来源。
+                    # 若历史记录曾按账号组写入，在插入新归属前先迁移旧行，避免同一订单出现两组。
+                    if effective_user_group != user_group:
+                        await cur.execute(
+                            "DELETE FROM orders WHERE id=%s AND user_group=%s",
+                            (r.get("id"), user_group),
+                        )
 
                     await cur.execute(
                         """INSERT INTO orders (id, amount, currency, create_time, product_host,
                            pay_status_text, customer_ip_country, shipping_email,
-                           admin_name, theme_name, product_category)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           admin_name, user_group, theme_name, product_category)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                            ON DUPLICATE KEY UPDATE
-                           amount=VALUES(amount), pay_status_text=VALUES(pay_status_text)""",
+                           amount=VALUES(amount), pay_status_text=VALUES(pay_status_text),
+                           admin_name=VALUES(admin_name), user_group=VALUES(user_group),
+                           theme_name=VALUES(theme_name), product_category=VALUES(product_category)""",
                         (r.get("id"), r.get("amount"), r.get("currency"),
                          r.get("create_time"), product_host,
                          r.get("pay_status_text"), r.get("timeZone"),
-                         r.get("shipping_email"), admin_name, theme_name, product_category),
+                         r.get("shipping_email"), admin_name, effective_user_group, theme_name, product_category),
                     )
                     saved_count += 1
         logger.info(f"💾 Order save complete: saved={saved_count}, site_matched={site_matched}")
         return saved_count
+
+    @staticmethod
+    def _normalize_domain(value) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        parsed = urlparse(raw if "://" in raw else f"//{raw}")
+        domain = (parsed.netloc or parsed.path).split("/")[0].split(":")[0].lower()
+        return domain[4:] if domain.startswith("www.") else domain
 
     def _publish_result(self, task_id, status, rows_affected, new_cursor, duration_ms, error=None):
         """将任务执行结果发布到 RabbitMQ task.result 队列。

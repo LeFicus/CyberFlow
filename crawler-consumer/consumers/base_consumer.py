@@ -121,6 +121,12 @@ class BaseConsumer(ABC):
         while not self._closing:
             try:
                 params = pika.URLParameters(self.rabbitmq_url)
+                # A delivery callback can legitimately run for several minutes
+                # while Scrapy crawls a site. Disable the broker heartbeat so
+                # RabbitMQ does not drop the connection and redeliver the same
+                # task while the callback is still executing. Each crawler has
+                # its own hard execution timeout.
+                params.heartbeat = 0
                 self.connection = pika.BlockingConnection(params)
                 self.channel = self.connection.channel()
                 self._declare_topology()

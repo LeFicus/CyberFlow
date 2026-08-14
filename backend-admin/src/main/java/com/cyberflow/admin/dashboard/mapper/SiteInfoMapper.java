@@ -25,6 +25,7 @@ public interface SiteInfoMapper {
             "SELECT COUNT(*) FROM site_info",
             "<where>",
             "<if test='adminName != null and adminName != &quot;&quot;'> AND admin_name LIKE CONCAT('%', #{adminName}, '%')</if>",
+            "<if test='userGroup != null and userGroup != &quot;&quot;'> AND user_group = #{userGroup}</if>",
             "<if test='domain != null and domain != &quot;&quot;'> AND site_domain LIKE CONCAT('%', #{domain}, '%')</if>",
             "<if test='startDate != null and startDate != &quot;&quot;'> AND created_at &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>",
             "<if test='endDate != null and endDate != &quot;&quot;'> AND created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>",
@@ -32,6 +33,7 @@ public interface SiteInfoMapper {
             "</script>"
     })
     long countSitesFiltered(@Param("adminName") String adminName,
+                            @Param("userGroup") String userGroup,
                             @Param("domain") String domain,
                             @Param("startDate") String startDate,
                             @Param("endDate") String endDate);
@@ -42,6 +44,7 @@ public interface SiteInfoMapper {
             "SELECT * FROM site_info",
             "<where>",
             "<if test='adminName != null and adminName != &quot;&quot;'> AND admin_name LIKE CONCAT('%', #{adminName}, '%')</if>",
+            "<if test='userGroup != null and userGroup != &quot;&quot;'> AND user_group = #{userGroup}</if>",
             "<if test='domain != null and domain != &quot;&quot;'> AND site_domain LIKE CONCAT('%', #{domain}, '%')</if>",
             "<if test='startDate != null and startDate != &quot;&quot;'> AND created_at &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>",
             "<if test='endDate != null and endDate != &quot;&quot;'> AND created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>",
@@ -50,6 +53,7 @@ public interface SiteInfoMapper {
             "</script>"
     })
     List<Map<String, Object>> listSitesFiltered(@Param("adminName") String adminName,
+                                                @Param("userGroup") String userGroup,
                                                 @Param("domain") String domain,
                                                 @Param("startDate") String startDate,
                                                 @Param("endDate") String endDate,
@@ -64,6 +68,19 @@ public interface SiteInfoMapper {
     @Select("SELECT COUNT(*) FROM site_info")
     long countSites();
 
+    @Select("SELECT COUNT(*) FROM site_info WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup})")
+    long countSitesByGroup(@Param("userGroup") String userGroup);
+
+    @Select({"<script>", "SELECT COUNT(*) FROM site_info",
+            "<where>",
+            "<if test='userGroup != null and userGroup != &quot;&quot;'> AND user_group = #{userGroup}</if>",
+            "<if test='startDateTime != null and startDateTime != &quot;&quot;'> AND created_at &gt;= #{startDateTime}</if>",
+            "<if test='endDateTime != null and endDateTime != &quot;&quot;'> AND created_at &lt; #{endDateTime}</if>",
+            "</where>", "</script>"})
+    long countSitesByGroupAndDateRange(@Param("userGroup") String userGroup,
+                                       @Param("startDateTime") String startDateTime,
+                                       @Param("endDateTime") String endDateTime);
+
     /**
      * 按管理员分组统计站点数量，结果按数量降序排列。
      *
@@ -71,6 +88,15 @@ public interface SiteInfoMapper {
      */
     @Select("SELECT admin_name, COUNT(*) as count FROM site_info GROUP BY admin_name ORDER BY count DESC")
     List<Map<String, Object>> countByAdmin();
+
+    @Select("SELECT admin_name, COUNT(*) AS count FROM site_info " +
+            "WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
+            "GROUP BY admin_name ORDER BY count DESC")
+    List<Map<String, Object>> countByAdminForGroup(@Param("userGroup") String userGroup);
+
+    @Select("SELECT COALESCE(user_group, '未分组') AS user_group, COUNT(*) AS site_count " +
+            "FROM site_info GROUP BY user_group ORDER BY user_group")
+    List<Map<String, Object>> summarizeByGroup();
 
     /**
      * 按模板名称分组统计站点数量，结果按数量降序排列。
@@ -87,6 +113,11 @@ public interface SiteInfoMapper {
      */
     @Select("SELECT product_category, COUNT(*) as count FROM site_info GROUP BY product_category ORDER BY count DESC")
     List<Map<String, Object>> countByCategory();
+
+    @Select("SELECT product_category, COUNT(*) AS count FROM site_info " +
+            "WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
+            "GROUP BY product_category ORDER BY count DESC")
+    List<Map<String, Object>> countByCategoryForGroup(@Param("userGroup") String userGroup);
 
     /**
      * 分页查询站点列表，按创建时间倒序排列。

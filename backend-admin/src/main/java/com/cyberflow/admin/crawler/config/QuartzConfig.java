@@ -2,6 +2,7 @@ package com.cyberflow.admin.crawler.config;
 
 import com.cyberflow.admin.crawler.scheduler.OrderCrawlJob;
 import com.cyberflow.admin.crawler.scheduler.SiteCrawlJob;
+import com.cyberflow.admin.crawler.scheduler.SiteIndexCrawlJob;
 import org.quartz.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -35,6 +36,9 @@ public class QuartzConfig {
     @Value("${cyberflow.crawler.order-cron}")
     private String orderCron;
 
+    @Value("${cyberflow.crawler.index-cron}")
+    private String indexCron;
+
     /**
      * 创建站点爬取任务的 JobDetail，设置为持久化存储。
      *
@@ -59,6 +63,23 @@ public class QuartzConfig {
                 .forJob(siteCrawlJobDetail())
                 .withIdentity("siteCrawlTrigger")
                 .withSchedule(CronScheduleBuilder.cronSchedule(siteCron))
+                .build();
+    }
+
+    @Bean
+    public JobDetail siteIndexCrawlJobDetail() {
+        return JobBuilder.newJob(SiteIndexCrawlJob.class)
+                .withIdentity("siteIndexCrawlJob")
+                .storeDurably()
+                .build();
+    }
+
+    @Bean
+    public Trigger siteIndexCrawlTrigger() {
+        return TriggerBuilder.newTrigger()
+                .forJob(siteIndexCrawlJobDetail())
+                .withIdentity("siteIndexCrawlTrigger")
+                .withSchedule(CronScheduleBuilder.cronSchedule(indexCron))
                 .build();
     }
 

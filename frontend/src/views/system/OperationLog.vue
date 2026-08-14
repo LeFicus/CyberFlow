@@ -55,8 +55,10 @@
     <el-pagination
       style="margin-top: 16px; justify-content: flex-end;"
       v-model:current-page="page" :page-size="size"
-      :total="total" layout="total, prev, pager, next"
+      :page-sizes="[10, 20, 50, 100]"
+      :total="total" layout="total, sizes, prev, pager, next"
       @current-change="fetchData"
+      @size-change="handleSizeChange"
     />
   </el-card>
 </template>
@@ -103,6 +105,12 @@ async function fetchData() {
 function resetFilters() {
   filters.username = ''
   filters.module = ''
+  page.value = 1
+  fetchData()
+}
+
+function handleSizeChange(value) {
+  size.value = value
   page.value = 1
   fetchData()
 }

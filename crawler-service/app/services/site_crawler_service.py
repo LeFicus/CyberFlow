@@ -225,7 +225,7 @@ class SiteCrawler:
                 for item in data:
                     domain = item.get("domain")
                     admin_name = item.get("admin_name")
-                    add_time = item.get("add_time")
+                    add_time = item.get("add_date") or item.get("add_time") or item.get("created_at")
 
                     # 过滤逻辑日志可以根据需要设为 debug
                     if admin_name in EXCLUDE_NAMES or item.get("status") != 2:
@@ -237,6 +237,7 @@ class SiteCrawler:
                         "admin_name": site_info.get("admin_name") or admin_name,
                         "theme_name" : site_info.get("theme_name"),
                         "product_category" : site_info.get("product_category",''),
+                        "add_date": add_time,
                         "created_at": add_time,
 
                     })

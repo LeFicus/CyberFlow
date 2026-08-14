@@ -61,8 +61,8 @@ public class CrawlerController {
      */
     @PostMapping("/order/start")
     @PreAuthorize("hasAuthority('crawler:order:start')")
-    public Result<Map<String, Object>> startOrderCrawler() {
-        return Result.ok(crawlerService.triggerOrderCrawler());
+    public Result<Map<String, Object>> startOrderCrawler(@RequestParam String userGroup) {
+        return Result.ok(crawlerService.triggerOrderCrawler(userGroup));
     }
 
     /**

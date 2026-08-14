@@ -1,7 +1,12 @@
 package com.cyberflow.admin.dashboard.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Delete;
+import org.apache.ibatis.annotations.Options;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.cursor.Cursor;
+import org.apache.ibatis.mapping.ResultSetType;
 
 import java.util.List;
 import java.util.Map;
@@ -25,6 +30,18 @@ public interface EcommerceProductMapper {
      */
     @Select("SELECT COUNT(*) FROM scraped_data.ecommerce_products")
     long countProducts();
+
+    /** Count products whose source domain belongs to the selected site group. */
+    @Select({"<script>",
+            "SELECT COUNT(*) FROM scraped_data.ecommerce_products p",
+            "LEFT JOIN site_info s ON LOWER(CASE WHEN LEFT(p.source_domain, 4) = 'www.'",
+            "THEN SUBSTRING(p.source_domain, 5) ELSE p.source_domain END) = LOWER(CASE WHEN LEFT(s.site_domain, 4) = 'www.'",
+            "THEN SUBSTRING(s.site_domain, 5) ELSE s.site_domain END)",
+            "<where>",
+            "<if test='userGroup != null and userGroup != &quot;&quot;'> AND s.user_group = #{userGroup}</if>",
+            "</where>",
+            "</script>"})
+    long countProductsByGroup(@Param("userGroup") String userGroup);
 
     /**
      * 按来源域名分组统计商品数量，结果按数量降序排列。
@@ -59,33 +76,130 @@ public interface EcommerceProductMapper {
      * @param size   每页条数
      * @return 商品信息列表
      */
-    @Select("SELECT * FROM scraped_data.ecommerce_products ORDER BY created_at DESC LIMIT #{offset}, #{size}")
+    @Select("SELECT id, sku, name, regular_price, categories, custom_category, source_domain, language, images " +
+            "FROM scraped_data.ecommerce_products ORDER BY created_at DESC, id DESC LIMIT #{offset}, #{size}")
     List<Map<String, Object>> listProducts(int offset, int size);
 
-    /**
-     * 按来源域名分页查询商品列表，按创建时间倒序排列。
-     *
-     * @param domain 商品来源域名
-     * @param offset 偏移量
-     * @param size   每页条数
-     * @return 符合条件的商品列表
-     */
-    @Select("SELECT * FROM scraped_data.ecommerce_products WHERE source_domain = #{domain} " +
-            "ORDER BY created_at DESC LIMIT #{offset}, #{size}")
-    List<Map<String, Object>> listProductsByDomain(String domain, int offset, int size);
+    /** Count products matching the optional domain, category and name filters. */
+    @Select("<script>SELECT COUNT(id) FROM scraped_data.ecommerce_products " +
+            "<where>" +
+            "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
+            "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
+            "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
+            "</foreach></if>" +
+            "<if test='categoriesFilter != null and categoriesFilter.size() > 0'>" +
+            "AND <foreach collection='categoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "(categories LIKE CONCAT('%', TRIM(#{category}), '%') OR custom_category LIKE CONCAT('%', TRIM(#{category}), '%'))" +
+            "</foreach></if>" +
+            "<if test='name != null and name.trim() != \"\"'>" +
+            "AND name LIKE CONCAT('%', TRIM(#{name}), '%') </if>" +
+            "</where></script>")
+    long countProductsFiltered(@Param("domainsFilter") List<String> domainsFilter,
+                               @Param("categoriesFilter") List<String> categoriesFilter,
+                               @Param("name") String name);
 
-    /**
-     * 按来源域名统计商品数量。
-     *
-     * @param domain 商品来源域名
-     * @return 符合条件的商品数量
-     */
-    @Select("SELECT COUNT(*) FROM scraped_data.ecommerce_products WHERE source_domain = #{domain}")
-    long countProductsByDomain(String domain);
+    /** List products matching the optional filters. */
+    @Select("<script>SELECT id, sku, name, regular_price, categories, custom_category, source_domain, language, images " +
+            "FROM scraped_data.ecommerce_products " +
+            "<where>" +
+            "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
+            "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
+            "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
+            "</foreach></if>" +
+            "<if test='categoriesFilter != null and categoriesFilter.size() > 0'>" +
+            "AND <foreach collection='categoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "(categories LIKE CONCAT('%', TRIM(#{category}), '%') OR custom_category LIKE CONCAT('%', TRIM(#{category}), '%'))" +
+            "</foreach></if>" +
+            "<if test='name != null and name.trim() != \"\"'>" +
+            "AND name LIKE CONCAT('%', TRIM(#{name}), '%') </if>" +
+            "</where>ORDER BY created_at DESC, id DESC LIMIT #{offset}, #{size}</script>")
+    List<Map<String, Object>> listProductsFiltered(@Param("domainsFilter") List<String> domainsFilter,
+                                                   @Param("categoriesFilter") List<String> categoriesFilter,
+                                                   @Param("name") String name,
+                                                   @Param("offset") int offset,
+                                                   @Param("size") int size);
 
-    /** Returns normalized products for a streaming import-template export. */
+    /** Return the Redis fingerprint fields for the selected products. */
+    @Select("<script>SELECT sku, source_domain FROM scraped_data.ecommerce_products " +
+            "WHERE id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>" +
+            "#{id}</foreach></script>")
+    List<Map<String, Object>> listProductFingerprintsByIds(@Param("ids") List<Long> ids);
+
+    /** Delete only products selected by their database IDs. */
+    @Delete("<script>DELETE FROM scraped_data.ecommerce_products " +
+            "WHERE id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>" +
+            "#{id}</foreach></script>")
+    int deleteProductsByIds(@Param("ids") List<Long> ids);
+
+    /** Stream crawl fingerprints for all products matching the current list filters. */
+    @Select("<script>SELECT sku, source_domain FROM scraped_data.ecommerce_products " +
+            "<where>" +
+            "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
+            "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
+            "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
+            "</foreach></if>" +
+            "<if test='categoriesFilter != null and categoriesFilter.size() > 0'>" +
+            "AND <foreach collection='categoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "(categories LIKE CONCAT('%', TRIM(#{category}), '%') OR custom_category LIKE CONCAT('%', TRIM(#{category}), '%'))" +
+            "</foreach></if>" +
+            "<if test='name != null and name.trim() != \"\"'>" +
+            "AND name LIKE CONCAT('%', TRIM(#{name}), '%') </if>" +
+            "</where>ORDER BY id</script>")
+    @Options(fetchSize = 500, resultSetType = ResultSetType.FORWARD_ONLY)
+    Cursor<Map<String, Object>> streamProductFingerprintsFiltered(@Param("domainsFilter") List<String> domainsFilter,
+                                                                    @Param("categoriesFilter") List<String> categoriesFilter,
+                                                                    @Param("name") String name);
+
+    /** Delete all products matching the current list filters. */
+    @Delete("<script>DELETE FROM scraped_data.ecommerce_products " +
+            "<where>" +
+            "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
+            "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
+            "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
+            "</foreach></if>" +
+            "<if test='categoriesFilter != null and categoriesFilter.size() > 0'>" +
+            "AND <foreach collection='categoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "(categories LIKE CONCAT('%', TRIM(#{category}), '%') OR custom_category LIKE CONCAT('%', TRIM(#{category}), '%'))" +
+            "</foreach></if>" +
+            "<if test='name != null and name.trim() != \"\"'>" +
+            "AND name LIKE CONCAT('%', TRIM(#{name}), '%') </if>" +
+            "</where></script>")
+    int deleteProductsFiltered(@Param("domainsFilter") List<String> domainsFilter,
+                                @Param("categoriesFilter") List<String> categoriesFilter,
+                                @Param("name") String name);
+
+    /** Returns normalized products for a small import-template export. */
     @Select("SELECT sku, name, description, regular_price, categories, images, cf_opingts, source_domain " +
             "FROM scraped_data.ecommerce_products " +
             "WHERE (#{domain} IS NULL OR #{domain} = '' OR source_domain = #{domain}) ORDER BY id")
     List<Map<String, Object>> listProductsForExport(String domain);
+
+    /** Stream normalized products so large exports never materialize the full table. */
+    @Select("<script>SELECT sku, name, description, regular_price, categories, images, cf_opingts, " +
+            "custom_category, source_domain, language FROM scraped_data.ecommerce_products " +
+            "<where>" +
+            "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
+            "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
+            "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
+            "</foreach></if>" +
+            "<if test='categoriesFilter != null and categoriesFilter.size() > 0'>" +
+            "AND <foreach collection='categoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "(categories LIKE CONCAT('%', TRIM(#{category}), '%') OR custom_category LIKE CONCAT('%', TRIM(#{category}), '%'))" +
+            "</foreach></if>" +
+            "<if test='name != null and name.trim() != \"\"'>AND name LIKE CONCAT('%', TRIM(#{name}), '%') </if>" +
+            "</where>ORDER BY id</script>")
+    @Options(fetchSize = 500, resultSetType = ResultSetType.FORWARD_ONLY)
+    Cursor<Map<String, Object>> streamProductsForExport(@Param("domainsFilter") List<String> domainsFilter,
+                                                         @Param("categoriesFilter") List<String> categoriesFilter,
+                                                         @Param("name") String name);
+
+    /** Legacy small export method retained for callers outside the HTTP export path. */
+    @Select("<script>SELECT sku, name, description, regular_price, categories, images, cf_opingts, " +
+            "custom_category, source_domain, language FROM scraped_data.ecommerce_products " +
+            "<where>" +
+            "<if test='domain != null and domain.trim() != \"\"'>AND source_domain = TRIM(#{domain}) </if>" +
+            "<if test='customCategory != null and customCategory.trim() != \"\"'>AND custom_category = TRIM(#{customCategory}) </if>" +
+            "</where>ORDER BY id</script>")
+    List<Map<String, Object>> listProductsForExcelExport(@Param("domain") String domain,
+                                                         @Param("customCategory") String customCategory);
 }

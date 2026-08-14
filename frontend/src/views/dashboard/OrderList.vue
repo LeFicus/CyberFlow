@@ -7,6 +7,9 @@
   <el-card>
     <!-- 筛选栏 -->
     <el-form :inline="true" :model="filters" class="order-filter" @submit.prevent="handleSearch">
+      <el-form-item label="用户组">
+        <el-segmented v-model="filters.userGroup" :options="groupOptions" @change="handleSearch" />
+      </el-form-item>
       <el-form-item label="订单号">
         <el-input v-model="filters.orderId" placeholder="输入订单号" clearable @keyup.enter="handleSearch" />
       </el-form-item>
@@ -62,14 +65,19 @@
       <el-table-column prop="customer_ip_country" label="国家" width="70" />
       <el-table-column prop="shipping_email" label="收货邮箱" width="180" />
       <el-table-column prop="admin_name" label="管理员" width="90" />
+      <el-table-column label="用户组" width="86" align="center">
+        <template #default="{ row }"><el-tag v-if="row.user_group" :type="row.user_group === 'A' ? 'primary' : 'success'">{{ row.user_group }}组</el-tag><span v-else>—</span></template>
+      </el-table-column>
       <el-table-column prop="create_time" label="创建时间" width="180" />
     </el-table>
 
     <el-pagination
       style="margin-top: 16px; justify-content: flex-end;"
       v-model:current-page="page" :page-size="size"
-      :total="total" layout="total, prev, pager, next"
+      :page-sizes="[10, 20, 50, 100]"
+      :total="total" layout="total, sizes, prev, pager, next"
       @current-change="fetchData"
+      @size-change="handleSizeChange"
     />
   </el-card>
 </template>
@@ -90,7 +98,8 @@ const size = ref(10)
 const total = ref(0)
 /** 筛选条件 */
 const summary = ref({})
-const filters = reactive({ orderId: '', domain: '', adminName: '', payStatus: '', currency: '', country: '', dateRange: [] })
+const groupOptions = [{ label: '全部', value: '' }, { label: 'A组', value: 'A' }, { label: 'B组', value: 'B' }]
+const filters = reactive({ userGroup: '', orderId: '', domain: '', adminName: '', payStatus: '', currency: '', country: '', dateRange: [] })
 const payStatusOptions = ['已支付', '支付异常', '支付失败', '待支付', '退款', '已取消']
 const currencyOptions = ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'AUD', 'CAD']
 const formatAmount = value => value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -118,6 +127,7 @@ async function fetchData() {
       orderId: filters.orderId.trim() || undefined,
       domain: filters.domain.trim() || undefined,
       adminName: filters.adminName.trim() || undefined,
+      userGroup: filters.userGroup || undefined,
       payStatus: filters.payStatus || undefined,
       currency: filters.currency || undefined,
       country: filters.country.trim() || undefined,
@@ -138,11 +148,17 @@ function handleSearch() {
   fetchData()
 }
 
+function handleSizeChange(value) {
+  size.value = value
+  page.value = 1
+  fetchData()
+}
+
 /**
  * 重置筛选条件并重新加载数据
  */
 function resetFilters() {
-  Object.assign(filters, { orderId: '', domain: '', adminName: '', payStatus: '', currency: '', country: '', dateRange: [] })
+  Object.assign(filters, { userGroup: '', orderId: '', domain: '', adminName: '', payStatus: '', currency: '', country: '', dateRange: [] })
   page.value = 1
   fetchData()
 }

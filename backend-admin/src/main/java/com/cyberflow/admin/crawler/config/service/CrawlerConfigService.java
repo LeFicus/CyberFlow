@@ -83,9 +83,9 @@ public class CrawlerConfigService {
         return group(cfg, "adminApi");
     }
 
-    public Map<String, Object> getPaymentPlatform() {
+    public Map<String, Object> getPaymentPlatform(String userGroup) {
         Map<String, Object> cfg = getRuntimeConfig(false);
-        return group(cfg, "paymentApi");
+        return group(cfg, "A".equalsIgnoreCase(userGroup) ? "paymentApiA" : "paymentApiB");
     }
 
     public Map<String, Object> getSiteStrategy() {
@@ -96,6 +96,11 @@ public class CrawlerConfigService {
     public Map<String, Object> getOrderStrategy() {
         Map<String, Object> cfg = getRuntimeConfig(false);
         return group(cfg, "orderStrategy");
+    }
+
+    public Map<String, Object> getRevenueConfig() {
+        Map<String, Object> cfg = getRuntimeConfig(false);
+        return group(cfg, "revenue");
     }
 
     public List<CrawlerScheduleConfig> listSchedules() {
@@ -156,6 +161,7 @@ public class CrawlerConfigService {
     private void reschedule(String taskType, String cronExpression) {
         String triggerName = switch (taskType) {
             case "site_crawl" -> "siteCrawlTrigger";
+            case "site_index" -> "siteIndexCrawlTrigger";
             case "order_crawl" -> "orderCrawlTrigger";
             default -> null;
         };
@@ -210,6 +216,8 @@ public class CrawlerConfigService {
             "password", "",
             "verifySsl", true
         )));
+        root.put("paymentApiA", paymentPlatformDefaults());
+        root.put("paymentApiB", paymentPlatformDefaults());
         root.put("paymentApi", new LinkedHashMap<>(Map.of(
             "baseUrl", "",
             "account", "",
@@ -231,6 +239,22 @@ public class CrawlerConfigService {
             "exchangeRate", 6.73,
             "rateFactor", 0.42,
             "leaderCommissionRate", 0.02,
+            "leaderConfig", new LinkedHashMap<>(Map.of(
+                "A", "A-黄伟",
+                "B", "B-李榕"
+            )),
+            "teacherMap", new LinkedHashMap<>(Map.of(
+                "A-贺国君", "-hgj",
+                "A-黄伟", "-hw",
+                "A-邓志杭", "-dzh",
+                "A-王志彬", "-wzb",
+                "A-余嘉豪", "-yjh",
+                "B-许晓龙", "-xxl",
+                "B-许伟涛", "-xwt",
+                "B-吴靖涛", "-wjt",
+                "B-王华炜", "-whw"
+            )),
+            "userMergeMap", new LinkedHashMap<>(),
             "commissionTiers", new ArrayList<>(List.of(
                 Map.of("threshold", 30000, "rate", 0.03),
                 Map.of("threshold", 80000, "rate", 0.05),
@@ -240,8 +264,21 @@ public class CrawlerConfigService {
         return root;
     }
 
+    private LinkedHashMap<String, Object> paymentPlatformDefaults() {
+        return new LinkedHashMap<>(Map.of(
+            "baseUrl", "",
+            "account", "",
+            "password", "",
+            "verifySsl", true
+        ));
+    }
+
     private String defaultCron(String taskType) {
-        return "order_crawl".equals(taskType) ? "0 0 3 * * ?" : "0 0 2 * * ?";
+        return switch (taskType) {
+            case "site_index" -> "0 30 2 * * ?";
+            case "order_crawl" -> "0 0 3 * * ?";
+            default -> "0 0 2 * * ?";
+        };
     }
 
     private boolean isSensitiveKey(String key) {

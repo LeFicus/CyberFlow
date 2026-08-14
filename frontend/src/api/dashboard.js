@@ -10,16 +10,21 @@ import request from '@/utils/request'
  * 获取仪表盘概览统计数据
  * @returns {Promise<Object>} 返回 total_sites, total_orders, total_products, today_orders 等概览指标
  */
-export function getOverview() {
-  return request.get('/admin/dashboard/overview')
+export function getOverview(params) {
+  return request.get('/admin/dashboard/overview', { params })
 }
 
 /**
  * 获取图表趋势数据
  * @returns {Promise<Object>} 返回 order_trend, index_trend 等图表数据
  */
-export function getCharts() {
-  return request.get('/admin/dashboard/charts')
+export function getCharts(params) {
+  return request.get('/admin/dashboard/charts', { params })
+}
+
+/** 获取个人绩效、组长提成和建站月度转化率。 */
+export function getRevenueSummary(params) {
+  return request.get('/admin/dashboard/revenue-summary', { params })
 }
 
 /**
@@ -42,16 +47,31 @@ export function getOrders(params) {
 
 /**
  * 获取商品列表（分页）
- * @param {Object} params - 查询参数 { page, size, domain, ... }
+ * @param {Object} params - 查询参数 { page, size, domain, category, name }
  * @returns {Promise<Object>} 返回 { total, list } 分页结果
  */
 export function getProducts(params) {
   return request.get('/admin/dashboard/products', { params })
 }
 
+/** Delete selected products and their crawl fingerprints. */
+export function deleteProducts(ids) {
+  return request.delete('/admin/dashboard/products', { data: ids })
+}
+
+/** Delete all products matching the current list filters. */
+export function clearProducts(params) {
+  return request.delete('/admin/dashboard/products/clear', { params })
+}
+
 /** Download products in a destination engine's native import CSV layout. */
 export function exportProducts(params) {
   return request.get('/admin/dashboard/products/export', { params, responseType: 'blob' })
+}
+
+/** Download normalized crawler fields as an XLSX workbook. */
+export function exportProductsExcel(params) {
+  return request.get('/admin/dashboard/products/export/excel', { params, responseType: 'blob' })
 }
 
 /**

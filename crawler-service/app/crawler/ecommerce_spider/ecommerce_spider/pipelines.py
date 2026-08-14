@@ -16,11 +16,25 @@ Scrapy 数据管道 — MySQLRedisPipeline 持久化管道
     Redis  : scraped_skus:{spider_name}:{domain} Set 集合
 """
 
-import mysql.connector
-from mysql.connector import pooling
-import redis
 import logging
+import json
+import os
+import tempfile
+from collections import Counter
+
+import pymysql
+import redis
 from scrapy.exceptions import DropItem
+from ecommerce_spider.normalization import (
+    MAX_PRODUCT_PRICE_USD,
+    currency_to_usd,
+    has_content,
+    normalize_category,
+    normalize_name,
+    product_dedupe_key,
+)
+
+MIN_SUBCATEGORY_PRODUCTS = 48
 
 
 class MySQLRedisPipeline:
@@ -53,10 +67,12 @@ class MySQLRedisPipeline:
         self.mysql_config = mysql_config
         self.redis_config = redis_config
         self.batch_size = batch_size
-        self.items_buffer = []  # 内存缓冲区，批量写入时清空
+        self.items_buffer = []  # 单次 MySQL executemany 的缓冲区
         self.logger = logging.getLogger(__name__)
-        self.db_pool = None  # MySQL 连接池（在 open_spider 时初始化）
         self.r = None        # Redis 客户端（在 open_spider 时初始化）
+        self.spider_name = ""
+        self.staging_path = None
+        self.staging_file = None
 
     @classmethod
     def from_crawler(cls, crawler):
@@ -87,15 +103,19 @@ class MySQLRedisPipeline:
         Args:
             spider: 启动的 Spider 实例
         """
-        # 初始化 MySQL 连接池（复用连接，避免频繁创建销毁）
-        self.db_pool = pooling.MySQLConnectionPool(
-            pool_name="shopify_pool",  # 连接池名称
-            pool_size=20,           # 最大连接数
-            **self.mysql_config     # 展开 host, user, password, database 等配置
-        )
+        # 启动时主动验证依赖服务，避免抓取结束后才发现无法入库。
+        conn = pymysql.connect(**self.mysql_config)
+        conn.close()
         # 初始化 Redis 连接
         self.r = redis.Redis(**self.redis_config)
-        self.logger.info("✅ Pipeline 启动：MySQL 线程池与 Redis 已就绪")
+        self.r.ping()
+        self.spider_name = spider.name
+        staging = tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", prefix="cyberflow-products-", suffix=".jsonl", delete=False
+        )
+        self.staging_path = staging.name
+        self.staging_file = staging
+        self.logger.info("✅ Pipeline 启动：MySQL、Redis 与商品分批暂存已就绪")
 
     def process_item(self, item, spider):
         """
@@ -122,6 +142,23 @@ class MySQLRedisPipeline:
         if not sku:
             raise DropItem("⚠️ 丢弃：缺失 SKU")
 
+        # Apply the same quality rules to every platform before Redis/MySQL.
+        item['Name'] = normalize_name(item.get('Name'))
+        item['Categories'] = normalize_category(item.get('Categories'))
+        item['Regular price'] = currency_to_usd(item.get('Regular price'), item.get('货币', 'USD'))
+        if item['Regular price'] <= 0:
+            raise DropItem("丢弃商品：美元价格必须大于 0")
+        if item['Regular price'] > MAX_PRODUCT_PRICE_USD:
+            raise DropItem(f"丢弃商品：美元价格超过 ${MAX_PRODUCT_PRICE_USD:.0f} ({item['Regular price']:.2f})")
+        if not has_content(item.get('Description')):
+            raise DropItem("丢弃商品：商品描述为空")
+        if not has_content(item.get('Images')):
+            raise DropItem("丢弃商品：商品图片为空")
+        item['语言'] = item.get('语言') or 'en'
+        item['_dedupe_key'] = product_dedupe_key(
+            item.get('原站域名'), item.get('Name'), item.get('Images')
+        )
+
         # 2. Redis 实时去重 — 基于 SKU 值
         # 为不同爬虫和不同域名维护独立的去重集合
         domain = item.get('原站域名')
@@ -130,12 +167,8 @@ class MySQLRedisPipeline:
         if self.r.sadd(redis_key, sku) == 0:
             raise DropItem(f"🚫 Redis 已存在 SKU: {sku}")
 
-        # 3. 加入批量缓冲区 — 暂存到内存等待批量写入
-        self.items_buffer.append(item)
-
-        # 4. 达到阈值时触发批量写入 MySQL
-        if len(self.items_buffer) >= self.batch_size:
-            self._flush_to_mysql()
+        # 3. 暂存整个爬取任务；结束后按完整批次统计二级分类数量。
+        self.staging_file.write(json.dumps(dict(item), ensure_ascii=False, default=str) + "\n")
 
         return item
 
@@ -157,17 +190,20 @@ class MySQLRedisPipeline:
         cursor = None
 
         # ========== SQL 语句 ==========
-        # 使用 REPLACE 语义：新记录插入，已有记录更新
-        # 主键为自增 id，SKU 上有唯一索引确保去重
+        # 新记录插入，已有记录按稳定 dedupe_key 更新，避免跨爬虫重复商品。
         sql = """
-            INSERT INTO ecommerce_products 
-            (sku, name, description, regular_price, categories, images, cf_opingts, custom_category, source_domain, language)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE 
-                name=VALUES(name), 
+            INSERT INTO ecommerce_products
+            (sku, name, description, regular_price, categories, images, cf_opingts, custom_category, source_domain, language, dedupe_key)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                name=VALUES(name),
                 regular_price=VALUES(regular_price),
                 categories=VALUES(categories),
-                images=VALUES(images)
+                images=VALUES(images),
+                description=VALUES(description),
+                cf_opingts=VALUES(cf_opingts),
+                custom_category=VALUES(custom_category),
+                language=VALUES(language)
         """
 
         # ========== 数据格式转换 ==========
@@ -179,13 +215,14 @@ class MySQLRedisPipeline:
                     item.get('SKU'),
                     item.get('Name'),
                     item.get('Description'),
-                    float(item.get('Regular price', 0) or 0),  # 价格转为 float，空值转为 0
+                    float(item.get('Regular price', 0) or 0),
                     item.get('Categories'),
                     item.get('Images'),
                     item.get('cf_opingts'),      # 商品属性选项
                     item.get('自定义分类'),        # 业务自定义分类
                     item.get('原站域名'),          # 原始站点域名
                     item.get('语言'),              # 语言代码（如 'en'）
+                    item.get('_dedupe_key'),
                 )
                 batch_values.append(val)
             except Exception as e:
@@ -193,7 +230,7 @@ class MySQLRedisPipeline:
 
         # ========== 执行批量写入 ==========
         try:
-            conn = self.db_pool.get_connection()   # 从连接池获取连接
+            conn = pymysql.connect(**self.mysql_config)
             cursor = conn.cursor()
             cursor.executemany(sql, batch_values)   # 批量执行（核心性能优化点）
             conn.commit()
@@ -203,6 +240,13 @@ class MySQLRedisPipeline:
             if conn:
                 conn.rollback()
             self.logger.error(f"❌ MySQL 批量写入失败: {e}")
+            # SADD happens before the batch flush. Remove fingerprints after
+            # rollback so a later retry can persist these same products.
+            for item in self.items_buffer:
+                domain = item.get('原站域名')
+                redis_key = f"scraped_skus:{self.spider_name}:{domain}"
+                self.r.srem(redis_key, item.get('SKU'))
+            raise
         finally:
             if cursor:
                 cursor.close()
@@ -222,9 +266,14 @@ class MySQLRedisPipeline:
         Args:
             spider: 将要关闭的 Spider 实例
         """
-        # 1. 强制刷新剩余数据 — 缓冲区可能还有不足 batch_size 的数据
-        if self.items_buffer:
-            self._flush_to_mysql()
+        # 1. 按本次完整爬取批次应用二级分类的 48 条阈值，再分批写入。
+        try:
+            self._flush_staged_items()
+        except Exception:
+            self._remove_staged_fingerprints()
+            raise
+        finally:
+            self._cleanup_staging_file()
 
         # 2. 提取站点域名 — 用于构造 Redis key
         # 方案 A: 从 spider 的 domain 属性获取（推荐）
@@ -252,3 +301,67 @@ class MySQLRedisPipeline:
             # 生产模式：保留 Redis 数据作为永久去重指纹库
             total_count = self.r.scard(redis_key)
             self.logger.info(f"📊 [Prod Mode] 站点 {domain} 持久化指纹总数: {total_count}")
+
+    def _flush_staged_items(self):
+        """Apply the 48-item rule across the entire crawl, then insert in chunks."""
+        if self.staging_file:
+            self.staging_file.close()
+            self.staging_file = None
+        if not self.staging_path or not os.path.exists(self.staging_path):
+            return
+
+        subcategory_counts = Counter()
+        with open(self.staging_path, "r", encoding="utf-8") as source:
+            for line in source:
+                item = json.loads(line)
+                category = str(item.get("Categories") or "")
+                if "|||" in category:
+                    subcategory_counts[category] += 1
+
+        fallback_categories = {
+            category: category.split("|||", 1)[0]
+            for category, count in subcategory_counts.items()
+            if count < MIN_SUBCATEGORY_PRODUCTS
+        }
+        for category, parent in fallback_categories.items():
+            self.logger.info(
+                "↩️ 当前爬取批次二级分类「%s」仅 %s 条，入库分类回退为「%s」",
+                category,
+                subcategory_counts[category],
+                parent,
+            )
+
+        with open(self.staging_path, "r", encoding="utf-8") as source:
+            for line in source:
+                item = json.loads(line)
+                category = item.get("Categories")
+                if category in fallback_categories:
+                    item["Categories"] = fallback_categories[category]
+                self.items_buffer.append(item)
+                if len(self.items_buffer) >= self.batch_size:
+                    self._flush_to_mysql()
+        if self.items_buffer:
+            self._flush_to_mysql()
+
+    def _remove_staged_fingerprints(self):
+        """Remove optimistic Redis fingerprints if final persistence failed."""
+        if self.staging_file:
+            self.staging_file.close()
+            self.staging_file = None
+        if not self.staging_path or not os.path.exists(self.staging_path):
+            return
+        with open(self.staging_path, "r", encoding="utf-8") as source:
+            for line in source:
+                item = json.loads(line)
+                domain = item.get("原站域名")
+                sku = item.get("SKU")
+                if domain and sku:
+                    self.r.srem(f"scraped_skus:{self.spider_name}:{domain}", sku)
+
+    def _cleanup_staging_file(self):
+        if self.staging_file:
+            self.staging_file.close()
+            self.staging_file = None
+        if self.staging_path and os.path.exists(self.staging_path):
+            os.unlink(self.staging_path)
+        self.staging_path = None
