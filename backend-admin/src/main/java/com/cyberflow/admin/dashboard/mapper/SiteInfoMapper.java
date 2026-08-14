@@ -71,6 +71,16 @@ public interface SiteInfoMapper {
     @Select("SELECT COUNT(*) FROM site_info WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup})")
     long countSitesByGroup(@Param("userGroup") String userGroup);
 
+    @Select({"<script>", "SELECT COUNT(*) FROM site_info",
+            "<where>",
+            "<if test='userGroup != null and userGroup != &quot;&quot;'> AND user_group = #{userGroup}</if>",
+            "<if test='startDateTime != null and startDateTime != &quot;&quot;'> AND created_at &gt;= #{startDateTime}</if>",
+            "<if test='endDateTime != null and endDateTime != &quot;&quot;'> AND created_at &lt; #{endDateTime}</if>",
+            "</where>", "</script>"})
+    long countSitesByGroupAndDateRange(@Param("userGroup") String userGroup,
+                                       @Param("startDateTime") String startDateTime,
+                                       @Param("endDateTime") String endDateTime);
+
     /**
      * 按管理员分组统计站点数量，结果按数量降序排列。
      *

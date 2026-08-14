@@ -22,6 +22,7 @@ class EcommerceSpiderItem(scrapy.Item):
         Name          = scrapy.Field()  # 商品名称
         Description   = scrapy.Field()  # 商品描述
         Regular_price = scrapy.Field()  # 商品价格
+        currency = scrapy.Field()  # 原始货币，入库前统一换算为 USD
         Categories    = scrapy.Field()  # 商品分类
         Images        = scrapy.Field()  # 商品图片URL
         cf_opingts    = scrapy.Field()  # 商品属性选项

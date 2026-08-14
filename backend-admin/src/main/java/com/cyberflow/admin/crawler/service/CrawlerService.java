@@ -154,7 +154,8 @@ public class CrawlerService {
      * @param triggeredBy  触发者用户 ID
      * @return 包含 task_id 和状态信息的 Map
      */
-    public Map<String, Object> triggerProductCrawl(Long siteConfigId, String domain, String type, String category, Long triggeredBy) {
+    public Map<String, Object> triggerProductCrawl(Long siteConfigId, String domain, String type,
+                                                   String category, Long triggeredBy) {
         if (!java.util.Set.of("shopify", "woocommerce", "bigcommerce").contains(type.toLowerCase())) {
             return Map.of("status", "Rejected", "message", "Unsupported product crawl engine");
         }

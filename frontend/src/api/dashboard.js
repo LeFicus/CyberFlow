@@ -59,6 +59,11 @@ export function deleteProducts(ids) {
   return request.delete('/admin/dashboard/products', { data: ids })
 }
 
+/** Delete all products matching the current list filters. */
+export function clearProducts(params) {
+  return request.delete('/admin/dashboard/products/clear', { params })
+}
+
 /** Download products in a destination engine's native import CSV layout. */
 export function exportProducts(params) {
   return request.get('/admin/dashboard/products/export', { params, responseType: 'blob' })

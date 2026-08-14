@@ -69,8 +69,24 @@ export function getTaskStatus(taskId) {
  * 获取最近的爬虫任务列表
  * @returns {Promise<Object>} 返回最近 20 条任务记录
  */
-export function getRecentTasks() {
-  return request.get('/admin/crawler/task-history/tasks')
+export function getRecentTasks(params) {
+  return request.get('/admin/crawler/task-history/tasks', { params })
+}
+
+export function getTaskSummary() {
+  return request.get('/admin/crawler/task-history/summary')
+}
+
+export function pauseTask(taskId) {
+  return request.post(`/admin/crawler/task-history/tasks/${taskId}/pause`)
+}
+
+export function resumeTask(taskId) {
+  return request.post(`/admin/crawler/task-history/tasks/${taskId}/resume`)
+}
+
+export function deleteTask(taskId) {
+  return request.delete(`/admin/crawler/task-history/tasks/${taskId}`)
 }
 
 /** 增量获取指定任务的爬虫日志。 */

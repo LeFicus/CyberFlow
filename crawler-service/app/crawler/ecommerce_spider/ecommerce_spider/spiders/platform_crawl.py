@@ -272,6 +272,7 @@ class PlatformCrawlSpider(scrapy.Spider):
             "原站域名": urlparse(response.url).netloc,
             "分布网站识别": 0,
             "语言": "en",
+            "货币": self._currency(response),
         }
         self.logger.info("成功生成商品 → %s | %s", sku, name[:60])
 
@@ -293,9 +294,10 @@ class PlatformCrawlSpider(scrapy.Spider):
         return re.sub(r"\s+", " ", value).strip()
 
     def _price(self, response):
-        pattern = self.selectors.get("price_regex") or r"[\d.,]+"
+        pattern = self._safe_price_regex(self.selectors.get("price_regex"))
+        compiled = re.compile(pattern)
         for text in response.xpath(self.selectors["price"]).getall():
-            match = re.search(pattern, text)
+            match = compiled.search(text)
             if not match:
                 continue
             value = match.group(0).replace(" ", "")
@@ -310,6 +312,35 @@ class PlatformCrawlSpider(scrapy.Spider):
             except ValueError:
                 continue
         return 0.0
+
+    @staticmethod
+    def _safe_price_regex(value):
+        """Return a numeric price regex even when an old template is malformed."""
+        default = r"[\d.,]+"
+        pattern = str(value or "").strip()
+        if not pattern:
+            return default
+        try:
+            compiled = re.compile(pattern)
+            samples = ("$1,234.56", "1234")
+            if any(
+                (match := compiled.search(sample))
+                and any(char.isdigit() for char in match.group())
+                for sample in samples
+            ):
+                return pattern
+        except re.error:
+            pass
+        return default
+
+    @staticmethod
+    def _currency(response):
+        values = response.xpath(
+            "//meta[@itemprop='priceCurrency']/@content | "
+            "//meta[@property='product:price:currency']/@content | "
+            "//*[@itemprop='priceCurrency']/text()"
+        ).getall()
+        return next((str(value).strip().upper() for value in values if str(value).strip()), "USD")
 
     @staticmethod
     def _clean_description(value):

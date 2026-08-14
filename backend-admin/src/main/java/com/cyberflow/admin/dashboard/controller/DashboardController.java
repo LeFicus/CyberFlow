@@ -14,6 +14,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 import java.util.Map;
+import java.util.List;
 
 /**
  * 仪表盘数据展示 REST 控制器。
@@ -118,8 +119,8 @@ public class DashboardController {
     @PreAuthorize("hasAuthority('dashboard:product:view')")
     public Result<Map<String, Object>> products(@RequestParam(defaultValue = "1") int page,
                                                 @RequestParam(defaultValue = "10") int size,
-                                                @RequestParam(required = false) String domain,
-                                                @RequestParam(required = false) String category,
+                                                @RequestParam(required = false) List<String> domain,
+                                                @RequestParam(required = false) List<String> category,
                                                 @RequestParam(required = false) String name) {
         return Result.ok(dashboardService.getProducts(page, size, domain, category, name));
     }
@@ -131,35 +132,51 @@ public class DashboardController {
         return Result.ok(dashboardService.deleteProducts(ids));
     }
 
+    /** Delete all products matching the current domain/category/name filters. */
+    @DeleteMapping("/products/clear")
+    @PreAuthorize("hasAuthority('dashboard:product:delete')")
+    public Result<Map<String, Object>> clearProducts(@RequestParam(required = false) List<String> domain,
+                                                      @RequestParam(required = false) List<String> category,
+                                                      @RequestParam(required = false) String name) {
+        return Result.ok(dashboardService.clearProducts(domain, category, name));
+    }
+
     /** Export normalized products to the CSV layout required by the selected engine. */
     @GetMapping(value = "/products/export", produces = "text/csv")
     @PreAuthorize("hasAuthority('dashboard:product:view')")
     public void exportProducts(@RequestParam String engine,
-                               @RequestParam(required = false) String domain,
+                               @RequestParam(required = false) List<String> domain,
+                               @RequestParam(required = false) List<String> category,
+                               @RequestParam(required = false) String name,
                                HttpServletResponse response) throws IOException {
         String normalizedEngine = engine.toLowerCase();
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType("text/csv; charset=UTF-8");
         response.setHeader("Content-Disposition", "attachment; filename=products-" + normalizedEngine + ".csv");
         var writer = response.getWriter();
-        writer.write("\\uFEFF"); // Excel UTF-8 BOM
-        writeCsv(writer, productExportService.headers(normalizedEngine));
-        for (var row : productExportService.buildRows(normalizedEngine, domain)) writeCsv(writer, row);
+        writer.write("\uFEFF"); // Excel UTF-8 BOM
+        productExportService.writeCsv(normalizedEngine, domain, category, name, writer);
     }
 
     /** Export the normalized crawler fields as XLSX, filtered by domain/custom category. */
     @GetMapping(value = "/products/export/excel",
             produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     @PreAuthorize("hasAuthority('dashboard:product:view')")
-    public void exportProductsExcel(@RequestParam(required = false) String domain,
+    public void exportProductsExcel(@RequestParam(required = false) List<String> domain,
+                                    @RequestParam(required = false) List<String> category,
+                                    @RequestParam(required = false) String name,
                                     @RequestParam(required = false) String customCategory,
                                     HttpServletResponse response) throws IOException {
-        String suffix = domain == null || domain.isBlank() ? "all" : domain.trim();
+        String suffix = domain == null || domain.isEmpty() ? "all"
+                : domain.size() == 1 ? domain.get(0).trim() : "multiple";
         String fileName = "products-" + suffix.replaceAll("[^a-zA-Z0-9._-]", "-") + ".xlsx";
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" +
                 URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20"));
-        productExportService.writeExcel(domain, customCategory, response.getOutputStream());
+        List<String> effectiveCategories = category == null || category.isEmpty()
+                ? (customCategory == null || customCategory.isBlank() ? List.of() : List.of(customCategory))
+                : category;
+        productExportService.writeExcel(domain, effectiveCategories, name, response.getOutputStream());
     }
 
     private void writeCsv(java.io.Writer writer, java.util.List<String> row) throws IOException {
@@ -208,7 +225,8 @@ public class DashboardController {
     @PreAuthorize("hasAuthority('dashboard:overview')")
     public Result<Map<String, Object>> revenueSummary(@RequestParam(required = false) String userGroup,
                                                        @RequestParam(required = false) String startDate,
-                                                       @RequestParam(required = false) String endDate) {
-        return Result.ok(revenueSummaryService.summarize(userGroup, startDate, endDate));
+                                                       @RequestParam(required = false) String endDate,
+                                                       @RequestParam(required = false) String siteCreatedMonth) {
+        return Result.ok(revenueSummaryService.summarize(userGroup, startDate, endDate, siteCreatedMonth));
     }
 }

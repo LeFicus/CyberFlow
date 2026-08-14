@@ -55,7 +55,7 @@ services:
     ports:
       - "${ADMIN_PORT:-8080}:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/cyberflow?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/cyberflow?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useCursorFetch=true&defaultFetchSize=500
       MYSQL_USER: ${MYSQL_USER:-root}
       MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
       RABBITMQ_HOST: rabbitmq

@@ -80,6 +80,7 @@ class BigCommerceCrawlSpider(PlatformCrawlSpider):
             "原站域名": urlparse(response.url).netloc,
             "分布网站识别": 0,
             "语言": "en",
+            "货币": self._jsonld_currency(product) or self._currency(response),
         }
         self.logger.info("成功生成商品 → %s | %s", sku, name[:60])
 
@@ -145,6 +146,15 @@ class BigCommerceCrawlSpider(PlatformCrawlSpider):
             if price > 0:
                 return price
         return 0.0
+
+    @staticmethod
+    def _jsonld_currency(product):
+        offers = product.get("offers") if isinstance(product, dict) else None
+        offers = offers if isinstance(offers, list) else [offers]
+        for offer in offers:
+            if isinstance(offer, dict) and offer.get("priceCurrency"):
+                return str(offer["priceCurrency"]).strip().upper()
+        return ""
 
     @staticmethod
     def _parse_jsonld_price(value):

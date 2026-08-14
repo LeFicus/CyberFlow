@@ -32,10 +32,10 @@ const routes = [
       { path: 'dashboard/products', name: 'DashboardProducts', component: () => import('@/views/dashboard/ProductList.vue'), meta: { title: '商品列表', section: '数据看板', description: '集中管理采集商品与跨平台导出', perm: 'dashboard:product:view' } },
       { path: 'crawler/site', name: 'CrawlerSite', component: () => import('@/views/crawler/SiteCrawler.vue'), meta: { title: '站点爬虫', section: '数据同步', description: '配置站点基础信息同步策略与执行计划', perm: 'crawler:site:start' } },
       { path: 'crawler/collect', name: 'CrawlerCollect', component: () => import('@/views/crawler/CollectCrawler.vue'), meta: { title: '收录统计', section: '数据同步', description: '同步站点搜索引擎收录数据', perm: 'crawler:collect:start' } },
-      { path: 'crawler/order', name: 'CrawlerOrder', component: () => import('@/views/crawler/OrderCrawler.vue'), meta: { title: '订单爬虫', section: '数据同步', description: '配置订单同步来源与增量规则', perm: 'crawler:order:start' } },
-      { path: 'crawler/history', name: 'CrawlerHistory', component: () => import('@/views/crawler/TaskHistory.vue'), meta: { title: '任务历史', section: '数据同步', description: '统一追踪同步与商品采集任务的执行结果' } },
-      { path: 'crawler/selector-template', name: 'SelectorTemplate', component: () => import('@/views/crawler/SelectorTemplate.vue'), meta: { title: '选择器模板', section: '商品采集', description: '维护不同电商平台的商品字段提取规则' } },
-      { path: 'crawler/site-config', name: 'CrawlerSiteConfig', component: () => import('@/views/crawler/SiteConfig.vue'), meta: { title: '采集站点', section: '商品采集', description: '注册商品来源站点并绑定选择器模板' } },
+      { path: 'crawler/order', name: 'CrawlerOrder', component: () => import('@/views/crawler/OrderCrawler.vue'), meta: { title: '订单爬虫', section: '数据同步', description: '配置订单同步来源与增量规则', perm: 'crawler:order:view' } },
+      { path: 'crawler/history', name: 'CrawlerHistory', component: () => import('@/views/crawler/TaskHistory.vue'), meta: { title: '任务历史', section: '数据同步', description: '统一追踪同步与商品采集任务的执行结果', perm: 'crawler:history:view' } },
+      { path: 'crawler/selector-template', name: 'SelectorTemplate', component: () => import('@/views/crawler/SelectorTemplate.vue'), meta: { title: '选择器模板', section: '商品采集', description: '维护不同电商平台的商品字段提取规则', perm: 'selector:template:list' } },
+      { path: 'crawler/site-config', name: 'CrawlerSiteConfig', component: () => import('@/views/crawler/SiteConfig.vue'), meta: { title: '数据源站点', section: '商品采集', description: '添加商品来源数据源并绑定选择器模板', perm: 'crawler:site:config:list' } },
       { path: 'system/user', name: 'SystemUser', component: () => import('@/views/system/UserList.vue'), meta: { title: '用户管理', section: '系统管理', description: '管理成员账号、状态与角色', perm: 'system:user:list' } },
       { path: 'system/role', name: 'SystemRole', component: () => import('@/views/system/RoleList.vue'), meta: { title: '角色管理', section: '系统管理', description: '配置角色及对应功能权限', perm: 'system:role:list' } },
       { path: 'system/menu', name: 'SystemMenu', component: () => import('@/views/system/MenuTree.vue'), meta: { title: '菜单管理', section: '系统管理', description: '维护后台导航结构与权限标识', perm: 'system:menu:list' } },
@@ -51,6 +51,15 @@ const router = createRouter({
   routes,
 })
 
+router.onError((error, to) => {
+  // Surface lazy-chunk failures instead of leaving the layout's router-view
+  // blank. A reload retries the chunk and preserves the requested URL.
+  console.error(`[router] failed to load ${to?.fullPath || ''}`, error)
+  if (to?.fullPath && window.location.pathname !== to.fullPath) {
+    window.location.assign(to.fullPath)
+  }
+})
+
 /**
  * 全局导航守卫 — 登录态校验
  * 在每次路由切换前检查 token 是否存在；
@@ -63,6 +72,14 @@ router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
   if (to.path !== '/login' && !token) {
     next('/login')
+  } else if (to.meta?.perm) {
+    const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    const permissions = userInfo.permissions || []
+    if (permissions.length && !permissions.includes(to.meta.perm)) {
+      next('/dashboard/overview')
+      return
+    }
+    next()
   } else {
     next()
   }

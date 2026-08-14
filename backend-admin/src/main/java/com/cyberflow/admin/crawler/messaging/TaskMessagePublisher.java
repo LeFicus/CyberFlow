@@ -127,7 +127,8 @@ public class TaskMessagePublisher {
      * @param triggeredBy  触发者用户 ID
      * @return 生成的任务唯一标识（UUID）
      */
-    public String publishProductCrawl(Long siteConfigId, String domain, String type, String category, Long triggeredBy) {
+    public String publishProductCrawl(Long siteConfigId, String domain, String type,
+                                      String category, Long triggeredBy) {
         String taskId = UUID.randomUUID().toString();
         Map<String, Object> message = Map.of(
             "task_id", taskId,

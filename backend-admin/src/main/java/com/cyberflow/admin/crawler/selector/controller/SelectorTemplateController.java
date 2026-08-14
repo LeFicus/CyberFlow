@@ -40,8 +40,10 @@ public class SelectorTemplateController {
      */
     @GetMapping
     @PreAuthorize("hasAuthority('selector:template:list')")
-    public Result<?> list(@RequestParam(required = false) String platform) {
-        return Result.ok(service.list(platform));
+    public Result<?> list(@RequestParam(required = false) String platform,
+                          @RequestParam(defaultValue = "1") int page,
+                          @RequestParam(defaultValue = "10") int size) {
+        return Result.ok(service.page(platform, page, size));
     }
 
     /**

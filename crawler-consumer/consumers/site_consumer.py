@@ -17,7 +17,7 @@ from loguru import logger
 from consumers.base_consumer import BaseConsumer
 from crawlers.site_crawler import AsyncSiteCrawler
 from crawlers.site_index_crawler import AsyncSiteIndexCrawler
-from db.repository import CursorRepository
+from db.repository import CursorRepository, TaskCancelledError
 from config import (
     ADMIN_API_BASE_URL,
     ADMIN_API_USERNAME,
@@ -81,6 +81,7 @@ class SiteConsumer(BaseConsumer):
         start = time.monotonic()
 
         try:
+            await self.repo.wait_for_task_control(task_id)
             await self.repo.update_task_status(task_id, "RUNNING", progress=10, progress_message="正在连接站点管理平台")
 
             platform = payload.get("platform", {})
@@ -121,6 +122,9 @@ class SiteConsumer(BaseConsumer):
                                 {"last_updated_at": new_cursor}, duration_ms)
             logger.success(f"✅ Site crawl done: {len(records)} records")
 
+        except TaskCancelledError as e:
+            logger.info(f"⏹️ Site crawl cancelled by operator: {task_id} ({e})")
+            return
         except Exception as e:
             duration_ms = int((time.monotonic() - start) * 1000)
             await self.repo.update_task_status(
@@ -137,6 +141,7 @@ class SiteConsumer(BaseConsumer):
         await self.repo.connect()
         start = time.monotonic()
         try:
+            await self.repo.wait_for_task_control(task_id)
             await self.repo.update_task_status(
                 task_id, "RUNNING", progress=10, progress_message="正在连接收录统计平台"
             )
@@ -165,6 +170,9 @@ class SiteConsumer(BaseConsumer):
                 {"last_recorded_at": new_cursor}, duration_ms,
             )
             logger.success(f"✅ Site index crawl done: {rows_affected} records")
+        except TaskCancelledError as e:
+            logger.info(f"⏹️ Site index crawl cancelled by operator: {task_id} ({e})")
+            return
         except Exception as e:
             duration_ms = int((time.monotonic() - start) * 1000)
             await self.repo.update_task_status(
@@ -230,9 +238,10 @@ class SiteConsumer(BaseConsumer):
         async with self.repo.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 for r in records:
+                    add_date = r.get("add_date") or r.get("created_at")
                     await cur.execute(
                         """INSERT INTO site_info (username, site_domain, admin_name, user_group, theme_name, product_category, created_at)
-                           VALUES (%s, %s, %s, %s, %s, %s, COALESCE(%s, NOW()))
+                           VALUES (%s, %s, %s, %s, %s, %s, %s)
                            ON DUPLICATE KEY UPDATE
                              admin_name=VALUES(admin_name),
                              user_group=VALUES(user_group),
@@ -240,7 +249,7 @@ class SiteConsumer(BaseConsumer):
                              product_category=VALUES(product_category),
                              created_at=COALESCE(%s, created_at)""",
                         (r["username"], r["site_domain"], r.get("admin_name"), r.get("user_group"),
-                         r.get("theme_name"), r.get("product_category"), r.get("created_at"), r.get("created_at")),
+                         r.get("theme_name"), r.get("product_category"), add_date, add_date),
                     )
 
     def _publish_result(self, task_id, status, rows_affected, new_cursor, duration_ms, error=None):

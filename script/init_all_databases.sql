@@ -387,7 +387,8 @@ CREATE TABLE IF NOT EXISTS site_indexing_history (
 -- ------------------------------------------------------------
 INSERT INTO sys_role (id, role_name, role_code, description) VALUES
 (1, '超级管理员', 'ROLE_ADMIN', '拥有所有权限'),
-(2, '运营人员', 'ROLE_OPERATOR', '可查看数据看板、触发爬虫')
+(2, '运营人员', 'ROLE_OPERATOR', '可查看数据看板、触发爬虫'),
+(3, '普通用户', 'ROLE_USER', '仅可查看经营数据和执行 A/B 订单爬取')
 ON DUPLICATE KEY UPDATE
     role_name=VALUES(role_name),
     role_code=VALUES(role_code),
@@ -477,6 +478,13 @@ UPDATE sys_menu SET perms = 'dashboard:product:delete' WHERE id = 15;
 UPDATE sys_menu SET perms = 'crawler:site:start'      WHERE id = 25;
 UPDATE sys_menu SET perms = 'crawler:collect:start'   WHERE id = 26;
 UPDATE sys_menu SET perms = 'crawler:order:start'     WHERE id = 27;
+UPDATE sys_menu SET perms = 'crawler:order:view'      WHERE id = 23;
+UPDATE sys_menu SET perms = 'crawler:history:view'    WHERE id = 24;
+INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, perms, status, sort_order) VALUES
+(49, 24, '任务控制', 2, 'crawler:task:control', 1, 1),
+(50, 24, '删除任务', 2, 'crawler:task:delete', 1, 2),
+(51, 23, '修改订单配置', 2, 'crawler:order:config', 1, 2)
+ON DUPLICATE KEY UPDATE perms=VALUES(perms), status=1;
 UPDATE sys_menu SET perms = 'system:user:list'        WHERE id = 31;
 UPDATE sys_menu SET perms = 'system:role:list'        WHERE id = 32;
 UPDATE sys_menu SET perms = 'system:menu:list'        WHERE id = 33;
@@ -493,6 +501,18 @@ INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES (2, 1), (2, 2);
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) SELECT 2, id FROM sys_menu WHERE menu_type = 1 AND parent_id IN (1, 2);
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) SELECT 2, id FROM sys_menu WHERE id IN (25, 26, 27);
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES (2, 15);
+INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES
+(1, 49), (1, 50), (1, 51), (2, 49), (2, 50), (2, 51);
+
+DELETE FROM sys_role_menu WHERE role_id = 3;
+INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES
+(3, 1), (3, 11), (3, 12), (3, 13), (3, 2), (3, 23), (3, 24), (3, 27);
+
+INSERT INTO sys_user (id, username, password, nickname, status) VALUES
+(2, 'normal_user', '$2b$12$VA8lCR9fDcXkscYPUls7.O6dGD67C1FKpx9HtTIwuX3nzq5fVJ7KC', '普通用户', 1)
+ON DUPLICATE KEY UPDATE nickname=VALUES(nickname), status=1;
+DELETE FROM sys_user_role WHERE user_id = 2;
+INSERT INTO sys_user_role (user_id, role_id) VALUES (2, 3);
 
 -- ------------------------------------------------------------
 -- 预置选择器模板: Shopify 平台（标记为系统模板，无需配置选择器）
@@ -583,5 +603,9 @@ CREATE TABLE IF NOT EXISTS ecommerce_products (
     source_domain   VARCHAR(255),
     language        VARCHAR(10) DEFAULT 'en',
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_product_created_id (created_at, id),
+    INDEX idx_product_domain_created (source_domain, created_at, id),
+    INDEX idx_product_category_created (custom_category, created_at, id),
+    INDEX idx_product_name_prefix (name(100))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

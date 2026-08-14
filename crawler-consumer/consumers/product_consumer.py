@@ -15,17 +15,22 @@ import codecs
 import json
 import os
 import re
+import signal
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from loguru import logger
 from consumers.base_consumer import BaseConsumer
-from db.repository import CursorRepository
+from db.repository import CursorRepository, TaskCancelledError
 from config import QUEUE_PRODUCT_CRAWL, EXCHANGE_TASKS
 import pika
 
 
 PRODUCT_CRAWL_TIMEOUT_SECONDS = max(60, int(os.getenv("PRODUCT_CRAWL_TIMEOUT_SECONDS", "1800")))
+PROHIBITED_CATEGORY_RE = re.compile(
+    r"保健品|保健|食品|枪支|枪械|弹药|武器|毒品|烟酒|烟草|烟具|酒精|服装|服饰|成人",
+    re.IGNORECASE,
+)
 
 
 class ProductConsumer(BaseConsumer):
@@ -77,12 +82,13 @@ class ProductConsumer(BaseConsumer):
         site_config_id = payload["site_config_id"]
         domain = payload["domain"]
         site_type = payload["type"]
-        category = payload.get("category", "未知分类")
+        category = self._safe_category(payload.get("category"))
 
         await self.repo.connect()
         start = time.monotonic()
 
         try:
+            await self.repo.wait_for_task_control(task_id)
             await self.repo.update_task_status(task_id, "RUNNING", progress=10, progress_message="正在准备商品采集")
 
             supported_types = {
@@ -101,6 +107,7 @@ class ProductConsumer(BaseConsumer):
             progress = 25
             deadline = time.monotonic() + PRODUCT_CRAWL_TIMEOUT_SECONDS
             while not crawl_task.done():
+                await self.repo.wait_for_task_control(task_id)
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     crawl_task.cancel()
@@ -126,6 +133,9 @@ class ProductConsumer(BaseConsumer):
             self._publish_result(task_id, "success", result, None, duration_ms)
             logger.success(f"✅ Product crawl done: {domain} ({result} items)")
 
+        except TaskCancelledError as e:
+            logger.info(f"⏹️ Product crawl cancelled by operator: {task_id} ({e})")
+            return
         except Exception as e:
             duration_ms = int((time.monotonic() - start) * 1000)
             await self.repo.update_task_status(
@@ -219,7 +229,44 @@ class ProductConsumer(BaseConsumer):
                 selectors.update(json.loads(extra) if isinstance(extra, str) else extra)
             except (TypeError, json.JSONDecodeError):
                 logger.warning("Ignoring invalid extra_selectors on site config")
+        if "price_regex" in selectors:
+            selectors["price_regex"] = ProductConsumer._normalize_price_regex(selectors["price_regex"])
         return selectors
+
+    @staticmethod
+    def _normalize_price_regex(value: object) -> str:
+        """Keep malformed price patterns from turning every price into zero.
+
+        A common UI value was saved as ``[d.,]+`` (the ``d`` is a literal
+        letter, not the ``\\d`` digit class).  Validate custom patterns against
+        representative numeric text and fall back to the crawler default when
+        they cannot match a number.
+        """
+        default = r"[\d.,]+"
+        pattern = str(value or "").strip()
+        if not pattern:
+            return default
+        try:
+            compiled = re.compile(pattern)
+            samples = ("$1,234.56", "1234")
+            if any(
+                (match := compiled.search(sample))
+                and any(char.isdigit() for char in match.group())
+                for sample in samples
+            ):
+                return pattern
+        except re.error:
+            pass
+        logger.warning("Invalid price_regex %r; using default %r", pattern, default)
+        return default
+
+    @staticmethod
+    def _safe_category(value: object) -> str:
+        """Never write prohibited GMC branches into product custom_category."""
+        category = str(value or "").strip()
+        if not category or PROHIBITED_CATEGORY_RE.search(category):
+            return "未分类"
+        return category
 
     async def _exec_scrapy(self, cmd: list[str], task_id: str | None = None) -> int:
         """执行 Scrapy，并将合并后的 stdout/stderr 完整流式写入任务日志。
@@ -313,10 +360,29 @@ class ProductConsumer(BaseConsumer):
             await flush_log()
 
         stream_task = asyncio.create_task(stream_output())
+        paused = False
+        deadline = time.monotonic() + PRODUCT_CRAWL_TIMEOUT_SECONDS
         try:
-            await asyncio.wait_for(
-                asyncio.shield(stream_task), timeout=PRODUCT_CRAWL_TIMEOUT_SECONDS
-            )
+            while not stream_task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(stream_task), timeout=1.0)
+                except asyncio.TimeoutError:
+                    status = await self.repo.get_task_status(task_id) if task_id else "RUNNING"
+                    if status is None or status in {"CANCELLED", "DELETED"}:
+                        raise TaskCancelledError("任务已被删除或取消")
+                    if status == "PAUSED" and not paused:
+                        if proc.returncode is None:
+                            proc.send_signal(signal.SIGSTOP)
+                        paused = True
+                        continue
+                    if status != "PAUSED" and paused:
+                        if proc.returncode is None:
+                            proc.send_signal(signal.SIGCONT)
+                        paused = False
+                    if not paused and time.monotonic() >= deadline:
+                        raise asyncio.TimeoutError
+            if paused and proc.returncode is None:
+                proc.send_signal(signal.SIGCONT)
             await proc.wait()
         except asyncio.TimeoutError as exc:
             logger.error(
@@ -341,6 +407,18 @@ class ProductConsumer(BaseConsumer):
             if task_id:
                 await asyncio.shield(self.repo.append_task_log(
                     task_id, "\n[CyberFlow] 任务被取消，爬虫子进程已终止。\n"
+                ))
+            raise
+        except Exception:
+            if proc.returncode is None:
+                if paused:
+                    proc.send_signal(signal.SIGCONT)
+                proc.kill()
+            await proc.wait()
+            await asyncio.shield(stream_task)
+            if task_id:
+                await asyncio.shield(self.repo.append_task_log(
+                    task_id, "\n[CyberFlow] 任务已暂停/取消或被删除，爬虫子进程已终止。\n"
                 ))
             raise
 

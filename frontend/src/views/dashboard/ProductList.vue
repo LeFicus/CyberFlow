@@ -7,10 +7,36 @@
     <!-- 筛选栏 -->
     <el-form :inline="true" :model="filters" style="margin-bottom: 16px;">
       <el-form-item label="来源域名">
-        <el-input v-model="filters.domain" placeholder="按域名筛选" clearable @keyup.enter="handleSearch" />
+        <el-select
+          v-model="filters.domain"
+          multiple
+          filterable
+          allow-create
+          default-first-option
+          clearable
+          :reserve-keyword="false"
+          style="width: 300px;"
+          placeholder="输入域名后按 Enter，可输入多个"
+          @change="handleSearch"
+        />
       </el-form-item>
       <el-form-item label="自定义分类">
-        <el-input v-model="filters.category" placeholder="按自定义分类筛选/导出" clearable @keyup.enter="handleSearch" />
+        <el-tree-select
+          v-model="filters.category"
+          :data="categoryTree"
+          :props="categoryTreeProps"
+          check-strictly
+          multiple
+          show-checkbox
+          default-expand-all
+          collapse-tags
+          collapse-tags-tooltip
+          clearable
+          filterable
+          @change="handleSearch"
+          style="width:300px;"
+          placeholder="按类目筛选/导出（可多选）"
+        />
       </el-form-item>
       <el-form-item label="商品名称">
         <el-input v-model="filters.name" placeholder="按商品名称筛选" clearable @keyup.enter="handleSearch" />
@@ -25,6 +51,14 @@
           :loading="deleting"
           @click="handleDeleteSelected"
         >删除所选<span v-if="selectedRows.length">（{{ selectedRows.length }}）</span></el-button>
+        <el-button
+          v-if="userStore.hasPermission('dashboard:product:delete')"
+          type="danger"
+          plain
+          :disabled="total === 0"
+          :loading="clearing"
+          @click="handleClearFiltered"
+        >清空当前筛选</el-button>
         <el-button type="success" :loading="exporting" @click="handleExport">按当前条件导出 Excel</el-button>
       </el-form-item>
     </el-form>
@@ -69,8 +103,10 @@
     <el-pagination
       style="margin-top: 16px; justify-content: flex-end;"
       v-model:current-page="page" :page-size="size"
-      :total="total" layout="total, prev, pager, next"
+      :page-sizes="[10, 20, 50, 100]"
+      :total="total" layout="total, sizes, prev, pager, next"
       @current-change="fetchData"
+      @size-change="handleSizeChange"
     />
   </el-card>
 </template>
@@ -78,10 +114,13 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getProducts, exportProductsExcel, deleteProducts } from '@/api/dashboard'
+import { getProducts, exportProductsExcel, deleteProducts, clearProducts } from '@/api/dashboard'
 import { useUserStore } from '@/store/user'
+import { PRODUCT_CATEGORY_TREE, productCategoryLabel } from '@/data/productCategories'
 
 const userStore = useUserStore()
+const categoryTree = PRODUCT_CATEGORY_TREE
+const categoryTreeProps = { value: 'value', label: 'label', children: 'children' }
 
 /** 表格 loading 状态 */
 const loading = ref(false)
@@ -95,9 +134,10 @@ const size = ref(10)
 const total = ref(0)
 const exporting = ref(false)
 const deleting = ref(false)
+const clearing = ref(false)
 const selectedRows = ref([])
 /** 筛选条件 */
-const filters = reactive({ domain: '', category: '', name: '' })
+const filters = reactive({ domain: [], category: [], name: '' })
 
 function formatPrice(value) {
   const amount = Number(value)
@@ -125,6 +165,22 @@ function handleSelectionChange(rows) {
   selectedRows.value = rows
 }
 
+function selectedCategories() {
+  const categories = filters.category
+    .map(value => (value && typeof value === 'object' ? value.value || value.label : value))
+    .map(value => productCategoryLabel(value))
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+  return categories.length ? [...new Set(categories)] : undefined
+}
+
+function selectedDomains() {
+  const domains = filters.domain
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+  return domains.length ? [...new Set(domains)] : undefined
+}
+
 async function handleDeleteSelected() {
   const rows = selectedRows.value
   if (!rows.length) return
@@ -149,6 +205,38 @@ async function handleDeleteSelected() {
   }
 }
 
+async function handleClearFiltered() {
+  const activeFilters = [
+    selectedDomains()?.length ? `域名：${selectedDomains().join('、')}` : '',
+    selectedCategories()?.length ? `分类：${selectedCategories().join('、')}` : '',
+    filters.name.trim() ? `商品名称：${filters.name.trim()}` : '',
+  ].filter(Boolean)
+  const scope = activeFilters.length ? activeFilters.join('，') : '全部商品'
+  try {
+    await ElMessageBox.confirm(
+      `将永久删除${scope}匹配的 ${total.value} 条商品数据，确定继续吗？`,
+      '清空当前筛选',
+      { type: 'warning', confirmButtonText: '确认清空', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+
+  clearing.value = true
+  try {
+    const res = await clearProducts({
+      domain: selectedDomains(),
+      category: selectedCategories(),
+      name: filters.name || undefined,
+    })
+    ElMessage.success(`已清空 ${res.data.deleted_count} 条商品数据`)
+    page.value = 1
+    await fetchData()
+  } finally {
+    clearing.value = false
+  }
+}
+
 /**
  * 获取商品分页列表
  */
@@ -158,8 +246,8 @@ async function fetchData() {
     const res = await getProducts({
       page: page.value,
       size: size.value,
-      domain: filters.domain || undefined,
-      category: filters.category || undefined,
+      domain: selectedDomains(),
+      category: selectedCategories(),
       name: filters.name || undefined,
     })
     tableData.value = Array.isArray(res.data?.list) ? res.data.list : []
@@ -174,8 +262,8 @@ async function fetchData() {
  * 重置筛选条件并重新加载
  */
 function resetFilters() {
-  filters.domain = ''
-  filters.category = ''
+  filters.domain = []
+  filters.category = []
   filters.name = ''
   page.value = 1
   fetchData()
@@ -186,12 +274,19 @@ function handleSearch() {
   fetchData()
 }
 
+function handleSizeChange(value) {
+  size.value = value
+  page.value = 1
+  fetchData()
+}
+
 async function handleExport() {
   exporting.value = true
   try {
     const res = await exportProductsExcel({
-      domain: filters.domain || undefined,
-      customCategory: filters.category || undefined,
+      domain: selectedDomains(),
+      category: selectedCategories(),
+      name: filters.name || undefined,
     })
     const url = URL.createObjectURL(res.data)
     const link = document.createElement('a')

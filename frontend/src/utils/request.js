@@ -16,6 +16,9 @@ import { ElMessage } from 'element-plus'
 const service = axios.create({
   baseURL: '',
   timeout: 15000,
+  // Serialize arrays as repeated keys (`category=a&category=b`) so Spring's
+  // List<String> request parameters receive multi-select filters directly.
+  paramsSerializer: { indexes: null },
 })
 
 /**

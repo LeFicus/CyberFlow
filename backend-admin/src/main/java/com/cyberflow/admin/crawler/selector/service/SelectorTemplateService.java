@@ -1,12 +1,15 @@
 package com.cyberflow.admin.crawler.selector.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cyberflow.admin.crawler.selector.entity.SelectorTemplate;
 import com.cyberflow.admin.crawler.selector.mapper.SelectorTemplateMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * 选择器模板业务服务。
@@ -20,6 +23,8 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class SelectorTemplateService {
+
+    private static final String DEFAULT_PRICE_REGEX = "[\\d.,]+";
 
     /** 选择器模板数据访问映射器 */
     private final SelectorTemplateMapper mapper;
@@ -39,6 +44,15 @@ public class SelectorTemplateService {
         return mapper.selectList(wrapper);
     }
 
+    public Page<SelectorTemplate> page(String platform, int pageNum, int pageSize) {
+        LambdaQueryWrapper<SelectorTemplate> wrapper = new LambdaQueryWrapper<>();
+        if (platform != null && !platform.isBlank()) {
+            wrapper.eq(SelectorTemplate::getPlatform, platform);
+        }
+        wrapper.orderByAsc(SelectorTemplate::getPlatform).orderByAsc(SelectorTemplate::getName);
+        return mapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+    }
+
     /**
      * 根据 ID 查询单个模板。
      *
@@ -56,6 +70,7 @@ public class SelectorTemplateService {
      * @return 创建后的模板（含自增 ID）
      */
     public SelectorTemplate create(SelectorTemplate template) {
+        template.setPriceRegex(normalizePriceRegex(template.getPriceRegex()));
         mapper.insert(template);
         return template;
     }
@@ -69,6 +84,7 @@ public class SelectorTemplateService {
      */
     public SelectorTemplate update(Long id, SelectorTemplate template) {
         template.setId(id);
+        template.setPriceRegex(normalizePriceRegex(template.getPriceRegex()));
         mapper.updateById(template);
         return mapper.selectById(id);
     }
@@ -108,7 +124,7 @@ public class SelectorTemplateService {
         copy.setPlatform(original.getPlatform());
         copy.setTitleSelector(original.getTitleSelector());
         copy.setPriceSelector(original.getPriceSelector());
-        copy.setPriceRegex(original.getPriceRegex());
+        copy.setPriceRegex(normalizePriceRegex(original.getPriceRegex()));
         copy.setDescriptionSelector(original.getDescriptionSelector());
         copy.setImagesSelector(original.getImagesSelector());
         copy.setCurrency(original.getCurrency());
@@ -118,5 +134,23 @@ public class SelectorTemplateService {
         copy.setIsSystem(0);
         mapper.insert(copy);
         return copy;
+    }
+
+    /** Prevent malformed custom patterns from making every parsed price zero. */
+    private String normalizePriceRegex(String value) {
+        if (value == null || value.isBlank()) return null;
+        String pattern = value.trim();
+        try {
+            Pattern compiled = Pattern.compile(pattern);
+            var moneyMatch = compiled.matcher("$1,234.56");
+            var integerMatch = compiled.matcher("1234");
+            if ((moneyMatch.find() && moneyMatch.group().chars().anyMatch(Character::isDigit))
+                    || (integerMatch.find() && integerMatch.group().chars().anyMatch(Character::isDigit))) {
+                return pattern;
+            }
+        } catch (PatternSyntaxException ignored) {
+            // Fall through to the known-safe default.
+        }
+        return DEFAULT_PRICE_REGEX;
     }
 }

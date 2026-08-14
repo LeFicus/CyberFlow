@@ -60,6 +60,17 @@
       </el-table-column>
     </el-table>
 
+    <el-pagination
+      style="margin-top: 16px; justify-content: flex-end;"
+      v-model:current-page="page"
+      :page-size="size"
+      :page-sizes="[10, 20, 50, 100]"
+      :total="total"
+      layout="total, sizes, prev, pager, next"
+      @current-change="fetchList"
+      @size-change="handleSizeChange"
+    />
+
     <!-- 编辑/新建弹窗 -->
     <el-dialog
       v-model="dialogVisible"
@@ -138,6 +149,9 @@ const dialogVisible = ref(false)
 const isEditing = ref(false)
 /** 平台筛选值 */
 const filterPlatform = ref('')
+const page = ref(1)
+const size = ref(10)
+const total = ref(0)
 
 /** 模板表单数据 */
 const form = reactive({
@@ -179,11 +193,22 @@ function resetForm() {
 async function fetchList() {
   loading.value = true
   try {
-    const res = await listTemplates(filterPlatform.value || undefined)
-    templates.value = res.data || []
+    const res = await listTemplates({
+      platform: filterPlatform.value || undefined,
+      page: page.value,
+      size: size.value,
+    })
+    templates.value = res.data?.records || []
+    total.value = Number(res.data?.total || 0)
   } finally {
     loading.value = false
   }
+}
+
+function handleSizeChange(value) {
+  size.value = value
+  page.value = 1
+  fetchList()
 }
 
 /**

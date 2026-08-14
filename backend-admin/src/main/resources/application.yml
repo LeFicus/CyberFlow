@@ -12,7 +12,7 @@ spring:
       mode: always
 
   datasource:
-    url: jdbc:mysql://localhost:3306/cyberflow?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://localhost:3306/cyberflow?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useCursorFetch=true&defaultFetchSize=500
     username: ${MYSQL_USER:root}
     password: ${MYSQL_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver

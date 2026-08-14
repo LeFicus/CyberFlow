@@ -15,7 +15,7 @@
     <section class="daily-brief">
       <div class="brief-copy">
         <span class="brief-kicker"><i></i>今日经营快照</span>
-        <h2>今日成功 <strong>{{ formatNumber(overview.today_orders) }}</strong> 笔订单，成功金额 <strong>{{ formatMoney(overview.today_amount) }}</strong></h2>
+        <h2>今日成功 <strong>{{ formatNumber(overview.today_orders ?? overview.successful_orders) }}</strong> 笔订单，成功金额 <strong>{{ formatMoney(overview.today_amount ?? overview.successful_amount) }}</strong></h2>
         <p>{{ growthCopy }}</p>
       </div>
       <div class="brief-metrics">
@@ -40,7 +40,8 @@
       <div class="panel-heading revenue-heading">
         <div><h2>收入转化与提成</h2><p>按 monthly_revenue_conversion.py 口径实时汇总</p></div>
         <div class="revenue-rules">
-          <el-date-picker v-model="revenueDateRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" class="revenue-date" @change="loadDashboard" />
+          <div class="revenue-date-control"><span>订单统计</span><el-date-picker v-model="revenueDateRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" class="revenue-date" @change="loadDashboard" /></div>
+          <div class="revenue-date-control"><span>建站月份</span><el-date-picker v-model="siteCreatedMonth" type="month" value-format="YYYY-MM" placeholder="选择建站月份" class="revenue-month" @change="loadDashboard" /></div>
           <span>汇率 {{ revenueParameters.exchange_rate || '—' }}</span>
           <span>折算系数 {{ revenueParameters.rate_factor || '—' }}</span>
           <span>组长比例 {{ formatRate(revenueParameters.leader_commission_rate) }}</span>
@@ -51,7 +52,7 @@
           <el-table :data="personalPerformance" stripe max-height="390" empty-text="暂无绩效数据">
             <el-table-column prop="user_group" label="组别" width="70" />
             <el-table-column prop="real_name" label="姓名" min-width="120" />
-            <el-table-column prop="site_count" label="站点" width="75" align="right" />
+            <el-table-column prop="site_count" label="全局站点" width="90" align="right" />
             <el-table-column prop="deduplicated_orders" label="去重订单" width="95" align="right" />
             <el-table-column label="转化率" width="95" align="right"><template #default="{ row }">{{ formatPercent(row.conversion_rate) }}</template></el-table-column>
             <el-table-column label="原成交金额" min-width="120" align="right"><template #default="{ row }">{{ formatMoney(row.original_amount) }}</template></el-table-column>
@@ -65,7 +66,7 @@
             <el-table-column prop="user_group" label="组别" width="70" />
             <el-table-column prop="leader_name" label="组长" min-width="120" />
             <el-table-column prop="member_count" label="成员" width="80" align="right" />
-            <el-table-column prop="site_count" label="站点" width="80" align="right" />
+            <el-table-column prop="site_count" label="全局站点" width="95" align="right" />
             <el-table-column prop="deduplicated_orders" label="去重订单" width="100" align="right" />
             <el-table-column label="转化率" width="100" align="right"><template #default="{ row }">{{ formatPercent(row.conversion_rate) }}</template></el-table-column>
             <el-table-column label="小组原成交金额" min-width="145" align="right"><template #default="{ row }">{{ formatMoney(row.original_amount) }}</template></el-table-column>
@@ -79,8 +80,10 @@
             <el-table-column prop="real_name" label="姓名" min-width="120" />
             <el-table-column prop="admin_name" label="账号" min-width="130" />
             <el-table-column prop="site_count" label="建站数" width="90" align="right" />
-            <el-table-column prop="deduplicated_orders" label="去重订单" width="100" align="right" />
-            <el-table-column label="转化率" width="100" align="right"><template #default="{ row }">{{ formatPercent(row.conversion_rate) }}</template></el-table-column>
+            <el-table-column prop="deduplicated_orders" label="本月去重订单" width="115" align="right" />
+            <el-table-column prop="ordered_site_count" label="本月有订单站点" width="125" align="right" />
+            <el-table-column label="订单转化率" width="105" align="right"><template #default="{ row }">{{ formatPercent(row.order_conversion_rate ?? row.conversion_rate) }}</template></el-table-column>
+            <el-table-column label="站点转化率" width="105" align="right"><template #default="{ row }">{{ formatPercent(row.site_conversion_rate) }}</template></el-table-column>
             <el-table-column label="成功金额" min-width="120" align="right"><template #default="{ row }">{{ formatMoney(row.successful_amount) }}</template></el-table-column>
           </el-table>
         </el-tab-pane>
@@ -90,7 +93,7 @@
     <section class="content-grid">
       <article class="panel chart-panel">
         <div class="panel-heading">
-          <div><h2>去重用户与交易趋势</h2><p>近 30 天按站点、日期、邮箱去重的用户量和成功金额变化</p></div>
+          <div><h2>去重订单与交易趋势</h2><p>近 30 天按订单 ID 去重的订单量和成功金额变化</p></div>
           <span class="panel-chip blue">最近 30 天</span>
         </div>
         <v-chart :option="orderTrendOption" autoresize class="chart chart-large" />
@@ -155,7 +158,19 @@ const overview = ref({})
 const charts = ref({})
 const revenue = ref({})
 const revenueTab = ref('personal')
-const revenueDateRange = ref([])
+const dateKey = date => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+const currentMonthRange = () => {
+  const today = new Date()
+  const first = new Date(today.getFullYear(), today.getMonth(), 1)
+  return [dateKey(first), dateKey(today)]
+}
+const revenueDateRange = ref(currentMonthRange())
+const siteCreatedMonth = ref(currentMonthRange()[0].slice(0, 7))
 const userGroup = ref('')
 const groupOptions = [{ label: '全部', value: '' }, { label: 'A组', value: 'A' }, { label: 'B组', value: 'B' }]
 
@@ -170,28 +185,39 @@ const revenueParameters = computed(() => revenue.value.parameters || {})
 const personalPerformance = computed(() => revenue.value.personal_performance || [])
 const leaderSummary = computed(() => revenue.value.leader_summary || [])
 const monthlyConversion = computed(() => revenue.value.monthly_conversion || [])
-const orderTrend = computed(() => charts.value.order_trend || [])
+const orderTrend = computed(() => {
+  const source = new Map((charts.value.order_trend || []).map(item => [String(item.date || '').slice(0, 10), item]))
+  const today = new Date()
+  return Array.from({ length: 31 }, (_, index) => {
+    const date = new Date(today)
+    date.setHours(0, 0, 0, 0)
+    date.setDate(today.getDate() - 30 + index)
+    const key = dateKey(date)
+    const item = source.get(key) || {}
+    return { date: key, count: toNumber(item.count), amount: toNumber(item.amount) }
+  })
+})
 const recentOrders = computed(() => orderTrend.value.slice(-7).reduce((sum, item) => sum + toNumber(item.count), 0))
 const previousOrders = computed(() => orderTrend.value.slice(-14, -7).reduce((sum, item) => sum + toNumber(item.count), 0))
 const recentAmount = computed(() => orderTrend.value.slice(-30).reduce((sum, item) => sum + toNumber(item.amount), 0))
 const orderGrowth = computed(() => previousOrders.value ? ((recentOrders.value - previousOrders.value) / previousOrders.value) * 100 : 0)
 const growthLabel = computed(() => `${orderGrowth.value >= 0 ? '+' : ''}${orderGrowth.value.toFixed(1)}%`)
 const growthCopy = computed(() => previousOrders.value
-  ? `近 7 天去重订单用户较此前 7 天${orderGrowth.value >= 0 ? '增长' : '下降'} ${Math.abs(orderGrowth.value).toFixed(1)}%，可结合趋势图进一步定位变化日期。`
+  ? `近 7 天去重订单较此前 7 天${orderGrowth.value >= 0 ? '增长' : '下降'} ${Math.abs(orderGrowth.value).toFixed(1)}%，可结合趋势图进一步定位变化日期。`
   : '订单趋势数据正在积累，完成更多同步任务后可查看周期变化。')
 const averageOrderValue = computed(() => toNumber(overview.value.today_orders)
-  ? toNumber(overview.value.today_amount) / toNumber(overview.value.today_orders)
+  ? toNumber(overview.value.today_amount ?? overview.value.successful_amount) / toNumber(overview.value.today_orders ?? overview.value.successful_orders)
   : 0)
 
 const briefMetrics = computed(() => [
-  { label: '近 7 天去重用户', value: formatNumber(recentOrders.value), note: growthLabel.value },
+  { label: '近 7 天去重订单', value: formatNumber(recentOrders.value), note: growthLabel.value },
   { label: '近 30 天交易额', value: formatMoney(recentAmount.value), note: '趋势数据汇总' },
-  { label: '今日客单价', value: formatMoney(averageOrderValue.value), note: '今日交易额 / 订单' },
+  { label: '今日客单价', value: formatMoney(averageOrderValue.value), note: '今日成功金额 / 订单' },
 ])
 
 const stats = computed(() => [
   { label: '纳管站点', value: formatNumber(overview.value.total_sites), icon: DataBoard, tone: 'blue', trend: `${(charts.value.sites_by_admin || []).length} 位`, trendTone: 'neutral', note: '站点管理员' },
-  { label: '去重订单用户', value: formatNumber(overview.value.deduplicated_orders ?? overview.value.total_orders), icon: ShoppingCart, tone: 'violet', trend: growthLabel.value, trendTone: orderGrowth.value >= 0 ? 'up' : 'down', note: '同站同日同邮箱计 1 人' },
+  { label: '去重订单', value: formatNumber(overview.value.deduplicated_orders ?? overview.value.total_orders), icon: ShoppingCart, tone: 'violet', trend: growthLabel.value, trendTone: orderGrowth.value >= 0 ? 'up' : 'down', note: '优先按订单 ID 去重' },
   { label: '成功订单', value: formatNumber(overview.value.successful_orders), icon: Goods, tone: 'amber', trend: `${formatNumber(overview.value.today_orders)} 笔`, trendTone: 'neutral', note: '今日成功' },
   { label: '成功金额', value: formatMoney(overview.value.successful_amount), icon: Money, tone: 'green', trend: formatMoney(overview.value.today_amount), trendTone: 'up', note: '今日成功金额' },
 ])
@@ -233,7 +259,7 @@ const orderTrendOption = computed(() => ({
     { type: 'value', splitLine: { show: false }, axisLabel: { color: '#9aa7ba', fontSize: 10 } },
   ],
   series: [
-    { name: '去重订单用户', type: 'line', smooth: true, symbol: 'none', data: orderTrend.value.map(item => item.count), lineStyle: { width: 3, color: '#536ff1' }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#536ff12f' }, { offset: 1, color: '#536ff100' }] } } },
+    { name: '去重订单', type: 'line', smooth: true, symbol: 'none', data: orderTrend.value.map(item => item.count), lineStyle: { width: 3, color: '#536ff1' }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#536ff12f' }, { offset: 1, color: '#536ff100' }] } } },
     { name: '成功金额', type: 'line', yAxisIndex: 1, smooth: true, symbol: 'none', data: orderTrend.value.map(item => item.amount), lineStyle: { width: 2, color: '#45bc8d' } },
   ],
 }))
@@ -252,7 +278,7 @@ const indexTrendOption = computed(() => {
 
 async function loadDashboard() {
   const params = { userGroup: userGroup.value || undefined }
-  const revenueParams = { ...params, startDate: revenueDateRange.value?.[0], endDate: revenueDateRange.value?.[1] }
+  const revenueParams = { ...params, startDate: revenueDateRange.value?.[0], endDate: revenueDateRange.value?.[1], siteCreatedMonth: siteCreatedMonth.value }
   const [overviewResponse, chartResponse] = await Promise.all([getOverview(params), getCharts(params)])
   overview.value = overviewResponse.data || {}
   charts.value = chartResponse.data || {}
@@ -282,7 +308,7 @@ h1, h2, p { margin: 0; } h1 { color: var(--cf-ink); font-size: 28px; letter-spac
 .brief-copy h2 { margin-top: 12px; font-size: 19px; font-weight: 550; line-height: 1.55; }.brief-copy h2 strong { color: #aab9ff; font-weight: 760; }.brief-copy p { max-width: 660px; margin-top: 8px; color: #8190ae; font-size: 10px; line-height: 1.7; }
 .brief-metrics { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, 1fr); }.brief-metric { min-width: 0; padding: 4px 18px; border-left: 1px solid #ffffff14; }.brief-metric span, .brief-metric small { display: block; color: #8392b0; font-size: 9px; }.brief-metric strong { display: block; margin: 8px 0 5px; overflow: hidden; color: #fff; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }.brief-metric small { color: #7383a4; }
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 15px; }
-.revenue-panel { margin-top: 15px; }.revenue-heading { gap: 18px; }.revenue-rules { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }.revenue-rules span { padding: 5px 9px; border-radius: 999px; color: #536ff1; background: #eef1ff; font-size: 9px; font-weight: 700; }.revenue-tabs { margin-top: 12px; }.commission-value { color: #36a77e; font-size: 12px; }
+.revenue-panel { margin-top: 15px; }.revenue-heading { gap: 18px; }.revenue-rules { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 7px; }.revenue-rules span { padding: 5px 9px; border-radius: 999px; color: #536ff1; background: #eef1ff; font-size: 9px; font-weight: 700; }.revenue-date-control { display: flex; align-items: center; gap: 5px; }.revenue-date-control > span { padding: 0; color: #8490a4; background: transparent; font-size: 9px; font-weight: 700; white-space: nowrap; }.revenue-tabs { margin-top: 12px; }.commission-value { color: #36a77e; font-size: 12px; }
 .metric-card, .panel { border: 1px solid var(--cf-line); border-radius: 14px; background: #fff; box-shadow: var(--cf-shadow-sm); }
 .metric-card { padding: 18px 20px 16px; }.metric-top, .metric-foot, .panel-heading { display: flex; align-items: center; justify-content: space-between; }.metric-label { color: var(--cf-muted); font-size: 11px; }.metric-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; font-size: 16px; }.tone-blue { color: #536ff1; background: #eef1ff; }.tone-violet { color: #8a64e8; background: #f3edff; }.tone-amber { color: #d99a37; background: #fff6e3; }.tone-green { color: #36ad82; background: #eaf9f3; }
 .metric-value { margin: 14px 0 11px; color: var(--cf-ink); font-size: 25px; font-weight: 750; letter-spacing: -.04em; }.metric-foot { color: var(--cf-subtle); font-size: 10px; }.metric-trend { font-weight: 700; }.metric-trend.up { color: var(--cf-green); }.metric-trend.down { color: #df6577; }.metric-trend.neutral { color: var(--cf-blue); }
@@ -292,6 +318,6 @@ h1, h2, p { margin: 0; } h1 { color: var(--cf-ink); font-size: 28px; letter-spac
 .quick-actions { display: grid; gap: 8px; margin-top: 17px; }.quick-action { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 11px 12px; border: 1px solid var(--cf-line-soft); border-radius: 11px; text-align: left; background: #fbfcfe; cursor: pointer; transition: transform .18s, border .18s, box-shadow .18s; }.quick-action:hover { border-color: #cbd5ff; box-shadow: 0 7px 15px #536ff11a; transform: translateY(-1px); }.quick-icon { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 8px; font-size: 14px; }.quick-icon.blue { color: #536ff1; background: #eef1ff; }.quick-icon.violet { color: #8a64e8; background: #f3edff; }.quick-icon.green { color: #36ad82; background: #eaf9f3; }.quick-action strong, .quick-action small { display: block; }.quick-action strong { color: #32415b; font-size: 11px; }.quick-action small { margin-top: 3px; color: #a0aabd; font-size: 9px; }.quick-arrow { margin-left: auto; color: #b4becd; font-size: 11px; }
 .coverage-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin-top: 13px; overflow: hidden; border-radius: 10px; background: var(--cf-line-soft); }.coverage-strip > div { display: grid; gap: 3px; padding: 10px 6px; text-align: center; background: #f8f9fb; }.coverage-strip strong { color: #536179; font-size: 12px; }.coverage-strip span { color: #9ba6b7; font-size: 8px; }
 @media (max-width: 1120px) { .daily-brief { grid-template-columns: 1fr; }.content-grid, .bottom-grid { grid-template-columns: 1fr; }.revenue-heading { align-items: stretch; flex-direction: column; }.revenue-rules { justify-content: flex-start; } }
-@media (max-width: 760px) { .heading-controls { flex-wrap: wrap; }.revenue-date { width: 100%; }.stats-grid { grid-template-columns: repeat(2, 1fr); }.daily-brief { padding: 21px; }.brief-metrics { gap: 8px; }.brief-metric { padding: 4px 8px; }.brief-copy h2 { font-size: 16px; } }
+@media (max-width: 760px) { .heading-controls { flex-wrap: wrap; }.revenue-date, .revenue-month { width: 100%; }.revenue-date-control { width: 100%; }.stats-grid { grid-template-columns: repeat(2, 1fr); }.daily-brief { padding: 21px; }.brief-metrics { gap: 8px; }.brief-metric { padding: 4px 8px; }.brief-copy h2 { font-size: 16px; } }
 @media (max-width: 560px) { .page-heading { align-items: flex-start; flex-direction: column; gap: 14px; }.heading-date { display: none; }.stats-grid { gap: 9px; }.metric-card { padding: 15px; }.metric-value { font-size: 20px; }.brief-metrics { grid-template-columns: 1fr; }.brief-metric { display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 9px 0; border-top: 1px solid #ffffff12; border-left: 0; }.brief-metric strong { margin: 0; font-size: 14px; }.brief-metric small { display: none; }.panel { padding: 17px; } }
 </style>

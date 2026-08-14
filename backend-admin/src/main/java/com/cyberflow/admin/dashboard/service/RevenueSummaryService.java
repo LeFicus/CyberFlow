@@ -7,6 +7,9 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.YearMonth;
 import java.util.*;
 
 /** Implements the accounting rules from monthly_revenue_conversion.py on live data. */
@@ -15,23 +18,35 @@ import java.util.*;
 public class RevenueSummaryService {
     private final RevenueMapper revenueMapper;
     private final CrawlerConfigService configService;
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
 
     public Map<String, Object> summarize(String rawUserGroup, String startDate, String endDate) {
+        return summarize(rawUserGroup, startDate, endDate, null);
+    }
+
+    public Map<String, Object> summarize(String rawUserGroup, String startDate, String endDate,
+                                         String siteCreatedMonth) {
         String userGroup = normalizeGroup(rawUserGroup);
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        String effectiveStart = startDate == null || startDate.isBlank()
+                ? today.withDayOfMonth(1).toString() : startDate;
+        String effectiveEnd = endDate == null || endDate.isBlank()
+                ? today.toString() : endDate;
+        String effectiveSiteCreatedMonth = normalizeMonth(siteCreatedMonth, today);
         Map<String, Object> config = configService.getRevenueConfig();
         Map<String, List<String>> mergeMap = stringListMap(config.get("userMergeMap"));
         Map<String, String> teacherMap = stringMap(config.get("teacherMap"));
         Map<String, String> leaderMap = stringMap(config.get("leaderConfig"));
 
         Map<String, AccountStats> accounts = new LinkedHashMap<>();
-        for (Map<String, Object> row : revenueMapper.adminOrderStats(userGroup, startDate, endDate)) {
+        for (Map<String, Object> row : revenueMapper.adminOrderStats(userGroup, effectiveStart, effectiveEnd)) {
             AccountStats stats = accounts.computeIfAbsent(text(row, "admin_name"), AccountStats::new);
             stats.group = text(row, "user_group");
             stats.totalOrders = number(row.get("total_orders")).longValue();
             stats.successfulOrders = number(row.get("successful_orders")).longValue();
             stats.originalAmount = number(row.get("original_amount"));
         }
-        for (Map<String, Object> row : revenueMapper.adminSiteStats(userGroup, startDate, endDate)) {
+        for (Map<String, Object> row : revenueMapper.adminSiteStats(userGroup, effectiveStart, effectiveEnd)) {
             AccountStats stats = accounts.computeIfAbsent(text(row, "admin_name"), AccountStats::new);
             stats.group = text(row, "user_group");
             stats.siteCount = number(row.get("site_count")).longValue();
@@ -104,23 +119,30 @@ public class RevenueSummaryService {
             leaders.add(item);
         }
 
-        Map<String, Map<String, Object>> domainOrders = new HashMap<>();
-        for (Map<String, Object> row : revenueMapper.revenueOrdersByDomain(userGroup, startDate, endDate)) {
-            domainOrders.put(text(row, "user_group") + "|" + domain(text(row, "product_host")), row);
+        // Orders are matched to the owning site's domain.  Do not use the order
+        // platform/group here: a site can contain orders imported by the other
+        // platform and those orders must still contribute to the site's cohort.
+        Map<String, DomainOrderStats> domainOrders = new HashMap<>();
+        for (Map<String, Object> row : revenueMapper.revenueOrdersByDomain(effectiveStart, effectiveEnd)) {
+            DomainOrderStats stats = domainOrders.computeIfAbsent(domain(text(row, "product_host")), ignored -> new DomainOrderStats());
+            stats.totalOrders += number(row.get("total_orders")).longValue();
+            stats.successfulOrders += number(row.get("successful_orders")).longValue();
+            stats.successfulAmount = stats.successfulAmount.add(number(row.get("successful_amount")));
         }
         Map<String, MonthlyStats> monthlyStats = new LinkedHashMap<>();
-        for (Map<String, Object> site : revenueMapper.revenueSites(userGroup, startDate, endDate)) {
+        for (Map<String, Object> site : revenueMapper.revenueSites(userGroup, effectiveSiteCreatedMonth)) {
             String admin = text(site, "admin_name");
             String group = text(site, "user_group");
             String month = text(site, "site_month");
             MonthlyStats stats = monthlyStats.computeIfAbsent(group + "|" + month + "|" + admin,
                     ignored -> new MonthlyStats(group, month, admin));
             stats.siteCount++;
-            Map<String, Object> order = domainOrders.get(group + "|" + domain(text(site, "site_domain")));
-            if (order != null) {
-                stats.totalOrders += number(order.get("total_orders")).longValue();
-                stats.successfulOrders += number(order.get("successful_orders")).longValue();
-                stats.successfulAmount = stats.successfulAmount.add(number(order.get("successful_amount")));
+            DomainOrderStats order = domainOrders.get(domain(text(site, "site_domain")));
+            if (order != null && order.totalOrders > 0) {
+                stats.totalOrders += order.totalOrders;
+                stats.successfulOrders += order.successfulOrders;
+                stats.successfulAmount = stats.successfulAmount.add(order.successfulAmount);
+                stats.orderedSiteCount++;
             }
         }
         List<Map<String, Object>> monthly = new ArrayList<>();
@@ -133,16 +155,21 @@ public class RevenueSummaryService {
             item.put("site_count", stats.siteCount);
             item.put("total_orders", stats.totalOrders);
             item.put("deduplicated_orders", stats.totalOrders);
+            item.put("ordered_site_count", stats.orderedSiteCount);
             item.put("successful_orders", stats.successfulOrders);
             item.put("successful_amount", money(stats.successfulAmount));
+            item.put("order_conversion_rate", percent(stats.totalOrders, stats.siteCount));
+            item.put("site_conversion_rate", percent(stats.orderedSiteCount, stats.siteCount));
+            // Keep the old field for existing clients; it now means order conversion.
             item.put("conversion_rate", percent(stats.totalOrders, stats.siteCount));
             monthly.add(item);
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("user_group", userGroup == null ? "ALL" : userGroup);
-        result.put("start_date", startDate == null ? "" : startDate);
-        result.put("end_date", endDate == null ? "" : endDate);
+        result.put("start_date", effectiveStart);
+        result.put("end_date", effectiveEnd);
+        result.put("site_created_month", effectiveSiteCreatedMonth);
         result.put("parameters", Map.of(
                 "exchange_rate", decimal(config.get("exchangeRate"), "6.73"),
                 "rate_factor", decimal(config.get("rateFactor"), "0.42"),
@@ -202,6 +229,17 @@ public class RevenueSummaryService {
         return group;
     }
 
+    private static String normalizeMonth(String value, LocalDate fallbackDate) {
+        if (value != null && !value.isBlank()) {
+            try {
+                return YearMonth.parse(value.trim()).toString();
+            } catch (RuntimeException ignored) {
+                // Invalid manual input falls back to the current business month.
+            }
+        }
+        return YearMonth.from(fallbackDate).toString();
+    }
+
     private static String text(Map<String, Object> row, String key) { return Objects.toString(row.get(key), ""); }
     private static String domain(String value) {
         String result = Objects.toString(value, "").trim().toLowerCase(Locale.ROOT);
@@ -252,6 +290,7 @@ public class RevenueSummaryService {
         final String adminName;
         long siteCount;
         long totalOrders;
+        long orderedSiteCount;
         long successfulOrders;
         BigDecimal successfulAmount = BigDecimal.ZERO;
         MonthlyStats(String group, String month, String adminName) {
@@ -259,5 +298,11 @@ public class RevenueSummaryService {
             this.month = month;
             this.adminName = adminName;
         }
+    }
+
+    private static final class DomainOrderStats {
+        long totalOrders;
+        long successfulOrders;
+        BigDecimal successfulAmount = BigDecimal.ZERO;
     }
 }

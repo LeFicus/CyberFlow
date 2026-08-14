@@ -10,6 +10,14 @@
       <el-button type="primary" size="small" style="float: right;" @click="fetchData">刷新</el-button>
     </template>
 
+    <el-radio-group v-model="taskType" size="small" @change="handleTypeChange" class="task-type-tabs">
+      <el-radio-button label="all">全部（{{ counts.all || 0 }}）</el-radio-button>
+      <el-radio-button label="site_crawl">站点爬虫（{{ counts.site_crawl || 0 }}）</el-radio-button>
+      <el-radio-button label="site_index">收录统计（{{ counts.site_index || 0 }}）</el-radio-button>
+      <el-radio-button label="order_crawl">订单爬虫（{{ counts.order_crawl || 0 }}）</el-radio-button>
+      <el-radio-button v-if="userStore.hasPermission('dashboard:product:view')" label="product_crawl">商品爬虫（{{ counts.product_crawl || 0 }}）</el-radio-button>
+    </el-radio-group>
+
     <!-- 任务历史表格 -->
     <el-table :data="tableData" v-loading="loading" stripe empty-text="暂无任务记录">
       <el-table-column prop="taskId" label="Task ID" min-width="280" />
@@ -23,7 +31,7 @@
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
-          <el-tag :type="statusTagType(row.status)">{{ row.status }}</el-tag>
+          <el-tag :type="statusTagType(row.status)">{{ row.status === 'PAUSED' ? '已暂停' : row.status }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="进度" min-width="210">
@@ -33,7 +41,7 @@
             :status="row.status === 'SUCCESS' ? 'success' : row.status === 'FAILED' ? 'exception' : ''"
             :stroke-width="10"
           />
-          <span class="progress-message">{{ row.progressMessage || (row.status === 'PENDING' ? '等待执行' : '正在执行') }}</span>
+            <span class="progress-message">{{ row.progressMessage || (row.status === 'PENDING' ? '等待执行' : row.status === 'PAUSED' ? '任务已暂停' : '正在执行') }}</span>
         </template>
       </el-table-column>
       <el-table-column label="结果" min-width="200">
@@ -41,18 +49,37 @@
           {{ row.errorMsg || `处理 ${row.rowsAffected || 0} 条` }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="110" fixed="right">
+      <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
+          <el-button
+            v-if="userStore.hasPermission('crawler:task:control') && (row.status === 'PENDING' || row.status === 'RUNNING')"
+            link type="warning" size="small" @click="handlePause(row)"
+          >暂停</el-button>
+          <el-button
+            v-else-if="userStore.hasPermission('crawler:task:control') && row.status === 'PAUSED'"
+            link type="success" size="small" @click="handleResume(row)"
+          >继续</el-button>
           <el-button
             v-if="row.type === 'product_crawl'"
             link
             type="primary"
             @click="openLog(row)"
           >查看日志</el-button>
-          <span v-else class="muted">—</span>
+          <el-button v-if="userStore.hasPermission('crawler:task:delete')" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
+
+    <el-pagination
+      style="margin-top: 16px; justify-content: flex-end;"
+      v-model:current-page="page"
+      :page-size="size"
+      :page-sizes="[10, 20, 50, 100]"
+      :total="total"
+      layout="total, sizes, prev, pager, next"
+      @current-change="fetchData"
+      @size-change="handleSizeChange"
+    />
   </el-card>
 
   <el-drawer
@@ -89,14 +116,21 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onUnmounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { getRecentTasks, getTaskCrawlLog, downloadTaskCrawlLog } from '@/api/crawler'
+import { ref, nextTick, onMounted, onUnmounted, reactive } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getRecentTasks, getTaskSummary, getTaskCrawlLog, downloadTaskCrawlLog, pauseTask, resumeTask, deleteTask } from '@/api/crawler'
+import { useUserStore } from '@/store/user'
 
 /** 表格 loading 状态 */
 const loading = ref(false)
 /** 任务列表数据 */
 const tableData = ref([])
+const page = ref(1)
+const size = ref(20)
+const total = ref(0)
+const taskType = ref('all')
+const counts = reactive({ all: 0, site_crawl: 0, site_index: 0, order_crawl: 0, product_crawl: 0 })
+const userStore = useUserStore()
 const logVisible = ref(false)
 const logLoading = ref(false)
 const logDownloading = ref(false)
@@ -118,8 +152,9 @@ let logTimer = null
 async function fetchData() {
   loading.value = true
   try {
-    const res = await getRecentTasks()
+    const res = await getRecentTasks({ page: page.value, size: size.value, type: taskType.value })
     tableData.value = res.data?.records || []
+    total.value = Number(res.data?.total || 0)
   } catch {
     tableData.value = []
   } finally {
@@ -127,9 +162,58 @@ async function fetchData() {
   }
 }
 
+async function loadSummary() {
+  const res = await getTaskSummary()
+  Object.assign(counts, res.data || {})
+}
+
+function handleTypeChange() {
+  page.value = 1
+  fetchData()
+}
+
+async function handlePause(row) {
+  try {
+    await ElMessageBox.confirm(`确定暂停任务 ${row.taskId}？`, '暂停任务', { type: 'warning' })
+    await pauseTask(row.taskId)
+    ElMessage.success('任务已暂停')
+    await fetchData()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error('暂停任务失败')
+  }
+}
+
+async function handleResume(row) {
+  try {
+    await resumeTask(row.taskId)
+    ElMessage.success('任务已继续')
+    await fetchData()
+  } catch {
+    ElMessage.error('继续任务失败')
+  }
+}
+
+async function handleDelete(row) {
+  try {
+    await ElMessageBox.confirm(`确定删除任务 ${row.taskId}？运行中的任务也会被取消。`, '删除任务', { type: 'warning' })
+    await deleteTask(row.taskId)
+    ElMessage.success('任务已删除')
+    if (tableData.value.length === 1 && page.value > 1) page.value -= 1
+    await fetchData()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error('删除任务失败')
+  }
+}
+
+function handleSizeChange(value) {
+  size.value = value
+  page.value = 1
+  fetchData()
+}
+
 function statusTagType(status) {
   if (status === 'SUCCESS') return 'success'
-  if (status === 'PENDING' || status === 'RUNNING') return 'warning'
+  if (status === 'PENDING' || status === 'RUNNING' || status === 'PAUSED') return 'warning'
   return 'danger'
 }
 
@@ -212,12 +296,13 @@ async function downloadLog() {
   }
 }
 
-onMounted(fetchData)
+onMounted(() => Promise.all([fetchData(), loadSummary()]))
 onUnmounted(stopLogPolling)
 </script>
 
 <style scoped>
 .progress-message { display: block; margin-top: 5px; color: #909399; font-size: 12px; }
+.task-type-tabs { margin-bottom: 16px; }
 .muted { color: #c0c4cc; }
 .log-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .log-task-id { margin-left: 10px; color: #606266; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }

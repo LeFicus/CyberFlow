@@ -120,9 +120,15 @@ CREATE TABLE IF NOT EXISTS scraped_data.ecommerce_products (
     custom_category VARCHAR(100),
     source_domain   VARCHAR(255),
     language        VARCHAR(10) DEFAULT 'en',
+    dedupe_key      VARCHAR(768),
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_sku (sku)
+    INDEX idx_product_created_id (created_at, id),
+    INDEX idx_product_domain_created (source_domain, created_at, id),
+    INDEX idx_product_category_created (custom_category, created_at, id),
+    INDEX idx_product_name_prefix (name(100)),
+    UNIQUE KEY uk_sku (sku),
+    UNIQUE KEY uk_product_dedupe (dedupe_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT IGNORE INTO crawler_schedule_config (task_type, cron_expression, enabled) VALUES

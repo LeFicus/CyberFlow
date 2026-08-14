@@ -13,8 +13,9 @@ import request from '@/utils/request'
  * @param {string} [platform] - 可选，模板类型（shopify 或 woocommerce）
  * @returns {Promise<Object>} 返回模板数组
  */
-export function listTemplates(platform) {
-  return request.get('/admin/selector/template', { params: { platform } })
+export function listTemplates(params) {
+  const query = typeof params === 'string' ? { platform: params } : (params || {})
+  return request.get('/admin/selector/template', { params: query })
 }
 
 /**
@@ -60,8 +61,8 @@ export function cloneTemplate(id) {
  * 获取所有站点配置列表
  * @returns {Promise<Object>} 返回站点配置数组
  */
-export function listSiteConfigs() {
-  return request.get('/admin/crawler/site-config')
+export function listSiteConfigs(params) {
+  return request.get('/admin/crawler/site-config', { params })
 }
 
 /**

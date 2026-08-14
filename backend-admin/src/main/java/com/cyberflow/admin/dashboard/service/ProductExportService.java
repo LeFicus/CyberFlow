@@ -2,12 +2,15 @@ package com.cyberflow.admin.dashboard.service;
 
 import com.cyberflow.admin.dashboard.mapper.EcommerceProductMapper;
 import lombok.RequiredArgsConstructor;
+import org.apache.ibatis.cursor.Cursor;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.Writer;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -43,13 +46,20 @@ public class ProductExportService {
         };
     }
 
-    /** Write the crawler's normalized schema as a genuine streaming XLSX workbook. */
+    /** Backward-compatible entry point for callers that only provide domain/category. */
     public void writeExcel(String domain, String customCategory, OutputStream outputStream) throws IOException {
-        List<Map<String, Object>> products = productMapper.listProductsForExcelExport(domain, customCategory);
+        writeExcel(domain == null || domain.isBlank() ? List.of() : List.of(domain),
+                customCategory == null || customCategory.isBlank() ? List.of() : List.of(customCategory),
+                null, outputStream);
+    }
+
+    /** Write a filtered XLSX export without loading the matching rows into memory. */
+    @Transactional(readOnly = true)
+    public void writeExcel(List<String> domains, List<String> categories, String name, OutputStream outputStream) throws IOException {
+        List<String> domainFilter = normalizeDomains(domains);
+        List<String> categoryFilter = normalizeCategories(categories);
         try (SXSSFWorkbook workbook = new SXSSFWorkbook(100)) {
             workbook.setCompressTempFiles(true);
-            Sheet sheet = workbook.createSheet("Products");
-            sheet.createFreezePane(0, 1);
 
             CellStyle headerStyle = workbook.createCellStyle();
             Font headerFont = workbook.createFont();
@@ -58,37 +68,97 @@ public class ProductExportService {
             headerStyle.setFillForegroundColor(IndexedColors.LIGHT_CORNFLOWER_BLUE.getIndex());
             headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
 
-            Row header = sheet.createRow(0);
-            for (int i = 0; i < EXCEL_HEADERS.size(); i++) {
-                Cell cell = header.createCell(i);
-                cell.setCellValue(EXCEL_HEADERS.get(i));
-                cell.setCellStyle(headerStyle);
-            }
-
+            List<Sheet> sheets = new ArrayList<>();
+            Sheet sheet = createSheet(workbook, sheets, 1, headerStyle);
             int rowIndex = 1;
-            for (Map<String, Object> product : products) {
-                Row row = sheet.createRow(rowIndex++);
-                List<String> values = List.of(
-                        value(product, "sku"),
-                        value(product, "name"),
-                        excelText(value(product, "description")),
-                        price2(product.get("regular_price")),
-                        value(product, "categories"),
-                        value(product, "images"),
-                        value(product, "cf_opingts"),
-                        value(product, "custom_category"),
-                        value(product, "source_domain"),
-                        "0",
-                        value(product, "language").isBlank() ? "en" : value(product, "language")
-                );
-                for (int i = 0; i < values.size(); i++) row.createCell(i).setCellValue(values.get(i));
+            try (Cursor<Map<String, Object>> products = productMapper.streamProductsForExport(domainFilter, categoryFilter, name)) {
+                for (Map<String, Object> product : products) {
+                    // Excel has a hard limit of 1,048,576 rows per sheet. Split
+                    // large exports instead of failing after the first million rows.
+                    if (rowIndex > 1_000_000) {
+                        finishSheet(sheet, rowIndex);
+                        sheet = createSheet(workbook, sheets, sheets.size() + 1, headerStyle);
+                        rowIndex = 1;
+                    }
+                    Row row = sheet.createRow(rowIndex++);
+                    List<String> values = excelValues(product);
+                    for (int i = 0; i < values.size(); i++) row.createCell(i).setCellValue(values.get(i));
+                }
             }
-
-            int[] widths = {20, 36, 80, 16, 30, 60, 16, 22, 28, 16, 10};
-            for (int i = 0; i < widths.length; i++) sheet.setColumnWidth(i, widths[i] * 256);
-            if (rowIndex > 1) sheet.setAutoFilter(new org.apache.poi.ss.util.CellRangeAddress(0, rowIndex - 1, 0, EXCEL_HEADERS.size() - 1));
+            finishSheet(sheet, rowIndex);
             workbook.write(outputStream);
         }
+    }
+
+    /** Stream a CSV export directly to the HTTP response writer. */
+    @Transactional(readOnly = true)
+    public void writeCsv(String engine, List<String> domains, List<String> categories, String name, Writer writer) throws IOException {
+        writeCsvRow(writer, headers(engine));
+        try (Cursor<Map<String, Object>> products = productMapper.streamProductsForExport(
+                normalizeDomains(domains), normalizeCategories(categories), name)) {
+            for (Map<String, Object> product : products) writeCsvRow(writer, csvValues(engine, product));
+        }
+    }
+
+    private static List<String> normalizeCategories(List<String> categories) {
+        if (categories == null) return List.of();
+        return categories.stream().filter(value -> value != null && !value.isBlank())
+                .map(String::trim).distinct().toList();
+    }
+
+    private static List<String> normalizeDomains(List<String> domains) {
+        if (domains == null) return List.of();
+        return domains.stream().filter(value -> value != null && !value.isBlank())
+                .map(String::trim).distinct().toList();
+    }
+
+    private static Sheet createSheet(SXSSFWorkbook workbook, List<Sheet> sheets, int number, CellStyle headerStyle) {
+        Sheet sheet = workbook.createSheet(number == 1 ? "Products" : "Products-" + number);
+        sheet.createFreezePane(0, 1);
+        Row header = sheet.createRow(0);
+        for (int i = 0; i < EXCEL_HEADERS.size(); i++) {
+            Cell cell = header.createCell(i);
+            cell.setCellValue(EXCEL_HEADERS.get(i));
+            cell.setCellStyle(headerStyle);
+        }
+        int[] widths = {20, 36, 80, 16, 30, 60, 16, 22, 28, 16, 10};
+        for (int i = 0; i < widths.length; i++) sheet.setColumnWidth(i, widths[i] * 256);
+        sheets.add(sheet);
+        return sheet;
+    }
+
+    private static void finishSheet(Sheet sheet, int rowIndex) {
+        if (rowIndex > 1) sheet.setAutoFilter(new org.apache.poi.ss.util.CellRangeAddress(0, rowIndex - 1, 0, EXCEL_HEADERS.size() - 1));
+    }
+
+    private static List<String> excelValues(Map<String, Object> product) {
+        return List.of(value(product, "sku"), value(product, "name"), excelText(value(product, "description")),
+                price2(product.get("regular_price")), value(product, "categories"), value(product, "images"),
+                value(product, "cf_opingts"), value(product, "custom_category"), value(product, "source_domain"),
+                "0", value(product, "language").isBlank() ? "en" : value(product, "language"));
+    }
+
+    private static List<String> csvValues(String engine, Map<String, Object> product) {
+        return switch (engine) {
+            case "shopify" -> List.of(slug(value(product, "name"), value(product, "sku")), value(product, "name"), value(product, "description"),
+                    value(product, "source_domain"), value(product, "categories"), value(product, "categories"), "TRUE",
+                    value(product, "sku"), price(product.get("regular_price")), value(product, "images"));
+            case "woocommerce" -> List.of("simple", value(product, "sku"), value(product, "name"), "1",
+                    price(product.get("regular_price")), value(product, "categories"), value(product, "images"), value(product, "description"));
+            case "bigcommerce" -> List.of("Product", value(product, "name"), value(product, "sku"), price(product.get("regular_price")),
+                    value(product, "categories"), value(product, "description"), value(product, "images"));
+            default -> throw new IllegalArgumentException("Unsupported export engine: " + engine);
+        };
+    }
+
+    private static void writeCsvRow(Writer writer, List<String> row) throws IOException {
+        for (int i = 0; i < row.size(); i++) {
+            if (i > 0) writer.write(',');
+            writer.write('"');
+            writer.write(row.get(i).replace("\"", "\"\""));
+            writer.write('"');
+        }
+        writer.write('\n');
     }
 
     private List<List<String>> shopify(List<Map<String, Object>> products) {

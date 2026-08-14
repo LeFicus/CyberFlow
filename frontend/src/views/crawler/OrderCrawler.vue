@@ -14,76 +14,77 @@
       <el-form :model="form" label-width="150px" class="config-form">
         <el-divider content-position="left">A 组 Payment API</el-divider>
         <el-form-item label="A组 Base URL">
-          <el-input v-model="form.paymentApiA.baseUrl" placeholder="https://a.example.com" />
+          <el-input v-model="form.paymentApiA.baseUrl" :disabled="!canEditConfig" placeholder="https://a.example.com" />
         </el-form-item>
         <el-form-item label="A组账号">
-          <el-input v-model="form.paymentApiA.account" />
+          <el-input v-model="form.paymentApiA.account" :disabled="!canEditConfig" />
         </el-form-item>
         <el-form-item label="A组密码">
-          <el-input v-model="form.paymentApiA.password" type="password" show-password />
+          <el-input v-model="form.paymentApiA.password" :disabled="!canEditConfig" type="password" show-password />
         </el-form-item>
         <el-form-item label="A组 SSL 校验">
-          <el-switch v-model="form.paymentApiA.verifySsl" />
+          <el-switch v-model="form.paymentApiA.verifySsl" :disabled="!canEditConfig" />
         </el-form-item>
 
         <el-divider content-position="left">B 组 Payment API</el-divider>
         <el-form-item label="B组 Base URL">
-          <el-input v-model="form.paymentApiB.baseUrl" placeholder="https://b.example.com" />
+          <el-input v-model="form.paymentApiB.baseUrl" :disabled="!canEditConfig" placeholder="https://b.example.com" />
         </el-form-item>
         <el-form-item label="B组账号">
-          <el-input v-model="form.paymentApiB.account" />
+          <el-input v-model="form.paymentApiB.account" :disabled="!canEditConfig" />
         </el-form-item>
         <el-form-item label="B组密码">
-          <el-input v-model="form.paymentApiB.password" type="password" show-password />
+          <el-input v-model="form.paymentApiB.password" :disabled="!canEditConfig" type="password" show-password />
         </el-form-item>
         <el-form-item label="B组 SSL 校验">
-          <el-switch v-model="form.paymentApiB.verifySsl" />
+          <el-switch v-model="form.paymentApiB.verifySsl" :disabled="!canEditConfig" />
         </el-form-item>
 
         <el-divider content-position="left">增量策略</el-divider>
         <el-form-item label="初始订单 ID">
-          <el-input v-model="form.orderStrategy.initialOrderId" />
+          <el-input v-model="form.orderStrategy.initialOrderId" :disabled="!canEditConfig" />
         </el-form-item>
         <el-form-item label="分页大小">
-          <el-input-number v-model="form.orderStrategy.pageSize" :min="20" :max="500" :step="20" />
+          <el-input-number v-model="form.orderStrategy.pageSize" :disabled="!canEditConfig" :min="20" :max="500" :step="20" />
         </el-form-item>
         <el-form-item label="排除卡号">
-          <el-input v-model="excludedCardsText" type="textarea" :rows="3" />
+          <el-input v-model="excludedCardsText" :disabled="!canEditConfig" type="textarea" :rows="3" />
         </el-form-item>
 
         <el-divider content-position="left">收入参数</el-divider>
         <el-form-item label="实时汇率">
-          <el-input-number v-model="form.revenue.exchangeRate" :precision="4" :step="0.01" />
+          <el-input-number v-model="form.revenue.exchangeRate" :disabled="!canEditConfig" :precision="4" :step="0.01" />
         </el-form-item>
         <el-form-item label="折算系数">
-          <el-input-number v-model="form.revenue.rateFactor" :precision="4" :step="0.01" />
+          <el-input-number v-model="form.revenue.rateFactor" :disabled="!canEditConfig" :precision="4" :step="0.01" />
         </el-form-item>
         <el-form-item label="组长提成">
-          <el-input-number v-model="form.revenue.leaderCommissionRate" :precision="4" :step="0.01" />
+          <el-input-number v-model="form.revenue.leaderCommissionRate" :disabled="!canEditConfig" :precision="4" :step="0.01" />
         </el-form-item>
         <el-form-item label="提成阶梯">
-          <el-input v-model="commissionTiersText" type="textarea" :rows="5" />
+          <el-input v-model="commissionTiersText" :disabled="!canEditConfig" type="textarea" :rows="5" />
         </el-form-item>
         <el-form-item label="组长配置">
-          <el-input v-model="leaderConfigText" type="textarea" :rows="3" placeholder='{"A":"A-黄伟","B":"B-李榕"}' />
+          <el-input v-model="leaderConfigText" :disabled="!canEditConfig" type="textarea" :rows="3" placeholder='{"A":"A-黄伟","B":"B-李榕"}' />
         </el-form-item>
         <el-form-item label="导师后缀映射">
-          <el-input v-model="teacherMapText" type="textarea" :rows="7" placeholder='{"B-许晓龙":"-xxl"}' />
+          <el-input v-model="teacherMapText" :disabled="!canEditConfig" type="textarea" :rows="7" placeholder='{"B-许晓龙":"-xxl"}' />
         </el-form-item>
         <el-form-item label="多账号合并">
-          <el-input v-model="userMergeMapText" type="textarea" :rows="5" placeholder='{"B-姓名":["B-账号1","B-账号2"]}' />
+          <el-input v-model="userMergeMapText" :disabled="!canEditConfig" type="textarea" :rows="5" placeholder='{"B-姓名":["B-账号1","B-账号2"]}' />
         </el-form-item>
 
         <el-divider content-position="left">定时任务</el-divider>
         <el-form-item label="启用">
-          <el-switch v-model="schedule.enabled" />
+          <el-switch v-model="schedule.enabled" :disabled="!canEditConfig" />
         </el-form-item>
         <el-form-item label="Cron">
-          <el-input v-model="schedule.cronExpression" />
+          <el-input v-model="schedule.cronExpression" :disabled="!canEditConfig" />
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" :loading="saving" @click="handleSave">保存配置</el-button>
+          <el-button v-if="canEditConfig" type="primary" :loading="saving" @click="handleSave">保存配置</el-button>
+          <el-tag v-else type="info">普通用户只读，敏感信息已脱敏</el-tag>
         </el-form-item>
       </el-form>
 
@@ -93,8 +94,9 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useUserStore } from '@/store/user'
 import TaskProgress from '@/components/TaskProgress.vue'
 import { useTaskProgress } from '@/composables/useTaskProgress'
 import {
@@ -106,6 +108,8 @@ import {
 } from '@/api/crawler'
 
 const saving = ref(false)
+const userStore = useUserStore()
+const canEditConfig = computed(() => userStore.hasPermission('crawler:order:config'))
 const triggering = ref('')
 const { task, track } = useTaskProgress()
 const excludedCardsText = ref('')

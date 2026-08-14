@@ -7,8 +7,13 @@
 """
 
 import aiomysql
+import asyncio
 from loguru import logger
 from config import DATABASE_URL, SCRAPED_DB_URL
+
+
+class TaskCancelledError(RuntimeError):
+    """Raised when an operator has cancelled or removed a task."""
 
 
 def _parse_mysql_url(url: str):
@@ -128,7 +133,8 @@ class CursorRepository:
                 if status == "RUNNING":
                     await cur.execute(
                         """UPDATE task_history SET status='RUNNING', started_at=COALESCE(started_at, NOW()),
-                           progress=%s, progress_message=%s WHERE task_id=%s""",
+                           progress=%s, progress_message=%s
+                           WHERE task_id=%s AND status NOT IN ('PAUSED', 'CANCELLED')""",
                         (kwargs.get("progress", 5), kwargs.get("progress_message", "任务已开始"), task_id),
                     )
                 elif status in ("SUCCESS", "FAILED"):
@@ -153,6 +159,24 @@ class CursorRepository:
                     "UPDATE task_history SET progress=%s, progress_message=%s WHERE task_id=%s",
                     (max(0, min(99, progress)), message[:255], task_id),
                 )
+
+    async def get_task_status(self, task_id: str) -> str | None:
+        """Read the operator-controlled lifecycle state for a task."""
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT status FROM task_history WHERE task_id=%s", (task_id,))
+                row = await cur.fetchone()
+                return str(row[0]).upper() if row and row[0] is not None else None
+
+    async def wait_for_task_control(self, task_id: str) -> str:
+        """Wait while a task is paused and stop promptly when its record is deleted."""
+        while True:
+            status = await self.get_task_status(task_id)
+            if status is None or status in {"CANCELLED", "DELETED"}:
+                raise TaskCancelledError("任务已被删除或取消")
+            if status != "PAUSED":
+                return status
+            await asyncio.sleep(2)
 
     async def reset_task_log(self, task_id: str):
         """Clear a task log before starting its crawler subprocess."""

@@ -71,29 +71,25 @@ public interface OrderMapper {
                                                 @Param("startDate") String startDate,
                                                 @Param("endDate") String endDate);
 
-    /**
-     * Overview metrics. A de-duplicated order user is identified by the
-     * combination of natural day, site domain and normalized customer email.
-     * Order status is intentionally excluded from that identity.
-     */
-    @Select("SELECT COUNT(DISTINCT CASE " +
-            "WHEN create_time IS NOT NULL " +
-            "AND TRIM(COALESCE(product_host, '')) <> '' " +
-            "AND TRIM(COALESCE(shipping_email, '')) <> '' " +
-            "THEN CONCAT(DATE(create_time), CHAR(31), LOWER(TRIM(product_host)), CHAR(31), LOWER(TRIM(shipping_email))) " +
-            "END) AS deduplicated_orders, " +
-            "COUNT(CASE WHEN pay_status_text = '已支付' THEN 1 END) AS successful_orders, " +
+    /** Overview metrics follow monthly_revenue_conversion.py: order ID first. */
+    @Select("SELECT COUNT(DISTINCT CONCAT(user_group, CHAR(31), CAST(id AS CHAR))) AS deduplicated_orders, " +
+            "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' " +
+            "THEN CONCAT(user_group, CHAR(31), CAST(id AS CHAR)) END) AS successful_orders, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount " +
             "FROM orders")
     Map<String, Object> businessSummary();
 
-    @Select("SELECT COUNT(DISTINCT CASE WHEN create_time IS NOT NULL " +
-            "AND TRIM(COALESCE(product_host, '')) <> '' AND TRIM(COALESCE(shipping_email, '')) <> '' " +
-            "THEN CONCAT(DATE(create_time), CHAR(31), LOWER(TRIM(product_host)), CHAR(31), LOWER(TRIM(shipping_email))) END) AS deduplicated_orders, " +
-            "COUNT(CASE WHEN pay_status_text = '已支付' THEN 1 END) AS successful_orders, " +
+    @Select({"<script>",
+            "SELECT COUNT(DISTINCT CONCAT(user_group, CHAR(31), CAST(id AS CHAR))) AS deduplicated_orders, " +
+            "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' " +
+            "THEN CONCAT(user_group, CHAR(31), CAST(id AS CHAR)) END) AS successful_orders, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount " +
-            "FROM orders WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup})")
-    Map<String, Object> businessSummaryByGroup(@Param("userGroup") String userGroup);
+            "FROM orders WHERE create_time &gt;= #{startDateTime} AND create_time &lt; #{endDateTime} " +
+            "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup})",
+            "</script>"})
+    Map<String, Object> businessSummaryByGroup(@Param("startDateTime") String startDateTime,
+                                               @Param("endDateTime") String endDateTime,
+                                               @Param("userGroup") String userGroup);
 
     /**
      * 查询订单总体摘要，包括总订单数和总金额。
@@ -114,16 +110,16 @@ public interface OrderMapper {
      *
      * @return 包含 COUNT(*)（今日订单数）和 total_amount（今日总金额）的 Map
      */
-    @Select("SELECT COUNT(CASE WHEN pay_status_text = '已支付' THEN 1 END) AS successful_orders, " +
-            "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount " +
-            "FROM orders WHERE DATE(create_time) = CURDATE()")
-    Map<String, Object> todaySummary();
-
-    @Select("SELECT COUNT(CASE WHEN pay_status_text = '已支付' THEN 1 END) AS successful_orders, " +
-            "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount " +
-            "FROM orders WHERE DATE(create_time) = CURDATE() " +
-            "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup})")
-    Map<String, Object> todaySummaryByGroup(@Param("userGroup") String userGroup);
+    @Select({"<script>",
+            "SELECT COUNT(CASE WHEN pay_status_text = '已支付' THEN 1 END) AS successful_orders,",
+            "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount",
+            "FROM orders WHERE create_time &gt;= #{startDateTime}",
+            "AND create_time &lt; #{endDateTime}",
+            "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup})",
+            "</script>"})
+    Map<String, Object> todaySummaryByGroup(@Param("startDateTime") String startDateTime,
+                                            @Param("endDateTime") String endDateTime,
+                                            @Param("userGroup") String userGroup);
 
     /**
      * 查询指定日期范围内的每日订单趋势（按天聚合）。
@@ -138,19 +134,19 @@ public interface OrderMapper {
             "THEN CONCAT(LOWER(TRIM(product_host)), CHAR(31), LOWER(TRIM(shipping_email))) " +
             "END) as count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) as amount " +
-            "FROM orders WHERE create_time >= #{startDate} AND create_time < DATE_ADD(#{endDate}, INTERVAL 1 DAY) " +
+            "FROM orders WHERE create_time >= #{startDateTime} AND create_time < #{endDateTime} " +
             "GROUP BY DATE(create_time) ORDER BY date")
-    List<Map<String, Object>> orderTrend(String startDate, String endDate);
+    List<Map<String, Object>> orderTrend(@Param("startDateTime") String startDateTime,
+                                         @Param("endDateTime") String endDateTime);
 
-    @Select("SELECT DATE(create_time) AS date, COUNT(DISTINCT CASE " +
-            "WHEN TRIM(COALESCE(product_host, '')) <> '' AND TRIM(COALESCE(shipping_email, '')) <> '' " +
-            "THEN CONCAT(LOWER(TRIM(product_host)), CHAR(31), LOWER(TRIM(shipping_email))) END) AS count, " +
+    @Select("SELECT DATE(create_time) AS date, " +
+            "COUNT(DISTINCT CONCAT(user_group, CHAR(31), CAST(id AS CHAR))) AS count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS amount " +
-            "FROM orders WHERE create_time >= #{startDate} AND create_time < DATE_ADD(#{endDate}, INTERVAL 1 DAY) " +
+            "FROM orders WHERE create_time >= #{startDateTime} AND create_time < #{endDateTime} " +
             "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
             "GROUP BY DATE(create_time) ORDER BY date")
-    List<Map<String, Object>> orderTrendByGroup(@Param("startDate") String startDate,
-                                                @Param("endDate") String endDate,
+    List<Map<String, Object>> orderTrendByGroup(@Param("startDateTime") String startDateTime,
+                                                @Param("endDateTime") String endDateTime,
                                                 @Param("userGroup") String userGroup);
 
     /**
@@ -163,7 +159,8 @@ public interface OrderMapper {
             "FROM orders GROUP BY admin_name ORDER BY count DESC")
     List<Map<String, Object>> countByAdmin();
 
-    @Select("SELECT admin_name, COUNT(*) AS count, " +
+    @Select("SELECT admin_name, " +
+            "COUNT(DISTINCT CONCAT(user_group, CHAR(31), CAST(id AS CHAR))) AS count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS amount " +
             "FROM orders WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
             "GROUP BY admin_name ORDER BY count DESC")

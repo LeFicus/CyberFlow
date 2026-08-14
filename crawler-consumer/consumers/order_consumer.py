@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from loguru import logger
 from consumers.base_consumer import BaseConsumer
 from crawlers.order_crawler import AsyncOrderCrawler
-from db.repository import CursorRepository
+from db.repository import CursorRepository, TaskCancelledError
 from config import QUEUE_ORDER_CRAWL, EXCHANGE_TASKS
 from config import VERIFY_SSL
 import pika
@@ -74,6 +74,7 @@ class OrderConsumer(BaseConsumer):
         start = time.monotonic()
 
         try:
+            await self.repo.wait_for_task_control(task_id)
             await self.repo.update_task_status(task_id, "RUNNING", progress=10, progress_message=f"正在连接 {user_group} 组支付平台")
 
             platform = payload.get("platform", {})
@@ -109,6 +110,9 @@ class OrderConsumer(BaseConsumer):
                                 {"max_order_id": new_cursor}, duration_ms)
             logger.success(f"✅ Order crawl done: fetched={len(records)}, saved={saved_count}, cursor={new_cursor}")
 
+        except TaskCancelledError as e:
+            logger.info(f"⏹️ Order crawl cancelled by operator: {task_id} ({e})")
+            return
         except Exception as e:
             duration_ms = int((time.monotonic() - start) * 1000)
             await self.repo.update_task_status(
