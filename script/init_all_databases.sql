@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     username    VARCHAR(50)  NOT NULL UNIQUE COMMENT '登录用户名',
     password    VARCHAR(255) NOT NULL COMMENT 'BCrypt 加密密码',
     nickname    VARCHAR(50)  COMMENT '显示昵称',
+    data_owner  VARCHAR(100) COMMENT '外部数据中的管理员名称，用于普通用户数据隔离',
     email       VARCHAR(100) COMMENT '邮箱',
     status      TINYINT      NOT NULL DEFAULT 1 COMMENT '0=禁用 1=启用',
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -489,6 +490,19 @@ UPDATE sys_menu SET perms = 'system:user:list'        WHERE id = 31;
 UPDATE sys_menu SET perms = 'system:role:list'        WHERE id = 32;
 UPDATE sys_menu SET perms = 'system:menu:list'        WHERE id = 33;
 UPDATE sys_menu SET perms = 'system:log:view'         WHERE id = 34;
+INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, perms, status, sort_order) VALUES
+(52, 31, '新增用户', 2, 'system:user:create', 1, 1),
+(53, 31, '修改用户', 2, 'system:user:update', 1, 2),
+(54, 31, '删除用户', 2, 'system:user:delete', 1, 3),
+(55, 31, '分配用户角色', 2, 'system:user:assign', 1, 4),
+(56, 32, '新增角色', 2, 'system:role:create', 1, 1),
+(57, 32, '修改角色', 2, 'system:role:update', 1, 2),
+(58, 32, '删除角色', 2, 'system:role:delete', 1, 3),
+(59, 32, '分配角色菜单', 2, 'system:role:assign', 1, 4),
+(60, 33, '新增菜单', 2, 'system:menu:create', 1, 1),
+(61, 33, '修改菜单', 2, 'system:menu:update', 1, 2),
+(62, 33, '删除菜单', 2, 'system:menu:delete', 1, 3)
+ON DUPLICATE KEY UPDATE perms=VALUES(perms), status=1;
 
 -- ------------------------------------------------------------
 -- 角色权限分配

@@ -52,11 +52,18 @@ const router = createRouter({
 })
 
 router.onError((error, to) => {
-  // Surface lazy-chunk failures instead of leaving the layout's router-view
-  // blank. A reload retries the chunk and preserves the requested URL.
+  // Lazy chunks can be stale after a deployment. Retry once; otherwise a
+  // permanent reload loop would hide the real error and leave router-view blank.
   console.error(`[router] failed to load ${to?.fullPath || ''}`, error)
-  if (to?.fullPath && window.location.pathname !== to.fullPath) {
-    window.location.assign(to.fullPath)
+  if (to?.fullPath) {
+    const retryKey = `router-chunk-retry:${to.fullPath}`
+    if (!sessionStorage.getItem(retryKey)) {
+      sessionStorage.setItem(retryKey, '1')
+      window.location.reload()
+    } else {
+      sessionStorage.removeItem(retryKey)
+      router.replace('/dashboard/overview')
+    }
   }
 })
 

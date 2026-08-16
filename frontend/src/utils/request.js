@@ -9,6 +9,17 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
+let redirectingToLogin = false
+
+function handleSessionExpired() {
+  localStorage.removeItem('token')
+  localStorage.removeItem('userInfo')
+  if (window.location.pathname === '/login' || redirectingToLogin) return
+  redirectingToLogin = true
+  ElMessage.error('登录已过期，请重新登录')
+  window.location.replace('/login')
+}
+
 /**
  * HTTP 请求服务实例
  * 配置了默认超时时间 15 秒，无预设 baseURL（使用相对路径同源请求）
@@ -48,6 +59,10 @@ service.interceptors.response.use(
     // File downloads are not wrapped in the application's { code, data } JSON envelope.
     if (response.config.responseType === 'blob') return response
     const res = response.data
+    if (res.code === 401) {
+      handleSessionExpired()
+      return Promise.reject(new Error(res.msg || '登录已过期'))
+    }
     if (res.code !== 200) {
       ElMessage.error(res.msg || '请求失败')
       return Promise.reject(new Error(res.msg || '请求失败'))
@@ -55,10 +70,9 @@ service.interceptors.response.use(
     return res
   },
   error => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token')
-      ElMessage.error('登录已过期，请重新登录')
-      window.location.href = '/login'
+    const isLoginRequest = error.config?.url?.includes('/admin/auth/login')
+    if (error.response?.status === 401 && !isLoginRequest) {
+      handleSessionExpired()
     } else {
       ElMessage.error(error.message || '网络错误')
     }

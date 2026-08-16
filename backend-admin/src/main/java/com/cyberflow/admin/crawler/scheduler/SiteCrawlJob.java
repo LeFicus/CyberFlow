@@ -66,12 +66,7 @@ public class SiteCrawlJob implements Job {
             ? cursor.getCursorValue()
             : LocalDateTime.now().minusDays(1).toString();
 
-        String taskId = publisher.publishSiteCrawl(
-            crawlerConfigService.getAdminPlatform(),
-            crawlerConfigService.getSiteStrategy(),
-            lastUpdatedAt,
-            "cron"
-        );
+        String taskId = publisher.createTaskId();
 
         TaskHistory history = new TaskHistory();
         history.setTaskId(taskId);
@@ -80,6 +75,13 @@ public class SiteCrawlJob implements Job {
         history.setStatus("PENDING");
         history.setCursorBefore(lastUpdatedAt);
         taskHistoryService.save(history);
+        try {
+            publisher.publishSiteCrawl(taskId, crawlerConfigService.getAdminPlatform(),
+                    crawlerConfigService.getSiteStrategy(), lastUpdatedAt, "cron");
+        } catch (RuntimeException ex) {
+            taskHistoryService.markDispatchFailed(taskId, ex.getMessage());
+            throw ex;
+        }
         crawlerConfigService.markTriggered("site_crawl");
 
         log.info("Site crawl task dispatched: {}", taskId);

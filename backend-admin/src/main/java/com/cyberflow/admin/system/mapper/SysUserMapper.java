@@ -20,6 +20,9 @@ import java.util.List;
 @Mapper
 public interface SysUserMapper extends BaseMapper<SysUser> {
 
+    @Select("SELECT * FROM sys_user WHERE username = #{username} LIMIT 1")
+    SysUser selectByUsername(String username);
+
     /**
      * 根据用户 ID 查询其关联的角色编码列表。
      * <p>
@@ -33,6 +36,10 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
             "INNER JOIN sys_user_role ur ON r.id = ur.role_id " +
             "WHERE ur.user_id = #{userId} AND r.status = 1")
     List<String> selectRoleCodesByUserId(Long userId);
+
+    /** 查询用户当前绑定的角色 ID，用于角色分配弹窗回显。 */
+    @Select("SELECT role_id FROM sys_user_role WHERE user_id = #{userId} ORDER BY role_id")
+    List<Long> selectRoleIdsByUserId(Long userId);
 
     /**
      * 根据用户 ID 查询其所有权限标识。

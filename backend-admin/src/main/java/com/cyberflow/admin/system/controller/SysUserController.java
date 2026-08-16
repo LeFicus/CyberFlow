@@ -111,4 +111,11 @@ public class SysUserController {
         userService.assignRoles(id, roleIds);
         return Result.ok();
     }
+
+    /** 查询用户当前绑定的角色 ID，用于编辑时回显。 */
+    @GetMapping("/{id}/roles")
+    @PreAuthorize("hasAuthority('system:user:list')")
+    public Result<List<Long>> roleIds(@PathVariable Long id) {
+        return Result.ok(userService.getBaseMapper().selectRoleIdsByUserId(id));
+    }
 }

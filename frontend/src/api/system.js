@@ -18,6 +18,7 @@ export function updateUser(id, data) { return request.put(`/admin/system/user/${
 export function deleteUser(id) { return request.delete(`/admin/system/user/${id}`) }
 /** @param {number} id - 用户 ID @param {number[]} roleIds - 角色 ID 数组 */
 export function assignUserRoles(id, roleIds) { return request.put(`/admin/system/user/${id}/roles`, roleIds) }
+export function getUserRoleIds(id) { return request.get(`/admin/system/user/${id}/roles`) }
 
 // ==================== 角色管理 ====================
 
@@ -25,11 +26,19 @@ export function assignUserRoles(id, roleIds) { return request.put(`/admin/system
 export function getRoles(params) { return request.get('/admin/system/role', { params }) }
 /** @returns {Promise<Object>} 返回所有角色列表（不分页） */
 export function getAllRoles() { return request.get('/admin/system/role/all') }
+export function createRole(data) { return request.post('/admin/system/role', data) }
+export function updateRole(id, data) { return request.put(`/admin/system/role/${id}`, data) }
+export function deleteRole(id) { return request.delete(`/admin/system/role/${id}`) }
+export function getRoleMenuIds(id) { return request.get(`/admin/system/role/${id}/menus`) }
+export function assignRoleMenus(id, menuIds) { return request.put(`/admin/system/role/${id}/menus`, menuIds) }
 
 // ==================== 菜单管理 ====================
 
 /** @returns {Promise<Object>} 返回树形菜单结构数据 */
 export function getMenuTree() { return request.get('/admin/system/menu/tree') }
+export function createMenu(data) { return request.post('/admin/system/menu', data) }
+export function updateMenu(id, data) { return request.put(`/admin/system/menu/${id}`, data) }
+export function deleteMenu(id) { return request.delete(`/admin/system/menu/${id}`) }
 
 // ==================== 操作日志 ====================
 

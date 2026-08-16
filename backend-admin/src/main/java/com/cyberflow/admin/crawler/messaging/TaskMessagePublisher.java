@@ -39,6 +39,11 @@ public class TaskMessagePublisher {
     /** RabbitMQ 模板，用于发送消息 */
     private final RabbitTemplate rabbitTemplate;
 
+    /** Allocate the id before publishing so the history row can exist first. */
+    public String createTaskId() {
+        return UUID.randomUUID().toString();
+    }
+
     /**
      * 发布站点爬取任务消息。
      *
@@ -48,7 +53,11 @@ public class TaskMessagePublisher {
      * @return 生成的任务唯一标识（UUID）
      */
     public String publishSiteCrawl(Map<String, Object> platform, Map<String, Object> strategy, String lastUpdatedAt, String trigger) {
-        String taskId = UUID.randomUUID().toString();
+        return publishSiteCrawl(createTaskId(), platform, strategy, lastUpdatedAt, trigger);
+    }
+
+    public String publishSiteCrawl(String taskId, Map<String, Object> platform, Map<String, Object> strategy,
+                                   String lastUpdatedAt, String trigger) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("platform", platform);
         payload.put("strategy", strategy);
@@ -74,7 +83,11 @@ public class TaskMessagePublisher {
      * @return 生成的任务唯一标识（UUID）
      */
     public String publishSiteIndexCrawl(Map<String, Object> platform, Map<String, Object> strategy, String lastRecordedAt, String trigger) {
-        String taskId = UUID.randomUUID().toString();
+        return publishSiteIndexCrawl(createTaskId(), platform, strategy, lastRecordedAt, trigger);
+    }
+
+    public String publishSiteIndexCrawl(String taskId, Map<String, Object> platform, Map<String, Object> strategy,
+                                        String lastRecordedAt, String trigger) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("platform", platform);
         payload.put("strategy", strategy);
@@ -99,7 +112,11 @@ public class TaskMessagePublisher {
      */
     public String publishOrderCrawl(Map<String, Object> platform, Map<String, Object> strategy,
                                     String maxOrderId, String trigger, String userGroup) {
-        String taskId = UUID.randomUUID().toString();
+        return publishOrderCrawl(createTaskId(), platform, strategy, maxOrderId, trigger, userGroup);
+    }
+
+    public String publishOrderCrawl(String taskId, Map<String, Object> platform, Map<String, Object> strategy,
+                                    String maxOrderId, String trigger, String userGroup) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("platform", platform);
         payload.put("strategy", strategy);
@@ -129,7 +146,11 @@ public class TaskMessagePublisher {
      */
     public String publishProductCrawl(Long siteConfigId, String domain, String type,
                                       String category, Long triggeredBy) {
-        String taskId = UUID.randomUUID().toString();
+        return publishProductCrawl(createTaskId(), siteConfigId, domain, type, category, triggeredBy);
+    }
+
+    public String publishProductCrawl(String taskId, Long siteConfigId, String domain, String type,
+                                      String category, Long triggeredBy) {
         Map<String, Object> message = Map.of(
             "task_id", taskId,
             "type", "product_crawl",

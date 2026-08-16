@@ -53,13 +53,15 @@ public class CrawlerService {
      */
     public Map<String, Object> triggerSiteCrawler() {
         String lastUpdatedAt = cursorValue("site_crawler", LocalDateTime.now().minusDays(1).toString());
-        String taskId = publisher.publishSiteCrawl(
-            crawlerConfigService.getAdminPlatform(),
-            crawlerConfigService.getSiteStrategy(),
-            lastUpdatedAt,
-            "manual"
-        );
+        String taskId = publisher.createTaskId();
         saveTaskHistory(taskId, "site_crawl", "manual", null);
+        try {
+            publisher.publishSiteCrawl(taskId, crawlerConfigService.getAdminPlatform(),
+                    crawlerConfigService.getSiteStrategy(), lastUpdatedAt, "manual");
+        } catch (RuntimeException ex) {
+            taskHistoryService.markDispatchFailed(taskId, ex.getMessage());
+            throw ex;
+        }
         return Map.of("task_id", taskId, "status", "Task dispatched");
     }
 
@@ -76,13 +78,15 @@ public class CrawlerService {
      */
     public Map<String, Object> triggerSiteIndexCrawler() {
         String lastRecordedAt = cursorValue("site_index_crawler", LocalDateTime.now().minusDays(1).toString());
-        String taskId = publisher.publishSiteIndexCrawl(
-            crawlerConfigService.getAdminPlatform(),
-            crawlerConfigService.getSiteStrategy(),
-            lastRecordedAt,
-            "manual"
-        );
+        String taskId = publisher.createTaskId();
         saveTaskHistory(taskId, "site_index", "manual", null);
+        try {
+            publisher.publishSiteIndexCrawl(taskId, crawlerConfigService.getAdminPlatform(),
+                    crawlerConfigService.getSiteStrategy(), lastRecordedAt, "manual");
+        } catch (RuntimeException ex) {
+            taskHistoryService.markDispatchFailed(taskId, ex.getMessage());
+            throw ex;
+        }
         return Map.of("task_id", taskId, "status", "Task dispatched");
     }
 
@@ -103,14 +107,15 @@ public class CrawlerService {
             "order_crawler_" + userGroup,
             String.valueOf(crawlerConfigService.getOrderStrategy().getOrDefault("initialOrderId", "0"))
         );
-        String taskId = publisher.publishOrderCrawl(
-            crawlerConfigService.getPaymentPlatform(userGroup),
-            crawlerConfigService.getOrderStrategy(),
-            maxOrderId,
-            "manual",
-            userGroup
-        );
+        String taskId = publisher.createTaskId();
         saveTaskHistory(taskId, "order_crawl", "manual", "group-" + userGroup);
+        try {
+            publisher.publishOrderCrawl(taskId, crawlerConfigService.getPaymentPlatform(userGroup),
+                    crawlerConfigService.getOrderStrategy(), maxOrderId, "manual", userGroup);
+        } catch (RuntimeException ex) {
+            taskHistoryService.markDispatchFailed(taskId, ex.getMessage());
+            throw ex;
+        }
         return Map.of("task_id", taskId, "user_group", userGroup, "status", "Task dispatched");
     }
 
@@ -159,8 +164,14 @@ public class CrawlerService {
         if (!java.util.Set.of("shopify", "woocommerce", "bigcommerce").contains(type.toLowerCase())) {
             return Map.of("status", "Rejected", "message", "Unsupported product crawl engine");
         }
-        String taskId = publisher.publishProductCrawl(siteConfigId, domain, type, category, triggeredBy);
+        String taskId = publisher.createTaskId();
         saveTaskHistory(taskId, "product_crawl", "manual", String.valueOf(triggeredBy));
+        try {
+            publisher.publishProductCrawl(taskId, siteConfigId, domain, type, category, triggeredBy);
+        } catch (RuntimeException ex) {
+            taskHistoryService.markDispatchFailed(taskId, ex.getMessage());
+            throw ex;
+        }
         return Map.of("task_id", taskId, "status", "Task dispatched");
     }
 

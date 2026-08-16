@@ -7,7 +7,7 @@
         <p class="heading-caption">聚合站点、商品、订单与采集数据，快速判断今日经营状态</p>
       </div>
       <div class="heading-controls">
-        <el-segmented v-model="userGroup" :options="groupOptions" @change="loadDashboard" />
+        <el-segmented v-if="isAdmin" v-model="userGroup" :options="groupOptions" @change="loadDashboard" />
         <div class="heading-date"><el-icon><Calendar /></el-icon>{{ todayLabel }}</div>
       </div>
     </section>
@@ -61,7 +61,7 @@
             <el-table-column label="个人提成(RMB)" min-width="135" align="right"><template #default="{ row }"><strong class="commission-value">¥{{ formatPlainMoney(row.commission_rmb) }}</strong></template></el-table-column>
           </el-table>
         </el-tab-pane>
-        <el-tab-pane label="组长汇总" name="leaders">
+        <el-tab-pane v-if="canViewLeaderSummary" label="组长汇总" name="leaders">
           <el-table :data="leaderSummary" stripe empty-text="暂无组长汇总">
             <el-table-column prop="user_group" label="组别" width="70" />
             <el-table-column prop="leader_name" label="组长" min-width="120" />
@@ -144,6 +144,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useUserStore } from '@/store/user'
 import { ArrowRight, Calendar, DataBoard, Goods, Money, ShoppingCart } from '@element-plus/icons-vue'
 import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
@@ -154,6 +155,7 @@ import { getCharts, getOverview, getRevenueSummary } from '@/api/dashboard'
 
 use([CanvasRenderer, LineChart, GridComponent, LegendComponent, TooltipComponent])
 const router = useRouter()
+const userStore = useUserStore()
 const overview = ref({})
 const charts = ref({})
 const revenue = ref({})
@@ -173,6 +175,9 @@ const revenueDateRange = ref(currentMonthRange())
 const siteCreatedMonth = ref(currentMonthRange()[0].slice(0, 7))
 const userGroup = ref('')
 const groupOptions = [{ label: '全部', value: '' }, { label: 'A组', value: 'A' }, { label: 'B组', value: 'B' }]
+const userRoles = computed(() => userStore.userInfo?.roles || [])
+const isAdmin = computed(() => userRoles.value.some(role => String(role).toUpperCase() === 'ROLE_ADMIN'))
+const canViewLeaderSummary = computed(() => isAdmin.value || userRoles.value.some(role => String(role).toUpperCase() === 'ROLE_OPERATOR'))
 
 const todayLabel = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }).format(new Date())
 const toNumber = value => Number(value || 0)

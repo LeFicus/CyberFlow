@@ -65,13 +65,7 @@ public class OrderCrawlJob implements Job {
                 ? cursor.getCursorValue()
                 : String.valueOf(crawlerConfigService.getOrderStrategy().getOrDefault("initialOrderId", "0"));
 
-            String taskId = publisher.publishOrderCrawl(
-                crawlerConfigService.getPaymentPlatform(userGroup),
-                crawlerConfigService.getOrderStrategy(),
-                maxOrderId,
-                "cron",
-                userGroup
-            );
+            String taskId = publisher.createTaskId();
 
             TaskHistory history = new TaskHistory();
             history.setTaskId(taskId);
@@ -81,6 +75,13 @@ public class OrderCrawlJob implements Job {
             history.setStatus("PENDING");
             history.setCursorBefore(maxOrderId);
             taskHistoryService.save(history);
+            try {
+                publisher.publishOrderCrawl(taskId, crawlerConfigService.getPaymentPlatform(userGroup),
+                        crawlerConfigService.getOrderStrategy(), maxOrderId, "cron", userGroup);
+            } catch (RuntimeException ex) {
+                taskHistoryService.markDispatchFailed(taskId, ex.getMessage());
+                throw ex;
+            }
             log.info("Order crawl task dispatched: {} group={}", taskId, userGroup);
         }
         crawlerConfigService.markTriggered("order_crawl");

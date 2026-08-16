@@ -43,10 +43,12 @@ public interface SiteIndexingHistoryMapper {
             "ON LOWER(TRIM(LEADING 'www.' FROM h.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) " +
             "WHERE h.recorded_at >= #{startDate} AND h.recorded_at < DATE_ADD(#{endDate}, INTERVAL 1 DAY) " +
             "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR s.user_group = #{userGroup}) " +
+            "AND (#{ownerName} IS NULL OR s.admin_name = #{ownerName}) " +
             "GROUP BY DATE(h.recorded_at) ORDER BY date")
     List<Map<String, Object>> indexTrendByGroup(@Param("startDate") String startDate,
                                                 @Param("endDate") String endDate,
-                                                @Param("userGroup") String userGroup);
+                                                @Param("userGroup") String userGroup,
+                                                @Param("ownerName") String ownerName);
 
     /**
      * 分页查询收录历史列表，按收录时间倒序排列。
@@ -58,10 +60,13 @@ public interface SiteIndexingHistoryMapper {
     @Select("SELECT * FROM site_indexing_history ORDER BY recorded_at DESC LIMIT #{offset}, #{size}")
     List<Map<String, Object>> listHistory(int offset, int size);
 
-    @Select("SELECT DATE(recorded_at) as date, index_count, product_count " +
-            "FROM site_indexing_history WHERE site_domain = #{domain} " +
-            "ORDER BY recorded_at ASC")
-    List<Map<String, Object>> listHistoryByDomain(String domain);
+    @Select("SELECT DATE(h.recorded_at) as date, h.index_count, h.product_count " +
+            "FROM site_indexing_history h JOIN site_info s " +
+            "ON LOWER(TRIM(LEADING 'www.' FROM h.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) " +
+            "WHERE h.site_domain = #{domain} AND (#{ownerName} IS NULL OR s.admin_name = #{ownerName}) " +
+            "ORDER BY h.recorded_at ASC")
+    List<Map<String, Object>> listHistoryByDomain(@Param("domain") String domain,
+                                                   @Param("ownerName") String ownerName);
 
     /**
      * 统计收录历史总记录数。

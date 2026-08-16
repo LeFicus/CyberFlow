@@ -4,18 +4,19 @@
   包含任务 ID、类型、状态和结果信息。数据从 API 获取并以表格形式展示。
 -->
 <template>
-  <el-card>
-    <template #header>
-      任务历史
-      <el-button type="primary" size="small" style="float: right;" @click="fetchData">刷新</el-button>
-    </template>
+  <div class="task-history-page">
+    <el-card>
+      <template #header>
+        任务历史
+        <el-button type="primary" size="small" style="float: right;" @click="fetchData">刷新</el-button>
+      </template>
 
     <el-radio-group v-model="taskType" size="small" @change="handleTypeChange" class="task-type-tabs">
-      <el-radio-button label="all">全部（{{ counts.all || 0 }}）</el-radio-button>
-      <el-radio-button label="site_crawl">站点爬虫（{{ counts.site_crawl || 0 }}）</el-radio-button>
-      <el-radio-button label="site_index">收录统计（{{ counts.site_index || 0 }}）</el-radio-button>
-      <el-radio-button label="order_crawl">订单爬虫（{{ counts.order_crawl || 0 }}）</el-radio-button>
-      <el-radio-button v-if="userStore.hasPermission('dashboard:product:view')" label="product_crawl">商品爬虫（{{ counts.product_crawl || 0 }}）</el-radio-button>
+      <el-radio-button value="all">全部（{{ counts.all || 0 }}）</el-radio-button>
+      <el-radio-button value="site_crawl">站点爬虫（{{ counts.site_crawl || 0 }}）</el-radio-button>
+      <el-radio-button value="site_index">收录统计（{{ counts.site_index || 0 }}）</el-radio-button>
+      <el-radio-button value="order_crawl">订单爬虫（{{ counts.order_crawl || 0 }}）</el-radio-button>
+      <el-radio-button v-if="userStore.hasPermission('dashboard:product:view')" value="product_crawl">商品爬虫（{{ counts.product_crawl || 0 }}）</el-radio-button>
     </el-radio-group>
 
     <!-- 任务历史表格 -->
@@ -70,49 +71,50 @@
       </el-table-column>
     </el-table>
 
-    <el-pagination
-      style="margin-top: 16px; justify-content: flex-end;"
-      v-model:current-page="page"
-      :page-size="size"
-      :page-sizes="[10, 20, 50, 100]"
-      :total="total"
-      layout="total, sizes, prev, pager, next"
-      @current-change="fetchData"
-      @size-change="handleSizeChange"
-    />
-  </el-card>
+      <el-pagination
+        style="margin-top: 16px; justify-content: flex-end;"
+        v-model:current-page="page"
+        :page-size="size"
+        :page-sizes="[10, 20, 50, 100]"
+        :total="total"
+        layout="total, sizes, prev, pager, next"
+        @current-change="fetchData"
+        @size-change="handleSizeChange"
+      />
+    </el-card>
 
-  <el-drawer
-    v-model="logVisible"
-    title="商品爬取完整日志"
-    size="75%"
-    destroy-on-close
-    @closed="stopLogPolling"
-  >
-    <div class="log-toolbar">
-      <div>
-        <el-tag :type="statusTagType(logStatus)">{{ logStatus || 'UNKNOWN' }}</el-tag>
-        <span class="log-task-id">{{ activeTaskId }}</span>
-        <span v-if="logStatus === 'RUNNING'" class="live-indicator">实时刷新中</span>
+    <el-drawer
+      v-model="logVisible"
+      title="商品爬取完整日志"
+      size="75%"
+      destroy-on-close
+      @closed="stopLogPolling"
+    >
+      <div class="log-toolbar">
+        <div>
+          <el-tag :type="statusTagType(logStatus)">{{ logStatus || 'UNKNOWN' }}</el-tag>
+          <span class="log-task-id">{{ activeTaskId }}</span>
+          <span v-if="logStatus === 'RUNNING'" class="live-indicator">实时刷新中</span>
+        </div>
+        <div>
+          <el-button :loading="logLoading" @click="refreshLog">刷新</el-button>
+          <el-button :disabled="!crawlLog" @click="copyLog">复制当前窗口</el-button>
+          <el-button type="primary" :loading="logDownloading" @click="downloadLog">下载完整日志</el-button>
+        </div>
       </div>
-      <div>
-        <el-button :loading="logLoading" @click="refreshLog">刷新</el-button>
-        <el-button :disabled="!crawlLog" @click="copyLog">复制当前窗口</el-button>
-        <el-button type="primary" :loading="logDownloading" @click="downloadLog">下载完整日志</el-button>
+      <el-alert
+        v-if="logTruncated"
+        title="页面仅显示最近 20 万字符，完整日志请使用下载按钮。"
+        type="info"
+        :closable="false"
+        show-icon
+        class="log-notice"
+      />
+      <div ref="logViewer" v-loading="logLoading && !crawlLog" class="log-viewer">
+        <pre>{{ crawlLog || '暂无日志输出' }}</pre>
       </div>
-    </div>
-    <el-alert
-      v-if="logTruncated"
-      title="页面仅显示最近 20 万字符，完整日志请使用下载按钮。"
-      type="info"
-      :closable="false"
-      show-icon
-      class="log-notice"
-    />
-    <div ref="logViewer" v-loading="logLoading && !crawlLog" class="log-viewer">
-      <pre>{{ crawlLog || '暂无日志输出' }}</pre>
-    </div>
-  </el-drawer>
+    </el-drawer>
+  </div>
 </template>
 
 <script setup>
@@ -163,8 +165,13 @@ async function fetchData() {
 }
 
 async function loadSummary() {
-  const res = await getTaskSummary()
-  Object.assign(counts, res.data || {})
+  try {
+    const res = await getTaskSummary()
+    Object.assign(counts, res.data || {})
+  } catch {
+    // The task list should remain usable when the summary endpoint is unavailable.
+    Object.assign(counts, { all: 0, site_crawl: 0, site_index: 0, order_crawl: 0, product_crawl: 0 })
+  }
 }
 
 function handleTypeChange() {

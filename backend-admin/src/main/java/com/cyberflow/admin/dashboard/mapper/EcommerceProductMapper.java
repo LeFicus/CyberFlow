@@ -39,27 +39,33 @@ public interface EcommerceProductMapper {
             "THEN SUBSTRING(s.site_domain, 5) ELSE s.site_domain END)",
             "<where>",
             "<if test='userGroup != null and userGroup != &quot;&quot;'> AND s.user_group = #{userGroup}</if>",
+            "<if test='ownerName != null'> AND s.admin_name = #{ownerName}</if>",
             "</where>",
             "</script>"})
-    long countProductsByGroup(@Param("userGroup") String userGroup);
+    long countProductsByGroup(@Param("userGroup") String userGroup,
+                               @Param("ownerName") String ownerName);
 
     /**
      * 按来源域名分组统计商品数量，结果按数量降序排列。
      *
      * @return 每组包含 source_domain（域名）和 count（商品数）的列表
      */
-    @Select("SELECT source_domain, COUNT(*) as count FROM scraped_data.ecommerce_products " +
-            "GROUP BY source_domain ORDER BY count DESC")
-    List<Map<String, Object>> countByDomain();
+    @Select("SELECT p.source_domain, COUNT(*) as count FROM scraped_data.ecommerce_products p " +
+            "LEFT JOIN site_info s ON LOWER(TRIM(LEADING 'www.' FROM p.source_domain)) = LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) " +
+            "WHERE (#{ownerName} IS NULL OR s.admin_name = #{ownerName}) " +
+            "GROUP BY p.source_domain ORDER BY count DESC")
+    List<Map<String, Object>> countByDomain(@Param("ownerName") String ownerName);
 
     /**
      * 按自定义分类分组统计商品数量，结果按数量降序排列。
      *
      * @return 每组包含 custom_category（分类名）和 count（商品数）的列表
      */
-    @Select("SELECT custom_category, COUNT(*) as count FROM scraped_data.ecommerce_products " +
-            "GROUP BY custom_category ORDER BY count DESC")
-    List<Map<String, Object>> countByCategory();
+    @Select("SELECT p.custom_category, COUNT(*) as count FROM scraped_data.ecommerce_products p " +
+            "LEFT JOIN site_info s ON LOWER(TRIM(LEADING 'www.' FROM p.source_domain)) = LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) " +
+            "WHERE (#{ownerName} IS NULL OR s.admin_name = #{ownerName}) " +
+            "GROUP BY p.custom_category ORDER BY count DESC")
+    List<Map<String, Object>> countByCategory(@Param("ownerName") String ownerName);
 
     /**
      * 按语言分组统计商品数量。
@@ -83,6 +89,7 @@ public interface EcommerceProductMapper {
     /** Count products matching the optional domain, category and name filters. */
     @Select("<script>SELECT COUNT(id) FROM scraped_data.ecommerce_products " +
             "<where>" +
+            "<if test='ownerName != null'> AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND s.admin_name = #{ownerName})</if>" +
             "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
             "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
@@ -96,12 +103,14 @@ public interface EcommerceProductMapper {
             "</where></script>")
     long countProductsFiltered(@Param("domainsFilter") List<String> domainsFilter,
                                @Param("categoriesFilter") List<String> categoriesFilter,
-                               @Param("name") String name);
+                               @Param("name") String name,
+                               @Param("ownerName") String ownerName);
 
     /** List products matching the optional filters. */
     @Select("<script>SELECT id, sku, name, regular_price, categories, custom_category, source_domain, language, images " +
             "FROM scraped_data.ecommerce_products " +
             "<where>" +
+            "<if test='ownerName != null'> AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND s.admin_name = #{ownerName})</if>" +
             "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
             "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
@@ -116,24 +125,30 @@ public interface EcommerceProductMapper {
     List<Map<String, Object>> listProductsFiltered(@Param("domainsFilter") List<String> domainsFilter,
                                                    @Param("categoriesFilter") List<String> categoriesFilter,
                                                    @Param("name") String name,
+                                                   @Param("ownerName") String ownerName,
                                                    @Param("offset") int offset,
                                                    @Param("size") int size);
 
     /** Return the Redis fingerprint fields for the selected products. */
     @Select("<script>SELECT sku, source_domain FROM scraped_data.ecommerce_products " +
             "WHERE id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>" +
-            "#{id}</foreach></script>")
-    List<Map<String, Object>> listProductFingerprintsByIds(@Param("ids") List<Long> ids);
+            "#{id}</foreach> " +
+            "<if test='ownerName != null'>AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND s.admin_name = #{ownerName})</if></script>")
+    List<Map<String, Object>> listProductFingerprintsByIds(@Param("ids") List<Long> ids,
+                                                           @Param("ownerName") String ownerName);
 
     /** Delete only products selected by their database IDs. */
     @Delete("<script>DELETE FROM scraped_data.ecommerce_products " +
             "WHERE id IN <foreach collection='ids' item='id' open='(' separator=',' close=')'>" +
-            "#{id}</foreach></script>")
-    int deleteProductsByIds(@Param("ids") List<Long> ids);
+            "#{id}</foreach> " +
+            "<if test='ownerName != null'>AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND s.admin_name = #{ownerName})</if>" +
+            "</script>")
+    int deleteProductsByIds(@Param("ids") List<Long> ids, @Param("ownerName") String ownerName);
 
     /** Stream crawl fingerprints for all products matching the current list filters. */
     @Select("<script>SELECT sku, source_domain FROM scraped_data.ecommerce_products " +
             "<where>" +
+            "<if test='ownerName != null'> AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND s.admin_name = #{ownerName})</if>" +
             "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
             "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
@@ -148,11 +163,13 @@ public interface EcommerceProductMapper {
     @Options(fetchSize = 500, resultSetType = ResultSetType.FORWARD_ONLY)
     Cursor<Map<String, Object>> streamProductFingerprintsFiltered(@Param("domainsFilter") List<String> domainsFilter,
                                                                     @Param("categoriesFilter") List<String> categoriesFilter,
-                                                                    @Param("name") String name);
+                                                                    @Param("name") String name,
+                                                                    @Param("ownerName") String ownerName);
 
     /** Delete all products matching the current list filters. */
     @Delete("<script>DELETE FROM scraped_data.ecommerce_products " +
             "<where>" +
+            "<if test='ownerName != null'> AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND s.admin_name = #{ownerName})</if>" +
             "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
             "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
@@ -166,18 +183,22 @@ public interface EcommerceProductMapper {
             "</where></script>")
     int deleteProductsFiltered(@Param("domainsFilter") List<String> domainsFilter,
                                 @Param("categoriesFilter") List<String> categoriesFilter,
-                                @Param("name") String name);
+                                @Param("name") String name,
+                                @Param("ownerName") String ownerName);
 
     /** Returns normalized products for a small import-template export. */
     @Select("SELECT sku, name, description, regular_price, categories, images, cf_opingts, source_domain " +
             "FROM scraped_data.ecommerce_products " +
-            "WHERE (#{domain} IS NULL OR #{domain} = '' OR source_domain = #{domain}) ORDER BY id")
-    List<Map<String, Object>> listProductsForExport(String domain);
+            "WHERE (#{domain} IS NULL OR #{domain} = '' OR source_domain = #{domain}) " +
+            "AND (#{ownerName} IS NULL OR EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND s.admin_name = #{ownerName})) ORDER BY id")
+    List<Map<String, Object>> listProductsForExport(@Param("domain") String domain,
+                                                    @Param("ownerName") String ownerName);
 
     /** Stream normalized products so large exports never materialize the full table. */
     @Select("<script>SELECT sku, name, description, regular_price, categories, images, cf_opingts, " +
             "custom_category, source_domain, language FROM scraped_data.ecommerce_products " +
             "<where>" +
+            "<if test='ownerName != null'> AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND s.admin_name = #{ownerName})</if>" +
             "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
             "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
@@ -191,7 +212,8 @@ public interface EcommerceProductMapper {
     @Options(fetchSize = 500, resultSetType = ResultSetType.FORWARD_ONLY)
     Cursor<Map<String, Object>> streamProductsForExport(@Param("domainsFilter") List<String> domainsFilter,
                                                          @Param("categoriesFilter") List<String> categoriesFilter,
-                                                         @Param("name") String name);
+                                                         @Param("name") String name,
+                                                         @Param("ownerName") String ownerName);
 
     /** Legacy small export method retained for callers outside the HTTP export path. */
     @Select("<script>SELECT sku, name, description, regular_price, categories, images, cf_opingts, " +

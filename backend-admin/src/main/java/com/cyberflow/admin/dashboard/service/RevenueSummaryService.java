@@ -1,6 +1,7 @@
 package com.cyberflow.admin.dashboard.service;
 
 import com.cyberflow.admin.crawler.config.service.CrawlerConfigService;
+import com.cyberflow.admin.common.DataScopeService;
 import com.cyberflow.admin.dashboard.mapper.RevenueMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ import java.util.*;
 public class RevenueSummaryService {
     private final RevenueMapper revenueMapper;
     private final CrawlerConfigService configService;
+    private final DataScopeService dataScopeService;
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
 
     public Map<String, Object> summarize(String rawUserGroup, String startDate, String endDate) {
@@ -27,6 +29,8 @@ public class RevenueSummaryService {
     public Map<String, Object> summarize(String rawUserGroup, String startDate, String endDate,
                                          String siteCreatedMonth) {
         String userGroup = normalizeGroup(rawUserGroup);
+        var scope = dataScopeService.current();
+        String ownerName = scope.administrator() ? null : scope.ownerName();
         LocalDate today = LocalDate.now(BUSINESS_ZONE);
         String effectiveStart = startDate == null || startDate.isBlank()
                 ? today.withDayOfMonth(1).toString() : startDate;
@@ -38,19 +42,7 @@ public class RevenueSummaryService {
         Map<String, String> teacherMap = stringMap(config.get("teacherMap"));
         Map<String, String> leaderMap = stringMap(config.get("leaderConfig"));
 
-        Map<String, AccountStats> accounts = new LinkedHashMap<>();
-        for (Map<String, Object> row : revenueMapper.adminOrderStats(userGroup, effectiveStart, effectiveEnd)) {
-            AccountStats stats = accounts.computeIfAbsent(text(row, "admin_name"), AccountStats::new);
-            stats.group = text(row, "user_group");
-            stats.totalOrders = number(row.get("total_orders")).longValue();
-            stats.successfulOrders = number(row.get("successful_orders")).longValue();
-            stats.originalAmount = number(row.get("original_amount"));
-        }
-        for (Map<String, Object> row : revenueMapper.adminSiteStats(userGroup, effectiveStart, effectiveEnd)) {
-            AccountStats stats = accounts.computeIfAbsent(text(row, "admin_name"), AccountStats::new);
-            stats.group = text(row, "user_group");
-            stats.siteCount = number(row.get("site_count")).longValue();
-        }
+        Map<String, AccountStats> accounts = loadAccounts(userGroup, ownerName, effectiveStart, effectiveEnd);
 
         Map<String, PersonStats> people = new LinkedHashMap<>();
         for (AccountStats account : accounts.values()) {
@@ -96,41 +88,53 @@ public class RevenueSummaryService {
         personal.sort(Comparator.comparing((Map<String, Object> row) -> text(row, "user_group"))
                 .thenComparing(row -> number(row.get("deduplicated_orders")), Comparator.reverseOrder()));
 
+        // Personal data remains owner-scoped, but a non-admin needs the
+        // aggregate for their whole group in order to see a meaningful leader
+        // summary. The group is derived from the scoped account data, so a
+        // user cannot request another group's leader totals.
         List<Map<String, Object>> leaders = new ArrayList<>();
-        for (String group : List.of("A", "B")) {
-            if (userGroup != null && !userGroup.equals(group)) continue;
-            List<AccountStats> members = accounts.values().stream().filter(a -> group.equals(a.group)).toList();
-            BigDecimal originalAmount = members.stream().map(a -> a.originalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-            long sites = members.stream().mapToLong(a -> a.siteCount).sum();
-            long orders = members.stream().mapToLong(a -> a.totalOrders).sum();
-            BigDecimal leaderCommission = originalAmount
-                    .multiply(decimal(config.get("exchangeRate"), "6.73"))
-                    .multiply(decimal(config.get("rateFactor"), "0.42"))
-                    .multiply(decimal(config.get("leaderCommissionRate"), "0.02"));
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("user_group", group);
-            item.put("leader_name", leaderMap.getOrDefault(group, group + "组组长"));
-            item.put("member_count", members.stream().map(a -> realName(a.adminName, mergeMap)).distinct().count());
-            item.put("site_count", sites);
-            item.put("deduplicated_orders", orders);
-            item.put("original_amount", money(originalAmount));
-            item.put("conversion_rate", percent(orders, sites));
-            item.put("leader_commission_rmb", money(leaderCommission));
-            leaders.add(item);
+        if (scope.administrator() || scope.operator()) {
+            String visibleLeaderGroup = scope.administrator() ? null : resolveGroup(accounts);
+            Map<String, AccountStats> leaderAccounts = scope.administrator() || visibleLeaderGroup == null
+                    ? accounts
+                    : loadAccounts(visibleLeaderGroup, null, effectiveStart, effectiveEnd);
+
+            for (String group : List.of("A", "B")) {
+                if (userGroup != null && !userGroup.equals(group)) continue;
+                if (visibleLeaderGroup != null && !visibleLeaderGroup.equals(group)) continue;
+                List<AccountStats> members = leaderAccounts.values().stream().filter(a -> group.equals(a.group)).toList();
+                BigDecimal originalAmount = members.stream().map(a -> a.originalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+                long sites = members.stream().mapToLong(a -> a.siteCount).sum();
+                long orders = members.stream().mapToLong(a -> a.totalOrders).sum();
+                BigDecimal leaderCommission = originalAmount
+                        .multiply(decimal(config.get("exchangeRate"), "6.73"))
+                        .multiply(decimal(config.get("rateFactor"), "0.42"))
+                        .multiply(decimal(config.get("leaderCommissionRate"), "0.02"));
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("user_group", group);
+                item.put("leader_name", leaderMap.getOrDefault(group, group + "组组长"));
+                item.put("member_count", members.stream().map(a -> realName(a.adminName, mergeMap)).distinct().count());
+                item.put("site_count", sites);
+                item.put("deduplicated_orders", orders);
+                item.put("original_amount", money(originalAmount));
+                item.put("conversion_rate", percent(orders, sites));
+                item.put("leader_commission_rmb", money(leaderCommission));
+                leaders.add(item);
+            }
         }
 
         // Orders are matched to the owning site's domain.  Do not use the order
         // platform/group here: a site can contain orders imported by the other
         // platform and those orders must still contribute to the site's cohort.
         Map<String, DomainOrderStats> domainOrders = new HashMap<>();
-        for (Map<String, Object> row : revenueMapper.revenueOrdersByDomain(effectiveStart, effectiveEnd)) {
+        for (Map<String, Object> row : revenueMapper.revenueOrdersByDomain(effectiveStart, effectiveEnd, ownerName)) {
             DomainOrderStats stats = domainOrders.computeIfAbsent(domain(text(row, "product_host")), ignored -> new DomainOrderStats());
             stats.totalOrders += number(row.get("total_orders")).longValue();
             stats.successfulOrders += number(row.get("successful_orders")).longValue();
             stats.successfulAmount = stats.successfulAmount.add(number(row.get("successful_amount")));
         }
         Map<String, MonthlyStats> monthlyStats = new LinkedHashMap<>();
-        for (Map<String, Object> site : revenueMapper.revenueSites(userGroup, effectiveSiteCreatedMonth)) {
+        for (Map<String, Object> site : revenueMapper.revenueSites(userGroup, ownerName, effectiveSiteCreatedMonth)) {
             String admin = text(site, "admin_name");
             String group = text(site, "user_group");
             String month = text(site, "site_month");
@@ -180,6 +184,33 @@ public class RevenueSummaryService {
         result.put("leader_summary", leaders);
         result.put("monthly_conversion", monthly);
         return result;
+    }
+
+    private Map<String, AccountStats> loadAccounts(String userGroup, String ownerName,
+                                                    String startDate, String endDate) {
+        Map<String, AccountStats> accounts = new LinkedHashMap<>();
+        for (Map<String, Object> row : revenueMapper.adminOrderStats(userGroup, ownerName, startDate, endDate)) {
+            AccountStats stats = accounts.computeIfAbsent(text(row, "admin_name"), AccountStats::new);
+            stats.group = text(row, "user_group");
+            stats.totalOrders = number(row.get("total_orders")).longValue();
+            stats.successfulOrders = number(row.get("successful_orders")).longValue();
+            stats.originalAmount = number(row.get("original_amount"));
+        }
+        for (Map<String, Object> row : revenueMapper.adminSiteStats(userGroup, ownerName, startDate, endDate)) {
+            AccountStats stats = accounts.computeIfAbsent(text(row, "admin_name"), AccountStats::new);
+            stats.group = text(row, "user_group");
+            stats.siteCount = number(row.get("site_count")).longValue();
+        }
+        return accounts;
+    }
+
+    private static String resolveGroup(Map<String, AccountStats> accounts) {
+        return accounts.values().stream()
+                .map(account -> account.group)
+                .filter(group -> Set.of("A", "B").contains(group))
+                .distinct()
+                .findFirst()
+                .orElse(null);
     }
 
     private BigDecimal commission(BigDecimal usd, Map<String, Object> config) {

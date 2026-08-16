@@ -14,6 +14,7 @@
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="username" label="用户名" width="120" />
       <el-table-column prop="nickname" label="昵称" width="120" />
+      <el-table-column prop="dataOwner" label="数据归属" width="150" />
       <el-table-column prop="email" label="邮箱" width="180" />
       <el-table-column prop="status" label="状态" width="80">
         <template #default="{ row }">
@@ -49,6 +50,9 @@
         <el-form-item label="昵称">
           <el-input v-model="form.nickname" />
         </el-form-item>
+        <el-form-item label="数据归属">
+          <el-input v-model="form.dataOwner" placeholder="对应站点/订单中的管理员名称" />
+        </el-form-item>
         <el-form-item label="邮箱">
           <el-input v-model="form.email" />
         </el-form-item>
@@ -69,7 +73,7 @@
     <!-- 分配角色弹窗：checkbox 多选角色 -->
     <el-dialog v-model="roleDialogVisible" title="分配角色" width="420px">
       <el-checkbox-group v-model="selectedRoles">
-        <el-checkbox v-for="r in allRoles" :key="r.id" :label="r.id" :value="r.id">{{ r.roleName }}</el-checkbox>
+          <el-checkbox v-for="r in allRoles" :key="r.id" :value="r.id">{{ r.roleName }}</el-checkbox>
       </el-checkbox-group>
       <template #footer>
         <el-button @click="roleDialogVisible = false">取消</el-button>
@@ -87,7 +91,7 @@
  */
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getUsers, createUser, updateUser, deleteUser, assignUserRoles, getAllRoles } from '@/api/system'
+import { getUsers, createUser, updateUser, deleteUser, assignUserRoles, getAllRoles, getUserRoleIds } from '@/api/system'
 
 /** @type {import('vue').Ref<boolean>} 列表加载状态 */
 const loading = ref(false)
@@ -112,7 +116,7 @@ const allRoles = ref([])
 const selectedRoles = ref([])
 
 /** 用户表单数据 */
-const form = reactive({ username: '', nickname: '', email: '', password: '', status: 1 })
+const form = reactive({ username: '', nickname: '', dataOwner: '', email: '', password: '', status: 1 })
 
 /**
  * 获取用户列表
@@ -141,10 +145,10 @@ function openDialog(row) {
   isEdit.value = !!row
   if (row) {
     currentUserId.value = row.id
-    Object.assign(form, { username: row.username, nickname: row.nickname, email: row.email, password: '', status: row.status })
+    Object.assign(form, { username: row.username, nickname: row.nickname, dataOwner: row.dataOwner || '', email: row.email, password: '', status: row.status })
   } else {
     currentUserId.value = null
-    Object.assign(form, { username: '', nickname: '', email: '', password: '', status: 1 })
+    Object.assign(form, { username: '', nickname: '', dataOwner: '', email: '', password: '', status: 1 })
   }
   dialogVisible.value = true
 }
@@ -186,8 +190,9 @@ async function handleDelete(id) {
  */
 async function openRoleDialog(row) {
   currentUserId.value = row.id
-  selectedRoles.value = [1] // 默认选中管理员
-  allRoles.value = (await getAllRoles()).data || []
+  const [rolesRes, selectedRes] = await Promise.all([getAllRoles(), getUserRoleIds(row.id)])
+  allRoles.value = rolesRes.data || []
+  selectedRoles.value = (selectedRes.data || []).map(Number)
   roleDialogVisible.value = true
 }
 
@@ -196,9 +201,13 @@ async function openRoleDialog(row) {
  * 将选中的角色 ID 列表提交到后端
  */
 async function handleAssignRoles() {
-  await assignUserRoles(currentUserId.value, selectedRoles.value)
-  ElMessage.success('角色分配成功')
-  roleDialogVisible.value = false
+  try {
+    await assignUserRoles(currentUserId.value, selectedRoles.value)
+    ElMessage.success('角色分配成功')
+    roleDialogVisible.value = false
+  } catch {
+    ElMessage.error('角色分配失败')
+  }
 }
 
 onMounted(fetchData)

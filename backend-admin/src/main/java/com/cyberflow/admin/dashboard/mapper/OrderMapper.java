@@ -23,6 +23,7 @@ public interface OrderMapper {
             "<if test='orderId != null and orderId != &quot;&quot;'> AND CAST(id AS CHAR) LIKE CONCAT('%', #{orderId}, '%')</if>" +
             "<if test='adminName != null and adminName != &quot;&quot;'> AND admin_name LIKE CONCAT('%', #{adminName}, '%')</if>" +
             "<if test='userGroup != null and userGroup != &quot;&quot;'> AND user_group = #{userGroup}</if>" +
+            "<if test='ownerName != null'> AND admin_name = #{ownerName}</if>" +
             "<if test='domain != null and domain != &quot;&quot;'> AND product_host LIKE CONCAT('%', #{domain}, '%')</if>" +
             "<if test='payStatus != null and payStatus != &quot;&quot;'> AND pay_status_text = #{payStatus}</if>" +
             "<if test='currency != null and currency != &quot;&quot;'> AND currency = #{currency}</if>" +
@@ -39,6 +40,7 @@ public interface OrderMapper {
                              @Param("payStatus") String payStatus,
                              @Param("currency") String currency,
                              @Param("country") String country,
+                             @Param("ownerName") String ownerName,
                              @Param("startDate") String startDate,
                              @Param("endDate") String endDate);
 
@@ -51,6 +53,7 @@ public interface OrderMapper {
                                                  @Param("payStatus") String payStatus,
                                                  @Param("currency") String currency,
                                                  @Param("country") String country,
+                                                 @Param("ownerName") String ownerName,
                                                  @Param("startDate") String startDate,
                                                  @Param("endDate") String endDate,
                                                  @Param("offset") int offset,
@@ -68,6 +71,7 @@ public interface OrderMapper {
                                                 @Param("payStatus") String payStatus,
                                                 @Param("currency") String currency,
                                                 @Param("country") String country,
+                                                @Param("ownerName") String ownerName,
                                                 @Param("startDate") String startDate,
                                                 @Param("endDate") String endDate);
 
@@ -85,11 +89,13 @@ public interface OrderMapper {
             "THEN CONCAT(user_group, CHAR(31), CAST(id AS CHAR)) END) AS successful_orders, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount " +
             "FROM orders WHERE create_time &gt;= #{startDateTime} AND create_time &lt; #{endDateTime} " +
-            "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup})",
+            "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
+            "AND (#{ownerName} IS NULL OR admin_name = #{ownerName})",
             "</script>"})
     Map<String, Object> businessSummaryByGroup(@Param("startDateTime") String startDateTime,
                                                @Param("endDateTime") String endDateTime,
-                                               @Param("userGroup") String userGroup);
+                                               @Param("userGroup") String userGroup,
+                                               @Param("ownerName") String ownerName);
 
     /**
      * 查询订单总体摘要，包括总订单数和总金额。
@@ -102,8 +108,10 @@ public interface OrderMapper {
     @Select("SELECT COUNT(*) AS total_count, COALESCE(SUM(amount), 0) AS total_amount, " +
             "COUNT(CASE WHEN pay_status_text = '已支付' THEN 1 END) AS paid_count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS paid_amount " +
-            "FROM orders WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup})")
-    Map<String, Object> orderSummaryByGroup(@Param("userGroup") String userGroup);
+            "FROM orders WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
+            "AND (#{ownerName} IS NULL OR admin_name = #{ownerName})")
+    Map<String, Object> orderSummaryByGroup(@Param("userGroup") String userGroup,
+                                             @Param("ownerName") String ownerName);
 
     /**
      * 查询当日订单摘要，包括今日订单数和今日订单总金额。
@@ -115,11 +123,13 @@ public interface OrderMapper {
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount",
             "FROM orders WHERE create_time &gt;= #{startDateTime}",
             "AND create_time &lt; #{endDateTime}",
-            "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup})",
+            "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
+            "AND (#{ownerName} IS NULL OR admin_name = #{ownerName})",
             "</script>"})
     Map<String, Object> todaySummaryByGroup(@Param("startDateTime") String startDateTime,
                                             @Param("endDateTime") String endDateTime,
-                                            @Param("userGroup") String userGroup);
+                                            @Param("userGroup") String userGroup,
+                                            @Param("ownerName") String ownerName);
 
     /**
      * 查询指定日期范围内的每日订单趋势（按天聚合）。
@@ -144,10 +154,12 @@ public interface OrderMapper {
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS amount " +
             "FROM orders WHERE create_time >= #{startDateTime} AND create_time < #{endDateTime} " +
             "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
+            "AND (#{ownerName} IS NULL OR admin_name = #{ownerName}) " +
             "GROUP BY DATE(create_time) ORDER BY date")
     List<Map<String, Object>> orderTrendByGroup(@Param("startDateTime") String startDateTime,
                                                 @Param("endDateTime") String endDateTime,
-                                                @Param("userGroup") String userGroup);
+                                                @Param("userGroup") String userGroup,
+                                                @Param("ownerName") String ownerName);
 
     /**
      * 按管理员分组统计订单数量和金额，结果按订单数量降序排列。
@@ -163,15 +175,18 @@ public interface OrderMapper {
             "COUNT(DISTINCT CONCAT(user_group, CHAR(31), CAST(id AS CHAR))) AS count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS amount " +
             "FROM orders WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
+            "AND (#{ownerName} IS NULL OR admin_name = #{ownerName}) " +
             "GROUP BY admin_name ORDER BY count DESC")
-    List<Map<String, Object>> countByAdminForGroup(@Param("userGroup") String userGroup);
+    List<Map<String, Object>> countByAdminForGroup(@Param("userGroup") String userGroup,
+                                                   @Param("ownerName") String ownerName);
 
     @Select("SELECT COALESCE(user_group, '未分组') AS user_group, " +
             "COUNT(*) AS total_count, " +
             "COUNT(CASE WHEN pay_status_text = '已支付' THEN 1 END) AS paid_count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS paid_amount " +
-            "FROM orders GROUP BY user_group ORDER BY user_group")
-    List<Map<String, Object>> summarizeByGroup();
+            "FROM orders WHERE (#{ownerName} IS NULL OR admin_name = #{ownerName}) " +
+            "GROUP BY user_group ORDER BY user_group")
+    List<Map<String, Object>> summarizeByGroup(@Param("ownerName") String ownerName);
 
     /**
      * 按模板名称分组统计订单数量和金额，结果按订单数量降序排列。
@@ -192,8 +207,10 @@ public interface OrderMapper {
 
     @Select("SELECT currency, COUNT(*) AS count FROM orders " +
             "WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
+            "AND (#{ownerName} IS NULL OR admin_name = #{ownerName}) " +
             "GROUP BY currency")
-    List<Map<String, Object>> countByCurrencyForGroup(@Param("userGroup") String userGroup);
+    List<Map<String, Object>> countByCurrencyForGroup(@Param("userGroup") String userGroup,
+                                                      @Param("ownerName") String ownerName);
 
     /**
      * 分页查询全部订单列表，按创建时间倒序排列。
@@ -257,18 +274,33 @@ public interface OrderMapper {
     long countOrdersByDateRange(String startDate, String endDate);
 
     @Select("SELECT * FROM orders WHERE product_host = #{domain} " +
+            "AND (#{ownerName} IS NULL OR admin_name = #{ownerName}) " +
             "ORDER BY create_time DESC LIMIT #{offset}, #{size}")
-    List<Map<String, Object>> listOrdersByDomain(String domain, int offset, int size);
-
-    @Select("SELECT COUNT(*) FROM orders WHERE product_host = #{domain}")
-    long countOrdersByDomain(String domain);
-
-    @Select("SELECT * FROM orders WHERE product_host = #{domain} " +
-            "AND create_time >= #{startDate} AND create_time <= #{endDate} " +
-            "ORDER BY create_time DESC LIMIT #{offset}, #{size}")
-    List<Map<String, Object>> listOrdersByDomainAndDateRange(String domain, String startDate, String endDate, int offset, int size);
+    List<Map<String, Object>> listOrdersByDomain(@Param("domain") String domain,
+                                                  @Param("ownerName") String ownerName,
+                                                  @Param("offset") int offset,
+                                                  @Param("size") int size);
 
     @Select("SELECT COUNT(*) FROM orders WHERE product_host = #{domain} " +
+            "AND (#{ownerName} IS NULL OR admin_name = #{ownerName})")
+    long countOrdersByDomain(@Param("domain") String domain, @Param("ownerName") String ownerName);
+
+    @Select("SELECT * FROM orders WHERE product_host = #{domain} " +
+            "AND (#{ownerName} IS NULL OR admin_name = #{ownerName}) " +
+            "AND create_time >= #{startDate} AND create_time <= #{endDate} " +
+            "ORDER BY create_time DESC LIMIT #{offset}, #{size}")
+    List<Map<String, Object>> listOrdersByDomainAndDateRange(@Param("domain") String domain,
+                                                              @Param("ownerName") String ownerName,
+                                                              @Param("startDate") String startDate,
+                                                              @Param("endDate") String endDate,
+                                                              @Param("offset") int offset,
+                                                              @Param("size") int size);
+
+    @Select("SELECT COUNT(*) FROM orders WHERE product_host = #{domain} " +
+            "AND (#{ownerName} IS NULL OR admin_name = #{ownerName}) " +
             "AND create_time >= #{startDate} AND create_time <= #{endDate}")
-    long countOrdersByDomainAndDateRange(String domain, String startDate, String endDate);
+    long countOrdersByDomainAndDateRange(@Param("domain") String domain,
+                                          @Param("ownerName") String ownerName,
+                                          @Param("startDate") String startDate,
+                                          @Param("endDate") String endDate);
 }

@@ -8,7 +8,7 @@
   <el-card>
     <!-- 筛选栏 -->
     <el-form :inline="true" :model="filters" class="site-filter" @submit.prevent="handleSearch">
-      <el-form-item label="用户组">
+      <el-form-item v-if="isAdmin" label="用户组">
         <el-segmented v-model="filters.userGroup" :options="groupOptions" @change="handleSearch" />
       </el-form-item>
       <el-form-item label="管理员">
@@ -151,6 +151,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart, BarChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent, GridComponent, DataZoomComponent } from 'echarts/components'
 import { getSites, getSiteIndexHistory, getOrdersByDomain } from '@/api/dashboard'
+import { useUserStore } from '@/store/user'
 
 // 注册 ECharts 所需模块
 use([CanvasRenderer, LineChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, DataZoomComponent])
@@ -165,8 +166,10 @@ const page = ref(1)
 const size = ref(10)
 /** 总条数 */
 const total = ref(0)
+const userStore = useUserStore()
 /** 筛选条件 */
 const groupOptions = [{ label: '全部', value: '' }, { label: 'A组', value: 'A' }, { label: 'B组', value: 'B' }]
+const isAdmin = computed(() => (userStore.userInfo?.roles || []).some(role => String(role).toUpperCase() === 'ROLE_ADMIN'))
 const filters = reactive({ userGroup: '', adminName: '', domain: '', dateRange: [] })
 const activeFilterCount = computed(() => [filters.userGroup, filters.adminName, filters.domain, filters.dateRange?.length].filter(Boolean).length)
 

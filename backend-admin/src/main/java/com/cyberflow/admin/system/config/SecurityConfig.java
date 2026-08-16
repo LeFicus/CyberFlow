@@ -2,6 +2,7 @@ package com.cyberflow.admin.system.config;
 
 import com.cyberflow.admin.common.JwtUtils;
 import com.cyberflow.admin.system.service.SysUserService;
+import com.cyberflow.admin.system.mapper.SysUserMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -54,6 +55,9 @@ public class SecurityConfig {
 
     /** JWT 工具类，用于解析和验证令牌 */
     private final JwtUtils jwtUtils;
+
+    /** 从数据库读取最新角色和权限，避免角色调整后必须重新登录。 */
+    private final SysUserMapper userMapper;
 
     /**
      * 注册密码编码器 Bean。
@@ -128,24 +132,38 @@ public class SecurityConfig {
             protected void doFilterInternal(HttpServletRequest request,
                                             HttpServletResponse response,
                                             FilterChain chain) throws ServletException, IOException {
+                // 登录接口必须允许用户用新凭据替换浏览器中已经过期的旧 token。
+                if ("/admin/auth/login".equals(request.getRequestURI())) {
+                    chain.doFilter(request, response);
+                    return;
+                }
                 String authHeader = request.getHeader("Authorization");
                 if (authHeader != null && authHeader.startsWith("Bearer ")) {
                     String token = authHeader.substring(7);
                     try {
                         var claims = jwtUtils.parseToken(token);
                         String username = claims.get("username", String.class);
-                        @SuppressWarnings("unchecked")
-                        List<String> perms = claims.get("perms", List.class);
+                        var user = userMapper.selectByUsername(username);
+                        if (user == null || user.getStatus() == null || user.getStatus() == 0) {
+                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            return;
+                        }
+                        List<String> perms = userMapper.selectPermissionsByUserId(user.getId());
+                        List<String> roles = userMapper.selectRoleCodesByUserId(user.getId());
 
-                        var authorities = perms != null
-                            ? perms.stream().map(SimpleGrantedAuthority::new).collect(Collectors.toList())
-                            : List.<SimpleGrantedAuthority>of();
+                        var authorities = new java.util.ArrayList<SimpleGrantedAuthority>();
+                        if (perms != null) authorities.addAll(perms.stream()
+                                .map(SimpleGrantedAuthority::new).toList());
+                        if (roles != null) authorities.addAll(roles.stream()
+                                .map(SimpleGrantedAuthority::new).toList());
 
                         var auth = new UsernamePasswordAuthenticationToken(
                             username, null, authorities);
                         SecurityContextHolder.getContext().setAuthentication(auth);
                     } catch (Exception ignored) {
-                        // Token 无效，继续匿名访问
+                        // 过期或无效 token 明确返回 401，让前端清理登录态并回到登录页。
+                        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                        return;
                     }
                 }
                 chain.doFilter(request, response);

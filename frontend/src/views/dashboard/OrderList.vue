@@ -7,7 +7,7 @@
   <el-card>
     <!-- 筛选栏 -->
     <el-form :inline="true" :model="filters" class="order-filter" @submit.prevent="handleSearch">
-      <el-form-item label="用户组">
+      <el-form-item v-if="isAdmin" label="用户组">
         <el-segmented v-model="filters.userGroup" :options="groupOptions" @change="handleSearch" />
       </el-form-item>
       <el-form-item label="订单号">
@@ -85,6 +85,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { getOrders } from '@/api/dashboard'
+import { useUserStore } from '@/store/user'
 
 /** 表格 loading 状态 */
 const loading = ref(false)
@@ -96,9 +97,11 @@ const page = ref(1)
 const size = ref(10)
 /** 总条数 */
 const total = ref(0)
+const userStore = useUserStore()
 /** 筛选条件 */
 const summary = ref({})
 const groupOptions = [{ label: '全部', value: '' }, { label: 'A组', value: 'A' }, { label: 'B组', value: 'B' }]
+const isAdmin = computed(() => (userStore.userInfo?.roles || []).some(role => String(role).toUpperCase() === 'ROLE_ADMIN'))
 const filters = reactive({ userGroup: '', orderId: '', domain: '', adminName: '', payStatus: '', currency: '', country: '', dateRange: [] })
 const payStatusOptions = ['已支付', '支付异常', '支付失败', '待支付', '退款', '已取消']
 const currencyOptions = ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'AUD', 'CAD']

@@ -1,6 +1,7 @@
 package com.cyberflow.admin.dashboard.service;
 
 import com.cyberflow.admin.dashboard.mapper.*;
+import com.cyberflow.admin.common.DataScopeService;
 import lombok.RequiredArgsConstructor;
 import org.apache.ibatis.cursor.Cursor;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -44,6 +45,7 @@ public class DashboardService {
 
     /** 商品爬虫去重指纹缓存 */
     private final StringRedisTemplate redisTemplate;
+    private final DataScopeService dataScopeService;
 
     /**
      * 获取系统总览数据。
@@ -55,19 +57,20 @@ public class DashboardService {
      */
     public Map<String, Object> getOverview(String rawUserGroup) {
         String userGroup = normalizeUserGroup(rawUserGroup);
+        String ownerName = ownerName();
         var overview = new LinkedHashMap<String, Object>();
 
         overview.put("user_group", userGroup == null ? "ALL" : userGroup);
-        overview.put("total_products", productMapper.countProductsByGroup(userGroup));
+        overview.put("total_products", productMapper.countProductsByGroup(userGroup, ownerName));
 
         LocalDate businessToday = LocalDate.now(BUSINESS_ZONE);
         String monthStart = dbDateTime(businessToday.withDayOfMonth(1));
         String nextMonthStart = dbDateTime(businessToday.withDayOfMonth(1).plusMonths(1));
         String todayStart = dbDateTime(businessToday);
         String tomorrowStart = dbDateTime(businessToday.plusDays(1));
-        var today = orderMapper.businessSummaryByGroup(todayStart, tomorrowStart, userGroup);
-        var month = orderMapper.businessSummaryByGroup(monthStart, nextMonthStart, userGroup);
-        overview.put("total_sites", siteInfoMapper.countSitesByGroupAndDateRange(userGroup, todayStart, tomorrowStart));
+        var today = orderMapper.businessSummaryByGroup(todayStart, tomorrowStart, userGroup, ownerName);
+        var month = orderMapper.businessSummaryByGroup(monthStart, nextMonthStart, userGroup, ownerName);
+        overview.put("total_sites", siteInfoMapper.countSitesByGroupAndDateRange(userGroup, ownerName, todayStart, tomorrowStart));
         overview.put("deduplicated_orders", today.getOrDefault("deduplicated_orders", 0L));
         overview.put("successful_orders", today.getOrDefault("successful_orders", 0L));
         overview.put("successful_amount", today.getOrDefault("successful_amount", 0.0));
@@ -77,8 +80,8 @@ public class DashboardService {
         overview.put("today_amount", today.getOrDefault("successful_amount", 0.0));
         overview.put("month_orders", month.getOrDefault("successful_orders", 0L));
         overview.put("month_amount", month.getOrDefault("successful_amount", 0.0));
-        overview.put("site_group_summary", siteInfoMapper.summarizeByGroup());
-        overview.put("order_group_summary", orderMapper.summarizeByGroup());
+        overview.put("site_group_summary", siteInfoMapper.summarizeByGroup(ownerName));
+        overview.put("order_group_summary", orderMapper.summarizeByGroup(ownerName));
 
         return overview;
     }
@@ -95,10 +98,11 @@ public class DashboardService {
     public Map<String, Object> getSites(int page, int size, String adminName, String rawUserGroup, String domain,
                                         String startDate, String endDate) {
         String userGroup = normalizeUserGroup(rawUserGroup);
+        String ownerName = ownerName();
         int offset = (page - 1) * size;
-        long total = siteInfoMapper.countSitesFiltered(adminName, userGroup, domain, startDate, endDate);
+        long total = siteInfoMapper.countSitesFiltered(adminName, userGroup, ownerName, domain, startDate, endDate);
         List<Map<String, Object>> list = siteInfoMapper.listSitesFiltered(
-                adminName, userGroup, domain, startDate, endDate, offset, size);
+                adminName, userGroup, ownerName, domain, startDate, endDate, offset, size);
 
         var result = new LinkedHashMap<String, Object>();
         result.put("total", total);
@@ -120,13 +124,14 @@ public class DashboardService {
                                           String endDate, String adminName, String rawUserGroup, String domain,
                                           String payStatus, String currency, String country) {
         String userGroup = normalizeUserGroup(rawUserGroup);
+        String ownerName = ownerName();
         int offset = (page - 1) * size;
         long total = orderMapper.countOrdersFiltered(orderId, adminName, userGroup, domain, payStatus,
-                currency, country, startDate, endDate);
+                currency, country, ownerName, startDate, endDate);
         List<Map<String, Object>> list = orderMapper.listOrdersFiltered(orderId, adminName, userGroup,
-                domain, payStatus, currency, country, startDate, endDate, offset, size);
+                domain, payStatus, currency, country, ownerName, startDate, endDate, offset, size);
         Map<String, Object> summary = orderMapper.summarizeOrdersFiltered(orderId, adminName, userGroup,
-                domain, payStatus, currency, country, startDate, endDate);
+                domain, payStatus, currency, country, ownerName, startDate, endDate);
 
         var result = new LinkedHashMap<String, Object>();
         result.put("total", total);
@@ -146,12 +151,13 @@ public class DashboardService {
      * @return 包含 total（总数）和 list（商品列表）的 Map
      */
     public Map<String, Object> getProducts(int page, int size, List<String> domains, List<String> categories, String name) {
+        String ownerName = ownerName();
         List<String> domainFilter = normalizeDomainFilter(domains);
         List<String> categoryFilter = normalizeCategoryFilter(categories);
         int offset = (page - 1) * size;
-        long total = productMapper.countProductsFiltered(domainFilter, categoryFilter, name);
+        long total = productMapper.countProductsFiltered(domainFilter, categoryFilter, name, ownerName);
         List<Map<String, Object>> list = productMapper.listProductsFiltered(
-                domainFilter, categoryFilter, name, offset, size);
+                domainFilter, categoryFilter, name, ownerName, offset, size);
 
         var result = new LinkedHashMap<String, Object>();
         result.put("total", total);
@@ -174,8 +180,9 @@ public class DashboardService {
             throw new IllegalArgumentException("No more than 500 products can be deleted at once");
         }
 
-        List<Map<String, Object>> products = productMapper.listProductFingerprintsByIds(ids);
-        int deletedCount = productMapper.deleteProductsByIds(ids);
+        String ownerName = ownerName();
+        List<Map<String, Object>> products = productMapper.listProductFingerprintsByIds(ids, ownerName);
+        int deletedCount = productMapper.deleteProductsByIds(ids, ownerName);
         for (Map<String, Object> product : products) {
             String sku = Objects.toString(product.get("sku"), "").trim();
             String domain = Objects.toString(product.get("source_domain"), "").trim();
@@ -194,14 +201,15 @@ public class DashboardService {
     public Map<String, Object> clearProducts(List<String> domains, List<String> categories, String name) {
         List<String> domainFilter = normalizeDomainFilter(domains);
         List<String> categoryFilter = normalizeCategoryFilter(categories);
+        String ownerName = ownerName();
         // Consume the fingerprint cursor before issuing DELETE so a million-row
         // clear never creates a million-element Java List.
-        try (Cursor<Map<String, Object>> products = productMapper.streamProductFingerprintsFiltered(domainFilter, categoryFilter, name)) {
+        try (Cursor<Map<String, Object>> products = productMapper.streamProductFingerprintsFiltered(domainFilter, categoryFilter, name, ownerName)) {
             for (Map<String, Object> product : products) removeProductFingerprint(product);
         } catch (IOException ex) {
             throw new IllegalStateException("Unable to finish streaming product fingerprints", ex);
         }
-        int deletedCount = productMapper.deleteProductsFiltered(domainFilter, categoryFilter, name);
+        int deletedCount = productMapper.deleteProductsFiltered(domainFilter, categoryFilter, name, ownerName);
 
         var result = new LinkedHashMap<String, Object>();
         result.put("deleted_count", deletedCount);
@@ -240,10 +248,11 @@ public class DashboardService {
         if (domain == null || domain.isBlank()) {
             return List.of();
         }
-        return indexingMapper.listHistoryByDomain(domain);
+        return indexingMapper.listHistoryByDomain(domain, ownerName());
     }
 
     public Map<String, Object> getOrdersByDomain(int page, int size, String domain, String startDate, String endDate) {
+        String ownerName = ownerName();
         int offset = (page - 1) * size;
         long total;
         List<Map<String, Object>> list;
@@ -252,11 +261,11 @@ public class DashboardService {
             total = 0;
             list = List.of();
         } else if (startDate != null && endDate != null) {
-            total = orderMapper.countOrdersByDomainAndDateRange(domain, startDate, endDate);
-            list = orderMapper.listOrdersByDomainAndDateRange(domain, startDate, endDate, offset, size);
+            total = orderMapper.countOrdersByDomainAndDateRange(domain, ownerName, startDate, endDate);
+            list = orderMapper.listOrdersByDomainAndDateRange(domain, ownerName, startDate, endDate, offset, size);
         } else {
-            total = orderMapper.countOrdersByDomain(domain);
-            list = orderMapper.listOrdersByDomain(domain, offset, size);
+            total = orderMapper.countOrdersByDomain(domain, ownerName);
+            list = orderMapper.listOrdersByDomain(domain, ownerName, offset, size);
         }
 
         var result = new LinkedHashMap<String, Object>();
@@ -285,6 +294,7 @@ public class DashboardService {
      */
     public Map<String, Object> getChartData(String rawUserGroup) {
         String userGroup = normalizeUserGroup(rawUserGroup);
+        String ownerName = ownerName();
         var charts = new LinkedHashMap<String, Object>();
 
         LocalDate businessToday = LocalDate.now(BUSINESS_ZONE);
@@ -293,23 +303,23 @@ public class DashboardService {
         String indexEnd = businessToday.toString();
         String indexStart = businessToday.minusDays(30).toString();
         charts.put("user_group", userGroup == null ? "ALL" : userGroup);
-        charts.put("order_trend", orderMapper.orderTrendByGroup(orderStart, orderEnd, userGroup));
+        charts.put("order_trend", orderMapper.orderTrendByGroup(orderStart, orderEnd, userGroup, ownerName));
 
-        charts.put("index_trend", indexingMapper.indexTrendByGroup(indexStart, indexEnd, userGroup));
+        charts.put("index_trend", indexingMapper.indexTrendByGroup(indexStart, indexEnd, userGroup, ownerName));
 
-        charts.put("orders_by_admin", orderMapper.countByAdminForGroup(userGroup));
-        charts.put("sites_by_admin", siteInfoMapper.countByAdminForGroup(userGroup));
-        charts.put("site_group_summary", siteInfoMapper.summarizeByGroup());
-        charts.put("order_group_summary", orderMapper.summarizeByGroup());
+        charts.put("orders_by_admin", orderMapper.countByAdminForGroup(userGroup, ownerName));
+        charts.put("sites_by_admin", siteInfoMapper.countByAdminForGroup(userGroup, ownerName));
+        charts.put("site_group_summary", siteInfoMapper.summarizeByGroup(ownerName));
+        charts.put("order_group_summary", orderMapper.summarizeByGroup(ownerName));
 
-        charts.put("sites_by_category", siteInfoMapper.countByCategoryForGroup(userGroup));
-        charts.put("products_by_category", productMapper.countByCategory());
+        charts.put("sites_by_category", siteInfoMapper.countByCategoryForGroup(userGroup, ownerName));
+        charts.put("products_by_category", productMapper.countByCategory(ownerName));
 
-        charts.put("products_by_domain", productMapper.countByDomain());
+        charts.put("products_by_domain", productMapper.countByDomain(ownerName));
 
-        charts.put("orders_by_currency", orderMapper.countByCurrencyForGroup(userGroup));
+        charts.put("orders_by_currency", orderMapper.countByCurrencyForGroup(userGroup, ownerName));
 
-        charts.put("order_summary", orderMapper.orderSummaryByGroup(userGroup));
+        charts.put("order_summary", orderMapper.orderSummaryByGroup(userGroup, ownerName));
 
         return charts;
     }
@@ -326,5 +336,10 @@ public class DashboardService {
             throw new IllegalArgumentException("userGroup must be A, B or empty");
         }
         return normalized;
+    }
+
+    private String ownerName() {
+        var scope = dataScopeService.current();
+        return scope.administrator() ? null : scope.ownerName();
     }
 }

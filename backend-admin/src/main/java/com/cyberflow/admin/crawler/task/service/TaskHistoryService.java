@@ -100,6 +100,18 @@ public class TaskHistoryService {
         taskHistoryMapper.insert(taskHistory);
     }
 
+    /** Mark a task that could not be handed to RabbitMQ as failed. */
+    public void markDispatchFailed(String taskId, String message) {
+        TaskHistory task = getByTaskId(taskId);
+        if (task == null) return;
+        task.setStatus("FAILED");
+        task.setProgress(0);
+        task.setProgressMessage("任务下发失败");
+        task.setErrorMsg(message);
+        task.setFinishedAt(LocalDateTime.now());
+        taskHistoryMapper.updateById(task);
+    }
+
     /** Pause a pending or running task. The consumer cooperatively suspends its work. */
     public TaskHistory pause(String taskId) {
         TaskHistory task = requireTask(taskId);

@@ -1,5 +1,19 @@
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- Keep existing installations compatible with the row-level data scope.
+SET @data_owner_exists = (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'sys_user' AND column_name = 'data_owner'
+);
+SET @data_owner_sql = IF(
+    @data_owner_exists = 0,
+    'ALTER TABLE sys_user ADD COLUMN data_owner VARCHAR(100) COMMENT ''外部数据中的管理员名称，用于普通用户数据隔离''',
+    'SELECT 1'
+);
+PREPARE data_owner_stmt FROM @data_owner_sql;
+EXECUTE data_owner_stmt;
+DEALLOCATE PREPARE data_owner_stmt;
+
 CREATE DATABASE IF NOT EXISTS scraped_data
     DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -169,3 +183,24 @@ ON DUPLICATE KEY UPDATE
     perms=VALUES(perms), status=VALUES(status);
 
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES (1, 15), (2, 15);
+
+-- 系统管理操作权限。旧库可能只有页面查看权限，补齐后端 CRUD 接口所需权限。
+INSERT INTO sys_menu
+    (id, parent_id, menu_name, menu_type, perms, path, component, icon, sort_order, status)
+VALUES
+    (52, 31, '新增用户', 2, 'system:user:create', NULL, NULL, NULL, 1, 1),
+    (53, 31, '修改用户', 2, 'system:user:update', NULL, NULL, NULL, 2, 1),
+    (54, 31, '删除用户', 2, 'system:user:delete', NULL, NULL, NULL, 3, 1),
+    (55, 31, '分配用户角色', 2, 'system:user:assign', NULL, NULL, NULL, 4, 1),
+    (56, 32, '新增角色', 2, 'system:role:create', NULL, NULL, NULL, 1, 1),
+    (57, 32, '修改角色', 2, 'system:role:update', NULL, NULL, NULL, 2, 1),
+    (58, 32, '删除角色', 2, 'system:role:delete', NULL, NULL, NULL, 3, 1),
+    (59, 32, '分配角色菜单', 2, 'system:role:assign', NULL, NULL, NULL, 4, 1),
+    (60, 33, '新增菜单', 2, 'system:menu:create', NULL, NULL, NULL, 1, 1),
+    (61, 33, '修改菜单', 2, 'system:menu:update', NULL, NULL, NULL, 2, 1),
+    (62, 33, '删除菜单', 2, 'system:menu:delete', NULL, NULL, NULL, 3, 1)
+ON DUPLICATE KEY UPDATE
+    parent_id=VALUES(parent_id), menu_name=VALUES(menu_name), menu_type=VALUES(menu_type),
+    perms=VALUES(perms), status=VALUES(status);
+INSERT IGNORE INTO sys_role_menu (role_id, menu_id)
+SELECT 1, id FROM sys_menu WHERE id BETWEEN 52 AND 62;

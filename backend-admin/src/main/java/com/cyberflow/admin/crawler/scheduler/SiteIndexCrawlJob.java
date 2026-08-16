@@ -39,12 +39,7 @@ public class SiteIndexCrawlJob implements Job {
             ? cursor.getCursorValue()
             : LocalDateTime.now().minusDays(1).toString();
 
-        String taskId = publisher.publishSiteIndexCrawl(
-            crawlerConfigService.getAdminPlatform(),
-            crawlerConfigService.getSiteStrategy(),
-            lastRecordedAt,
-            "cron"
-        );
+        String taskId = publisher.createTaskId();
         TaskHistory history = new TaskHistory();
         history.setTaskId(taskId);
         history.setType("site_index");
@@ -52,6 +47,13 @@ public class SiteIndexCrawlJob implements Job {
         history.setStatus("PENDING");
         history.setCursorBefore(lastRecordedAt);
         taskHistoryService.save(history);
+        try {
+            publisher.publishSiteIndexCrawl(taskId, crawlerConfigService.getAdminPlatform(),
+                    crawlerConfigService.getSiteStrategy(), lastRecordedAt, "cron");
+        } catch (RuntimeException ex) {
+            taskHistoryService.markDispatchFailed(taskId, ex.getMessage());
+            throw ex;
+        }
         crawlerConfigService.markTriggered("site_index");
         log.info("Site index crawl task dispatched: {}", taskId);
     }

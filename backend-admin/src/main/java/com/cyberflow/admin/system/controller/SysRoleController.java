@@ -112,4 +112,11 @@ public class SysRoleController {
         roleService.assignMenus(id, menuIds);
         return Result.ok();
     }
+
+    /** 查询角色当前绑定的菜单/按钮权限 ID，用于分配弹窗回显。 */
+    @GetMapping("/{id}/menus")
+    @PreAuthorize("hasAuthority('system:role:list')")
+    public Result<List<Long>> menuIds(@PathVariable Long id) {
+        return Result.ok(roleService.getBaseMapper().selectMenuIdsByRoleId(id));
+    }
 }

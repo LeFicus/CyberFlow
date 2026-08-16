@@ -1,6 +1,7 @@
 package com.cyberflow.admin.dashboard.service;
 
 import com.cyberflow.admin.dashboard.mapper.EcommerceProductMapper;
+import com.cyberflow.admin.common.DataScopeService;
 import lombok.RequiredArgsConstructor;
 import org.apache.ibatis.cursor.Cursor;
 import org.apache.poi.ss.usermodel.*;
@@ -26,9 +27,10 @@ public class ProductExportService {
             "cf_opingts", "自定义分类", "原站域名", "分布网站识别", "语言"
     );
     private final EcommerceProductMapper productMapper;
+    private final DataScopeService dataScopeService;
 
     public List<List<String>> buildRows(String engine, String domain) {
-        List<Map<String, Object>> products = productMapper.listProductsForExport(domain);
+        List<Map<String, Object>> products = productMapper.listProductsForExport(domain, ownerName());
         return switch (engine) {
             case "shopify" -> shopify(products);
             case "woocommerce" -> woo(products);
@@ -71,7 +73,7 @@ public class ProductExportService {
             List<Sheet> sheets = new ArrayList<>();
             Sheet sheet = createSheet(workbook, sheets, 1, headerStyle);
             int rowIndex = 1;
-            try (Cursor<Map<String, Object>> products = productMapper.streamProductsForExport(domainFilter, categoryFilter, name)) {
+            try (Cursor<Map<String, Object>> products = productMapper.streamProductsForExport(domainFilter, categoryFilter, name, ownerName())) {
                 for (Map<String, Object> product : products) {
                     // Excel has a hard limit of 1,048,576 rows per sheet. Split
                     // large exports instead of failing after the first million rows.
@@ -95,7 +97,7 @@ public class ProductExportService {
     public void writeCsv(String engine, List<String> domains, List<String> categories, String name, Writer writer) throws IOException {
         writeCsvRow(writer, headers(engine));
         try (Cursor<Map<String, Object>> products = productMapper.streamProductsForExport(
-                normalizeDomains(domains), normalizeCategories(categories), name)) {
+                normalizeDomains(domains), normalizeCategories(categories), name, ownerName())) {
             for (Map<String, Object> product : products) writeCsvRow(writer, csvValues(engine, product));
         }
     }
@@ -104,6 +106,11 @@ public class ProductExportService {
         if (categories == null) return List.of();
         return categories.stream().filter(value -> value != null && !value.isBlank())
                 .map(String::trim).distinct().toList();
+    }
+
+    private String ownerName() {
+        var scope = dataScopeService.current();
+        return scope.administrator() ? null : scope.ownerName();
     }
 
     private static List<String> normalizeDomains(List<String> domains) {
