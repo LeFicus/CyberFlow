@@ -151,8 +151,9 @@ const serverMenuPaths = computed(() => {
 })
 const canViewPath = path => {
   if (!path) return true
-  if (userStore.userInfo?.menus?.length) return serverMenuPaths.value.has(path)
-  return !routePermissions[path] || userStore.hasPermission(routePermissions[path])
+  if (serverMenuPaths.value.has(path)) return true
+  const requiredPermission = routePermissions[path]
+  return requiredPermission ? userStore.hasPermission(requiredPermission) : !userStore.userInfo?.menus?.length
 }
 const visibleChildren = menu => (menu.children || []).filter(child => child && canViewPath(child.path))
 
