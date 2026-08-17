@@ -61,7 +61,7 @@
             link type="success" size="small" @click="handleResume(row)"
           >继续</el-button>
           <el-button
-            v-if="row.type === 'product_crawl'"
+            v-if="['site_crawl', 'site_index', 'order_crawl', 'product_crawl'].includes(row.type)"
             link
             type="primary"
             @click="openLog(row)"
@@ -85,7 +85,7 @@
 
     <el-drawer
       v-model="logVisible"
-      title="商品爬取完整日志"
+      :title="`${taskTypeLabel(activeTaskType)}完整日志`"
       size="75%"
       destroy-on-close
       @closed="stopLogPolling"
@@ -137,6 +137,7 @@ const logVisible = ref(false)
 const logLoading = ref(false)
 const logDownloading = ref(false)
 const activeTaskId = ref('')
+const activeTaskType = ref('')
 const logStatus = ref('')
 const crawlLog = ref('')
 const logTruncated = ref(false)
@@ -224,9 +225,19 @@ function statusTagType(status) {
   return 'danger'
 }
 
+function taskTypeLabel(type) {
+  return {
+    site_crawl: '站点爬取',
+    site_index: '收录统计',
+    order_crawl: '订单爬取',
+    product_crawl: '商品爬取',
+  }[type] || '采集任务'
+}
+
 async function openLog(row) {
   stopLogPolling()
   activeTaskId.value = row.taskId
+  activeTaskType.value = row.type
   logStatus.value = row.status
   crawlLog.value = ''
   logTruncated.value = false
@@ -295,7 +306,7 @@ async function downloadLog() {
     const url = URL.createObjectURL(res.data)
     const link = document.createElement('a')
     link.href = url
-    link.download = `product-crawl-${activeTaskId.value}.log`
+    link.download = `${taskTypeLabel(activeTaskType.value)}-${activeTaskId.value}.log`
     link.click()
     URL.revokeObjectURL(url)
   } finally {

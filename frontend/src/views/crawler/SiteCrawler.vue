@@ -37,14 +37,6 @@
           <el-input-number v-model="form.siteStrategy.pageSize" :min="20" :max="500" :step="20" />
         </el-form-item>
 
-        <el-divider content-position="left">定时任务</el-divider>
-        <el-form-item label="启用">
-          <el-switch v-model="schedule.enabled" />
-        </el-form-item>
-        <el-form-item label="Cron">
-          <el-input v-model="schedule.cronExpression" />
-        </el-form-item>
-
         <el-form-item>
           <el-button type="primary" :loading="saving" @click="handleSave">保存配置</el-button>
         </el-form-item>
@@ -62,10 +54,8 @@ import TaskProgress from '@/components/TaskProgress.vue'
 import { useTaskProgress } from '@/composables/useTaskProgress'
 import {
   getCrawlerConfig,
-  listCrawlerSchedules,
   triggerSiteCrawler,
   updateCrawlerConfig,
-  updateCrawlerSchedule,
 } from '@/api/crawler'
 
 const saving = ref(false)
@@ -82,23 +72,10 @@ const form = reactive({
   },
 })
 
-const schedule = reactive({
-  enabled: true,
-  cronExpression: '0 0 2 * * ?',
-})
-
 async function loadConfig() {
-  const [configRes, schedulesRes] = await Promise.all([
-    getCrawlerConfig(),
-    listCrawlerSchedules(),
-  ])
+  const configRes = await getCrawlerConfig()
   Object.assign(form.adminApi, configRes.data?.adminApi || {})
   Object.assign(form.siteStrategy, configRes.data?.siteStrategy || {})
-  const siteSchedule = (schedulesRes.data || []).find(item => item.taskType === 'site_crawl')
-  if (siteSchedule) {
-    schedule.enabled = siteSchedule.enabled === 1
-    schedule.cronExpression = siteSchedule.cronExpression
-  }
 }
 
 async function handleSave() {
@@ -107,10 +84,6 @@ async function handleSave() {
     await updateCrawlerConfig({
       adminApi: form.adminApi,
       siteStrategy: form.siteStrategy,
-    })
-    await updateCrawlerSchedule('site_crawl', {
-      enabled: schedule.enabled,
-      cronExpression: schedule.cronExpression,
     })
     ElMessage.success('保存成功')
     await loadConfig()

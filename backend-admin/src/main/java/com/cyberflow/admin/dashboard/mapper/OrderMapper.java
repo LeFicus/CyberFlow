@@ -2,6 +2,7 @@ package com.cyberflow.admin.dashboard.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
@@ -18,6 +19,15 @@ import java.util.Map;
  */
 @Mapper
 public interface OrderMapper {
+
+    /** Delete every order across both user groups. This endpoint is admin-only. */
+    @Delete("DELETE FROM orders")
+    int deleteAllOrders();
+
+    /** Reset every order crawl cursor so the next crawl starts from the first page. */
+    @Delete("UPDATE crawl_cursor SET cursor_value = '0', last_sync_at = NOW() " +
+            "WHERE cursor_key LIKE 'order_crawler%'")
+    int resetOrderCursors();
 
     String FILTER_SQL = "<where>" +
             "<if test='orderId != null and orderId != &quot;&quot;'> AND CAST(id AS CHAR) LIKE CONCAT('%', #{orderId}, '%')</if>" +

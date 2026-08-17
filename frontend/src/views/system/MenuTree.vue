@@ -104,10 +104,26 @@ const form = reactive({
   status: 1,
 })
 
-function flattenTree(nodes, level = 0, result = []) {
-  nodes.forEach(node => {
+function flattenTree(nodes, level = 0, result = [], seen = new Set()) {
+  if (!Array.isArray(nodes)) return result
+  nodes.forEach(rawNode => {
+    if (!rawNode) return
+    const node = {
+      ...rawNode,
+      parentId: rawNode.parentId ?? rawNode.parent_id,
+      menuName: rawNode.menuName ?? rawNode.menu_name,
+      menuType: rawNode.menuType ?? rawNode.menu_type,
+      sortOrder: rawNode.sortOrder ?? rawNode.sort_order,
+    }
+    if (node.id != null && seen.has(node.id)) return
+    if (node.id != null) seen.add(node.id)
+    const menuName = String(node.menuName || '').trim()
+    if (!menuName) {
+      if (node.children?.length) flattenTree(node.children, level, result, seen)
+      return
+    }
     result.push({ ...node, menuNameDisplay: `${'　'.repeat(level)}${node.menuName || ''}` })
-    if (node.children?.length) flattenTree(node.children, level + 1, result)
+    if (node.children?.length) flattenTree(node.children, level + 1, result, seen)
   })
   return result
 }

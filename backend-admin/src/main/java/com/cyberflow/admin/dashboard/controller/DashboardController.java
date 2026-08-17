@@ -105,6 +105,13 @@ public class DashboardController {
                 adminName, userGroup, domain, payStatus, currency, country));
     }
 
+    /** Delete all orders across both user groups. Restricted to administrators. */
+    @DeleteMapping("/orders/clear")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public Result<Map<String, Object>> clearAllOrders() {
+        return Result.ok(dashboardService.clearAllOrders());
+    }
+
     /**
      * 分页查询商品列表，支持按域名、分类和商品名称组合过滤。
      *

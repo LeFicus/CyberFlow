@@ -355,6 +355,7 @@ CREATE TABLE IF NOT EXISTS orders (
     user_group            VARCHAR(1) NOT NULL COMMENT '订单所属负责人用户组/来源平台: A/B',
     theme_name            VARCHAR(100) COMMENT '主题',
     product_category      VARCHAR(100) COMMENT '商品分类',
+    product_info          JSON COMMENT '订单爬取结果中的商品详情数组',
     PRIMARY KEY (user_group, id),
     INDEX idx_create_time (create_time),
     INDEX idx_product_host (product_host),
@@ -450,10 +451,13 @@ INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, path, component, icon
 (22, 2, '收录统计', 1, '/crawler/collect', 'crawler/CollectCrawler', NULL, 2),
 (23, 2, '订单爬虫', 1, '/crawler/order', 'crawler/OrderCrawler', NULL, 3),
 (24, 2, '任务历史', 1, '/crawler/history', 'crawler/TaskHistory', NULL, 4),
+(28, 2, '计划任务', 1, '/crawler/schedule', 'crawler/ScheduleTask', 'Timer', 5),
 -- 爬虫按钮权限
 (25, 21, '触发站点爬虫', 2, NULL, NULL, NULL, 1),
 (26, 22, '触发收录统计', 2, NULL, NULL, NULL, 1),
 (27, 23, '触发订单爬虫', 2, NULL, NULL, NULL, 1),
+(29, 28, '修改计划任务', 2, NULL, NULL, 'crawler:schedule:update', 1),
+(30, 28, '手动触发计划任务', 2, NULL, NULL, 'crawler:schedule:trigger', 2),
 -- 系统管理子菜单
 (31, 3, '用户管理', 1, '/system/user', 'system/UserList', NULL, 1),
 (32, 3, '角色管理', 1, '/system/role', 'system/RoleList', NULL, 2),
@@ -481,6 +485,7 @@ UPDATE sys_menu SET perms = 'crawler:collect:start'   WHERE id = 26;
 UPDATE sys_menu SET perms = 'crawler:order:start'     WHERE id = 27;
 UPDATE sys_menu SET perms = 'crawler:order:view'      WHERE id = 23;
 UPDATE sys_menu SET perms = 'crawler:history:view'    WHERE id = 24;
+UPDATE sys_menu SET perms = 'crawler:schedule:view'   WHERE id = 28;
 INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, perms, status, sort_order) VALUES
 (49, 24, '任务控制', 2, 'crawler:task:control', 1, 1),
 (50, 24, '删除任务', 2, 'crawler:task:delete', 1, 2),
@@ -516,6 +521,7 @@ INSERT IGNORE INTO sys_role_menu (role_id, menu_id) SELECT 2, id FROM sys_menu W
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) SELECT 2, id FROM sys_menu WHERE id IN (25, 26, 27);
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES (2, 15);
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES
+(1, 28), (1, 29), (1, 30), (2, 28), (2, 29), (2, 30),
 (1, 49), (1, 50), (1, 51), (2, 49), (2, 50), (2, 51);
 
 DELETE FROM sys_role_menu WHERE role_id = 3;
@@ -571,9 +577,9 @@ INSERT INTO crawler_runtime_config (config_group, config_key, config_value, is_s
 ON DUPLICATE KEY UPDATE config_value=VALUES(config_value);
 
 INSERT INTO crawler_schedule_config (task_type, cron_expression, enabled) VALUES
-    ('site_crawl', '0 0 2 * * ?', 1),
-    ('site_index', '0 30 2 * * ?', 1),
-    ('order_crawl', '0 0 3 * * ?', 1)
+    ('site_crawl', '0 0 */6 * * ?', 1),
+    ('site_index', '0 0 0 * * ?', 1),
+    ('order_crawl', '0 0 */6 * * ?', 1)
 ON DUPLICATE KEY UPDATE task_type=task_type;
 
 -- ============================================================

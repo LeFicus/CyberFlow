@@ -45,6 +45,11 @@ export function getOrders(params) {
   return request.get('/admin/dashboard/orders', { params })
 }
 
+/** 管理员清空全部订单（包含 A/B 两个用户组）。 */
+export function clearAllOrders() {
+  return request.delete('/admin/dashboard/orders/clear')
+}
+
 /**
  * 获取商品列表（分页）
  * @param {Object} params - 查询参数 { page, size, domain, category, name }

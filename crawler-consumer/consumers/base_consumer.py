@@ -8,6 +8,7 @@
 
 import json
 import time
+from datetime import datetime, timezone
 from abc import ABC, abstractmethod
 from loguru import logger
 import pika
@@ -99,6 +100,17 @@ class BaseConsumer(ABC):
         except Exception as e:
             logger.error(f"[{self.queue_name}] Task failed: {e}")
             ch.basic_nack(delivery_tag, requeue=False)
+
+    @staticmethod
+    async def append_task_log(repo, task_id: str, message: str):
+        """Append a timestamped structured log without masking the crawl result."""
+        if not message:
+            return
+        try:
+            timestamp = datetime.now(timezone.utc).isoformat()
+            await repo.append_task_log(task_id, f"[{timestamp}] {message}\n")
+        except Exception as exc:
+            logger.warning(f"Failed to persist task log {task_id}: {exc}")
 
     @abstractmethod
     async def process(self, message: dict):

@@ -151,6 +151,8 @@ public class CrawlerConfigService {
     public void applyStoredSchedules() {
         try {
             for (CrawlerScheduleConfig config : listSchedules()) {
+                log.info("Applying crawler schedule: taskType={}, enabled={}, cron={}",
+                    config.getTaskType(), config.getEnabled(), config.getCronExpression());
                 reschedule(config.getTaskType(), config.getCronExpression());
             }
         } catch (RuntimeException e) {
@@ -177,9 +179,11 @@ public class CrawlerConfigService {
                     .forJob(current.getJobKey())
                     .withSchedule(CronScheduleBuilder.cronSchedule(cronExpression))
                     .build());
+                log.info("Crawler schedule applied: taskType={}, cron={}", taskType, cronExpression);
             }
-        } catch (SchedulerException ignored) {
+        } catch (SchedulerException | RuntimeException e) {
             // The stored cron still applies on the next application restart if runtime reschedule fails.
+            log.warn("Unable to apply crawler schedule: taskType={}, cron={}", taskType, cronExpression, e);
         }
     }
 
@@ -275,9 +279,9 @@ public class CrawlerConfigService {
 
     private String defaultCron(String taskType) {
         return switch (taskType) {
-            case "site_index" -> "0 30 2 * * ?";
-            case "order_crawl" -> "0 0 3 * * ?";
-            default -> "0 0 2 * * ?";
+            case "site_index" -> "0 0 0 * * ?";
+            case "site_crawl", "order_crawl" -> "0 0 */6 * * ?";
+            default -> "0 0 */6 * * ?";
         };
     }
 

@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS orders (
     user_group          VARCHAR(1) NOT NULL,
     theme_name          VARCHAR(100),
     product_category    VARCHAR(100),
+    product_info        JSON,
     PRIMARY KEY (user_group, id),
     INDEX idx_create_time (create_time),
     INDEX idx_product_host (product_host),

@@ -140,6 +140,16 @@ public class DashboardService {
         return result;
     }
 
+    /** Delete all orders. Authorization is enforced by the controller and the admin role. */
+    @Transactional
+    public Map<String, Object> clearAllOrders() {
+        int deletedCount = orderMapper.deleteAllOrders();
+        orderMapper.resetOrderCursors();
+        var result = new LinkedHashMap<String, Object>();
+        result.put("deleted_count", deletedCount);
+        return result;
+    }
+
     /**
      * 分页查询商品列表，支持按来源域名、分类和商品名称组合过滤。
      *

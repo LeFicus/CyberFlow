@@ -1,6 +1,7 @@
 -- Split crawler navigation into data synchronization and product collection.
 -- Safe to run repeatedly on an existing CyberFlow database.
 USE cyberflow;
+SET NAMES utf8mb4;
 
 UPDATE sys_menu
 SET menu_name = '数据同步', icon = 'RefreshRight', sort_order = 2

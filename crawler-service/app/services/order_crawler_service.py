@@ -145,6 +145,7 @@ class OrderCrawler:
                         admin_name=site_meta["admin"],
                         theme_name=site_meta["theme"],
                         product_category=site_meta["product_category"],
+                        product_info=item.get("productInfo", item.get("product_info", [])),
                     ))
 
                 # 4. 批量保存

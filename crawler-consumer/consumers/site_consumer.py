@@ -81,6 +81,8 @@ class SiteConsumer(BaseConsumer):
         start = time.monotonic()
 
         try:
+            await self.repo.reset_task_log(task_id)
+            await self.append_task_log(self.repo, task_id, f"站点爬取开始：增量游标={since or '无'}")
             await self.repo.wait_for_task_control(task_id)
             await self.repo.update_task_status(task_id, "RUNNING", progress=10, progress_message="正在连接站点管理平台")
 
@@ -102,11 +104,14 @@ class SiteConsumer(BaseConsumer):
                 fetch_admin_login_url=_as_bool(strategy.get("fetchAdminLoginUrl", False)),
                 filter_built_only=_as_bool(strategy.get("filterBuiltOnly", False)),
             )
+            await self.append_task_log(self.repo, task_id, f"已连接站点管理平台，分页大小={page_size}")
             await self.repo.update_task_progress(task_id, 35, "正在拉取站点与域名数据")
             records, _ = await crawler.run(since=since)
+            await self.append_task_log(self.repo, task_id, f"站点数据拉取完成：获取 {len(records)} 条")
 
             # 将爬取结果批量 UPSERT 到 site_info 表
             await self.repo.update_task_progress(task_id, 75, f"正在保存 {len(records)} 条站点记录")
+            await self.append_task_log(self.repo, task_id, f"开始保存 {len(records)} 条站点记录")
             await self._upsert_site_info(records)
 
             # 以当前 UTC 时间作为新的游标值
@@ -120,13 +125,16 @@ class SiteConsumer(BaseConsumer):
 
             self._publish_result(task_id, "success", len(records),
                                 {"last_updated_at": new_cursor}, duration_ms)
+            await self.append_task_log(self.repo, task_id, f"站点爬取成功：保存 {len(records)} 条，耗时 {duration_ms} ms")
             logger.success(f"✅ Site crawl done: {len(records)} records")
 
         except TaskCancelledError as e:
+            await self.append_task_log(self.repo, task_id, f"站点爬取已取消：{e}")
             logger.info(f"⏹️ Site crawl cancelled by operator: {task_id} ({e})")
             return
         except Exception as e:
             duration_ms = int((time.monotonic() - start) * 1000)
+            await self.append_task_log(self.repo, task_id, f"站点爬取失败：{e}")
             await self.repo.update_task_status(
                 task_id, "FAILED", error_msg=str(e), duration_ms=duration_ms
             )
@@ -141,6 +149,8 @@ class SiteConsumer(BaseConsumer):
         await self.repo.connect()
         start = time.monotonic()
         try:
+            await self.repo.reset_task_log(task_id)
+            await self.append_task_log(self.repo, task_id, "收录统计开始")
             await self.repo.wait_for_task_control(task_id)
             await self.repo.update_task_status(
                 task_id, "RUNNING", progress=10, progress_message="正在连接收录统计平台"
@@ -154,9 +164,12 @@ class SiteConsumer(BaseConsumer):
                 verify_ssl=_as_bool(platform.get("verifySsl", VERIFY_SSL)),
                 page_size=int(strategy.get("pageSize", 100)),
             )
+            await self.append_task_log(self.repo, task_id, f"已连接收录统计平台，分页大小={crawler.page_size}")
             await self.repo.update_task_progress(task_id, 35, "正在拉取站点收录统计")
             records = await crawler.run()
+            await self.append_task_log(self.repo, task_id, f"收录数据拉取完成：获取 {len(records)} 条")
             await self.repo.update_task_progress(task_id, 80, f"正在保存 {len(records)} 条收录记录")
+            await self.append_task_log(self.repo, task_id, f"开始保存 {len(records)} 条收录记录")
             rows_affected = await self._upsert_index_history(records)
             new_cursor = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             await self.repo.update_cursor("site_index_crawler", new_cursor)
@@ -169,12 +182,15 @@ class SiteConsumer(BaseConsumer):
                 task_id, "success", rows_affected,
                 {"last_recorded_at": new_cursor}, duration_ms,
             )
+            await self.append_task_log(self.repo, task_id, f"收录统计成功：保存 {rows_affected} 条，耗时 {duration_ms} ms")
             logger.success(f"✅ Site index crawl done: {rows_affected} records")
         except TaskCancelledError as e:
+            await self.append_task_log(self.repo, task_id, f"收录统计已取消：{e}")
             logger.info(f"⏹️ Site index crawl cancelled by operator: {task_id} ({e})")
             return
         except Exception as e:
             duration_ms = int((time.monotonic() - start) * 1000)
+            await self.append_task_log(self.repo, task_id, f"收录统计失败：{e}")
             await self.repo.update_task_status(
                 task_id, "FAILED", error_msg=str(e), duration_ms=duration_ms
             )

@@ -135,7 +135,14 @@ public class TaskHistoryController {
             response.sendError(HttpServletResponse.SC_NOT_FOUND, "Task not found");
             return;
         }
-        String fileName = "product-crawl-" + taskId + ".log";
+        String prefix = switch (task.getType()) {
+            case "site_crawl" -> "site-crawl";
+            case "site_index" -> "site-index";
+            case "order_crawl" -> "order-crawl";
+            case "product_crawl" -> "product-crawl";
+            default -> "crawl-task";
+        };
+        String fileName = prefix + "-" + taskId + ".log";
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType("text/plain; charset=UTF-8");
         response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" +

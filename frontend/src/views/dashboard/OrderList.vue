@@ -45,6 +45,14 @@
       <el-form-item class="filter-actions">
         <el-button native-type="submit" type="primary">查询</el-button>
         <el-button @click="resetFilters">重置</el-button>
+        <el-button
+          v-if="isAdmin"
+          type="danger"
+          plain
+          :disabled="total === 0"
+          :loading="clearingOrders"
+          @click="handleClearAllOrders"
+        >清空全部订单</el-button>
       </el-form-item>
     </el-form>
     <!-- 统计摘要 -->
@@ -55,9 +63,53 @@
         <small>{{ item.note }}</small>
       </article>
     </div>
-    <!-- 订单表格 -->
-    <el-table :data="tableData" v-loading="loading" stripe>
+    <!-- 订单表格：每条订单可展开查看订单爬取结果中的商品详情 -->
+    <el-table :data="tableData" v-loading="loading" stripe row-key="orderKey">
+      <el-table-column type="expand">
+        <template #default="{ row }">
+          <div class="order-products">
+            <div class="expand-title">
+              <span>订单商品</span>
+              <el-tag size="small" type="info">{{ row.productInfo.length }} 件</el-tag>
+            </div>
+            <div v-if="row.productInfo.length" class="product-grid">
+              <article v-for="(product, index) in row.productInfo" :key="productKey(product, index)" class="product-card">
+                <div class="product-card-image">
+                  <el-image
+                    v-if="productImage(product)"
+                    :src="productImage(product)"
+                    :preview-src-list="productImages(product)"
+                    fit="cover"
+                    preview-teleported
+                  />
+                  <span v-else>暂无图片</span>
+                </div>
+                <div class="product-card-content">
+                  <strong>{{ productName(product) || `商品 ${index + 1}` }}</strong>
+                  <span v-if="productSku(product)">SKU：{{ productSku(product) }}</span>
+                  <span v-if="productQuantity(product)">数量：{{ productQuantity(product) }}</span>
+                  <span v-if="productPrice(product)">价格：{{ productPrice(product) }}</span>
+                </div>
+              </article>
+            </div>
+            <el-empty v-else description="该订单暂无商品详情" :image-size="64" />
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column prop="id" label="订单ID" width="80" />
+      <el-table-column label="商品图片" width="86" align="center">
+        <template #default="{ row }">
+          <el-image
+            v-if="row.productImage"
+            class="order-product-image"
+            :src="row.productImage"
+            :preview-src-list="row.productImages"
+            fit="cover"
+            preview-teleported
+          />
+          <span v-else class="no-image">—</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="amount" label="金额" width="100" />
       <el-table-column prop="currency" label="币种" width="80" />
       <el-table-column prop="product_host" label="订单站点" min-width="160" />
@@ -84,7 +136,8 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { getOrders } from '@/api/dashboard'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getOrders, clearAllOrders } from '@/api/dashboard'
 import { useUserStore } from '@/store/user'
 
 /** 表格 loading 状态 */
@@ -97,6 +150,7 @@ const page = ref(1)
 const size = ref(10)
 /** 总条数 */
 const total = ref(0)
+const clearingOrders = ref(false)
 const userStore = useUserStore()
 /** 筛选条件 */
 const summary = ref({})
@@ -138,7 +192,7 @@ async function fetchData() {
       endDate: filters.dateRange?.[1] || undefined,
     }
     const res = await getOrders(params)
-    tableData.value = res.data.list || []
+    tableData.value = (res.data.list || []).map(normalizeOrder)
     total.value = res.data.total || 0
     summary.value = res.data.summary || {}
   } finally {
@@ -166,7 +220,101 @@ function resetFilters() {
   fetchData()
 }
 
+/** 管理员清空全部订单，清空范围不受当前筛选条件影响。 */
+async function handleClearAllOrders() {
+  if (!isAdmin.value || total.value === 0) return
+  try {
+    await ElMessageBox.confirm(
+      `将永久删除全部 ${total.value.toLocaleString('en-US')} 条订单（包含 A/B 两个用户组），该操作不可恢复，确定继续吗？`,
+      '清空全部订单',
+      { type: 'warning', confirmButtonText: '确认清空', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+
+  clearingOrders.value = true
+  try {
+    const res = await clearAllOrders()
+    ElMessage.success(`已清空 ${res.data.deleted_count} 条订单`)
+    page.value = 1
+    await fetchData()
+  } finally {
+    clearingOrders.value = false
+  }
+}
+
 onMounted(fetchData)
+
+/** 将接口中的 product_info/productInfo 统一为可直接渲染的数组，并补充订单图片字段。 */
+function normalizeOrder(order) {
+  const productInfo = parseProductInfo(order.productInfo ?? order.product_info)
+  const productImagesList = productInfo.flatMap(productImages)
+  return {
+    ...order,
+    orderKey: `${order.user_group || ''}-${order.id}`,
+    productInfo,
+    productImages: [...new Set(productImagesList)],
+    productImage: productImagesList[0] || '',
+  }
+}
+
+function parseProductInfo(value) {
+  if (Array.isArray(value)) return value.filter(item => item && typeof item === 'object')
+  if (value && typeof value === 'object') return [value]
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      return parseProductInfo(JSON.parse(value))
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+function productKey(product, index) {
+  return product.id || product.productId || product.sku || product.SKU || index
+}
+
+function productValue(product, keys) {
+  const key = keys.find(candidate => product[candidate] !== undefined && product[candidate] !== null && product[candidate] !== '')
+  return key ? product[key] : ''
+}
+
+function productName(product) {
+  return productValue(product, ['name', 'productName', 'product_name', 'goodsName', 'title', 'product_title', 'Name'])
+}
+
+function productSku(product) {
+  return productValue(product, ['sku', 'SKU', 'productSku', 'product_sku'])
+}
+
+function productQuantity(product) {
+  return productValue(product, ['quantity', 'qty', 'count'])
+}
+
+function productPrice(product) {
+  return productValue(product, ['price', 'amount', 'unitPrice', 'unit_price'])
+}
+
+function productImages(product) {
+  const value = productValue(product, ['images', 'image', 'productImage', 'product_image', 'imageUrl', 'image_url', 'thumbnail', 'picture', 'pic', 'Images'])
+  if (Array.isArray(value)) return value.filter(Boolean).map(String)
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value)
+      if (Array.isArray(parsed)) return parsed.filter(Boolean).map(String)
+    } catch {
+      // 图片字段也可能直接是单个 URL。
+    }
+    return [value]
+  }
+  return []
+}
+
+function productImage(product) {
+  return productImages(product)[0] || ''
+}
 </script>
 <style scoped>
 .order-filter { margin-bottom: 18px; }
@@ -180,6 +328,16 @@ onMounted(fetchData)
 .summary-item strong { display: block; margin: 8px 0 5px; color: var(--cf-ink); font-size: 20px; letter-spacing: -.035em; }
 .summary-item small { color: var(--cf-subtle); font-size: 9px; }
 .summary-item.blue { color: var(--cf-blue); }.summary-item.green { color: var(--cf-green); }.summary-item.violet { color: var(--cf-violet); }.summary-item.amber { color: #d79a36; }
+.order-products { padding: 4px 30px 12px; }
+.expand-title { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: var(--cf-ink); font-size: 13px; font-weight: 600; }
+.product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.product-card { display: flex; min-height: 92px; overflow: hidden; border: 1px solid var(--cf-line-soft); border-radius: 10px; background: #fff; }
+.product-card-image { display: grid; flex: 0 0 92px; place-items: center; height: 92px; color: var(--cf-subtle); background: #f5f7fa; font-size: 11px; }
+.product-card-image :deep(.el-image) { width: 100%; height: 100%; }
+.product-card-content { display: flex; min-width: 0; flex-direction: column; gap: 5px; padding: 12px; color: var(--cf-muted); font-size: 11px; }
+.product-card-content strong { overflow: hidden; color: var(--cf-ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.order-product-image { width: 42px; height: 42px; border-radius: 6px; }
+.no-image { color: var(--cf-subtle); }
 @media (max-width: 980px) { .order-summary { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 540px) { .order-summary { gap: 8px; }.summary-item { padding: 13px; }.summary-item strong { font-size: 17px; } }
 @media (max-width: 720px) { .order-filter :deep(.el-input), .order-filter :deep(.el-select), .order-filter .date-filter :deep(.el-date-editor) { width: 100%; } }

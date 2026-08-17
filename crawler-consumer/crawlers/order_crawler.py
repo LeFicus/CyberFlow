@@ -149,7 +149,7 @@ class AsyncOrderCrawler:
     async def fetch_orders(self, since_order_id: str = "0") -> tuple[list[dict], str]:
         """增量分页获取订单列表。
 
-        按 order_id 递增顺序拉取，跳过 order_id <= since_order_id 的已处理订单。
+        按支付平台返回的分页顺序拉取，跳过 order_id <= since_order_id 的已处理订单。
         过滤规则：
         - 渠道名包含 "测试"、"ig-3"、"test-mutiwp" 的测试订单
         - 卡号为 "400000******0000" 或 "411111******1111" 的测试卡
@@ -197,13 +197,21 @@ class AsyncOrderCrawler:
                 if not items:
                     break
 
-                new_count = 0
+                page_max_id = 0
                 for item in items:
                     order_id = self._order_id(item)
-                    # 跳过已处理的订单（order_id <= 上次爬取的最大 ID）
+                    page_max_id = max(page_max_id, order_id)
+
+                    # 增量游标只负责判断订单是否已经同步。
+                    # 不要因为历史订单带有 productInfo 就再次加入增量结果，
+                    # 否则每次任务都会重复保存第一页的旧订单。
                     if order_id <= since_id:
                         skipped_by_cursor += 1
                         continue
+
+                    # 游标推进到接口返回的最大订单 ID，即使该订单随后被过滤，
+                    # 避免测试订单或测试卡订单在每次增量任务中重复扫描。
+                    current_max_id = max(current_max_id, order_id)
 
                     # 跳过测试渠道的订单
                     channel = str(item.get("pay_channel_name") or item.get("channel", "")).lower()
@@ -217,11 +225,11 @@ class AsyncOrderCrawler:
                         skipped_by_card += 1
                         continue
 
-                    current_max_id = max(current_max_id, order_id)
-                    new_count += 1
                     results.append(item)
 
-                if since_id > 0 and new_count == 0:
+                # 支付平台按订单 ID 倒序返回。当前页最大 ID 已不超过游标时，
+                # 后续页面只会是更早的历史订单，可以安全停止分页。
+                if since_id > 0 and page_max_id <= since_id:
                     break
                 if page == 1 or page % 10 == 0:
                     logger.info(f"📄 Order page {page}: {len(items)} items, accumulated={len(results)}")

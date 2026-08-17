@@ -11,7 +11,7 @@
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Numeric
+from sqlalchemy import Column, Integer, String, DateTime, Numeric, JSON
 from app.core.database import Base
 
 
@@ -99,4 +99,9 @@ class Order(Base):
         String(50),
         index=True,
         comment='商品分类（冗余自 site_info，带索引）'
+    )
+
+    product_info = Column(
+        JSON,
+        comment='订单爬取结果中的商品详情数组'
     )

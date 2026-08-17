@@ -74,14 +74,6 @@
           <el-input v-model="userMergeMapText" :disabled="!canEditConfig" type="textarea" :rows="5" placeholder='{"B-姓名":["B-账号1","B-账号2"]}' />
         </el-form-item>
 
-        <el-divider content-position="left">定时任务</el-divider>
-        <el-form-item label="启用">
-          <el-switch v-model="schedule.enabled" :disabled="!canEditConfig" />
-        </el-form-item>
-        <el-form-item label="Cron">
-          <el-input v-model="schedule.cronExpression" :disabled="!canEditConfig" />
-        </el-form-item>
-
         <el-form-item>
           <el-button v-if="canEditConfig" type="primary" :loading="saving" @click="handleSave">保存配置</el-button>
           <el-tag v-else type="info">普通用户只读，敏感信息已脱敏</el-tag>
@@ -101,10 +93,8 @@ import TaskProgress from '@/components/TaskProgress.vue'
 import { useTaskProgress } from '@/composables/useTaskProgress'
 import {
   getCrawlerConfig,
-  listCrawlerSchedules,
   triggerOrderCrawler,
   updateCrawlerConfig,
-  updateCrawlerSchedule,
 } from '@/api/crawler'
 
 const saving = ref(false)
@@ -137,16 +127,8 @@ const form = reactive({
   },
 })
 
-const schedule = reactive({
-  enabled: true,
-  cronExpression: '0 0 3 * * ?',
-})
-
 async function loadConfig() {
-  const [configRes, schedulesRes] = await Promise.all([
-    getCrawlerConfig(),
-    listCrawlerSchedules(),
-  ])
+  const configRes = await getCrawlerConfig()
   Object.assign(form.paymentApiA, configRes.data?.paymentApiA || {})
   Object.assign(form.paymentApiB, configRes.data?.paymentApiB || {})
   Object.assign(form.orderStrategy, configRes.data?.orderStrategy || {})
@@ -156,11 +138,6 @@ async function loadConfig() {
   leaderConfigText.value = JSON.stringify(form.revenue.leaderConfig || {}, null, 2)
   teacherMapText.value = JSON.stringify(form.revenue.teacherMap || {}, null, 2)
   userMergeMapText.value = JSON.stringify(form.revenue.userMergeMap || {}, null, 2)
-  const orderSchedule = (schedulesRes.data || []).find(item => item.taskType === 'order_crawl')
-  if (orderSchedule) {
-    schedule.enabled = orderSchedule.enabled === 1
-    schedule.cronExpression = orderSchedule.cronExpression
-  }
 }
 
 async function handleSave() {
@@ -179,10 +156,6 @@ async function handleSave() {
       paymentApiB: form.paymentApiB,
       orderStrategy: form.orderStrategy,
       revenue: form.revenue,
-    })
-    await updateCrawlerSchedule('order_crawl', {
-      enabled: schedule.enabled,
-      cronExpression: schedule.cronExpression,
     })
     ElMessage.success('保存成功')
     await loadConfig()

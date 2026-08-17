@@ -55,6 +55,14 @@ const orders = Array.from({ length: 127 }, (_, i) => ({
   admin_name: adminNames[i % adminNames.length],
   theme_name: themeNames[i % themeNames.length],
   product_category: categories[i % categories.length],
+  productInfo: [{
+    id: `product-${i + 1}`,
+    name: `商品 ${i + 1} - ${categories[i % categories.length]}`,
+    sku: `SKU-${String(i + 1).padStart(5, '0')}`,
+    quantity: (i % 3) + 1,
+    price: parseFloat((Math.random() * 100 + 10).toFixed(2)),
+    images: [`https://picsum.photos/seed/order-product-${i}/160/160`],
+  }],
 }))
 
 /** @type {Array<Object>} 模拟商品列表（共 215 条） */
@@ -194,6 +202,13 @@ export default {
       paid_amount: paid.reduce((sum, item) => sum + Number(item.amount || 0), 0),
     }
     return { code: 200, msg: 'success', data: { total: matched.length, list: matched.slice(start, start + size), summary } }
+  },
+
+  /** 管理员清空全部订单 */
+  clearAllOrders: () => {
+    const deletedCount = orders.length
+    orders.splice(0, orders.length)
+    return { code: 200, msg: 'success', data: { deleted_count: deletedCount } }
   },
 
   /**

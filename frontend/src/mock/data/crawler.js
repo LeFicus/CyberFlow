@@ -45,8 +45,9 @@ const crawlerConfig = {
 }
 
 const crawlerSchedules = [
-  { taskType: 'site_crawl', cronExpression: '0 0 2 * * ?', enabled: 1, lastTriggeredAt: null },
-  { taskType: 'order_crawl', cronExpression: '0 0 3 * * ?', enabled: 1, lastTriggeredAt: null },
+  { taskType: 'site_crawl', cronExpression: '0 0 */6 * * ?', enabled: 1, lastTriggeredAt: null },
+  { taskType: 'site_index', cronExpression: '0 0 0 * * ?', enabled: 1, lastTriggeredAt: null },
+  { taskType: 'order_crawl', cronExpression: '0 0 */6 * * ?', enabled: 1, lastTriggeredAt: null },
 ]
 
 /**
@@ -138,6 +139,17 @@ export default {
     schedule.enabled = body.enabled ? 1 : 0
     schedule.cronExpression = body.cronExpression || schedule.cronExpression
     return { code: 200, msg: 'success', data: schedule }
+  },
+
+  scheduleTrigger: (options) => {
+    const taskType = options.url.match(/\/admin\/crawler\/config\/schedules\/([^/]+)\/trigger/)?.[1]
+    const schedule = crawlerSchedules.find(item => item.taskType === taskType)
+    if (!schedule) return { code: 404, msg: 'not found', data: null }
+    schedule.lastTriggeredAt = new Date().toISOString()
+    if (taskType === 'order_crawl') {
+      return { code: 200, msg: 'success', data: { A: { task_id: uuid() }, B: { task_id: uuid() }, status: 'Both group tasks dispatched' } }
+    }
+    return { code: 200, msg: 'success', data: { task_id: uuid(), status: 'Task dispatched' } }
   },
 
   // ==================== 选择器模板 CRUD ====================

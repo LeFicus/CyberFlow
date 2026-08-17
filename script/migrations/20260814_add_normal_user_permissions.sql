@@ -1,3 +1,6 @@
+USE cyberflow;
+SET NAMES utf8mb4;
+
 INSERT INTO sys_role (id, role_name, role_code, description, status)
 VALUES (3, '普通用户', 'ROLE_USER', '仅可查看经营数据和执行 A/B 订单爬取', 1)
 ON DUPLICATE KEY UPDATE role_name=VALUES(role_name), description=VALUES(description), status=1;

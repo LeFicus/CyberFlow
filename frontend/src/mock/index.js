@@ -55,6 +55,8 @@ Mock.mock(/\/admin\/dashboard\/site-index-history(\?|$)/, 'get', (options) => da
 Mock.mock(/\/admin\/dashboard\/orders-by-domain(\?|$)/, 'get', (options) => dashboardData.ordersByDomain(paramParser(options.url)))
 /** 拦截 GET /admin/dashboard/orders - 订单分页列表 */
 Mock.mock(/\/admin\/dashboard\/orders(\?|$)/, 'get', (options) => dashboardData.orders(paramParser(options.url)))
+/** 拦截 DELETE /admin/dashboard/orders/clear - 管理员清空全部订单 */
+Mock.mock(/\/admin\/dashboard\/orders\/clear(\?|$)/, 'delete', dashboardData.clearAllOrders)
 /** 拦截 GET /admin/dashboard/products - 商品分页列表 */
 Mock.mock(/\/admin\/dashboard\/products(\?|$)/, 'get', (options) => dashboardData.products(paramParser(options.url)))
 
@@ -77,6 +79,8 @@ Mock.mock(/\/admin\/crawler\/config$/, 'put', (options) => crawlerData.configUpd
 Mock.mock(/\/admin\/crawler\/config\/schedules$/, 'get', crawlerData.scheduleList)
 /** 拦截 PUT /admin/crawler/config/schedules/:taskType - 更新定时任务配置 */
 Mock.mock(/\/admin\/crawler\/config\/schedules\/[^/]+$/, 'put', crawlerData.scheduleUpdate)
+/** Mock POST /admin/crawler/config/schedules/:taskType/trigger - 立即触发计划任务 */
+Mock.mock(/\/admin\/crawler\/config\/schedules\/[^/]+\/trigger$/, 'post', crawlerData.scheduleTrigger)
 
 // ========== Selector Template 选择器模板 ==========
 /** 拦截 GET /admin/selector/template - 模板列表（支持 platform 参数过滤） */
