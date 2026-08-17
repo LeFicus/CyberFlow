@@ -132,6 +132,7 @@ const routePermissions = {
   '/crawler/collect': 'crawler:collect:start',
   '/crawler/order': 'crawler:order:view',
   '/crawler/history': 'crawler:history:view',
+  '/crawler/schedule': 'crawler:schedule:view',
   '/crawler/selector-template': 'selector:template:list',
   '/crawler/site-config': 'crawler:site:config:list',
   '/system/user': 'system:user:list',
@@ -172,8 +173,8 @@ const fallbackMenus = [
     { id: 28, menuName: '计划任务', path: '/crawler/schedule' },
   ] },
   { id: 4, menuName: '商品采集', icon: 'Goods', children: [
-    { id: 25, menuName: '选择器模板', path: '/crawler/selector-template' },
-    { id: 26, menuName: '站点注册', path: '/crawler/site-config' },
+    { id: 41, menuName: '数据源站点', path: '/crawler/site-config' },
+    { id: 42, menuName: '选择器模板', path: '/crawler/selector-template' },
   ] },
   { id: 3, menuName: '系统管理', icon: 'Setting', children: [
     { id: 31, menuName: '用户管理', path: '/system/user' },
