@@ -44,6 +44,14 @@ export function updateCrawlerConfig(data) {
   return request.put('/admin/crawler/config', data)
 }
 
+export function getRevenueConfig() {
+  return request.get('/admin/crawler/config/revenue')
+}
+
+export function updateRevenueConfig(data) {
+  return request.put('/admin/crawler/config/revenue', data)
+}
+
 export function listCrawlerSchedules() {
   return request.get('/admin/crawler/config/schedules')
 }

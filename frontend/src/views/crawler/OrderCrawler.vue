@@ -51,29 +51,6 @@
           <el-input v-model="excludedCardsText" :disabled="!canEditConfig" type="textarea" :rows="3" />
         </el-form-item>
 
-        <el-divider content-position="left">收入参数</el-divider>
-        <el-form-item label="实时汇率">
-          <el-input-number v-model="form.revenue.exchangeRate" :disabled="!canEditConfig" :precision="4" :step="0.01" />
-        </el-form-item>
-        <el-form-item label="折算系数">
-          <el-input-number v-model="form.revenue.rateFactor" :disabled="!canEditConfig" :precision="4" :step="0.01" />
-        </el-form-item>
-        <el-form-item label="组长提成">
-          <el-input-number v-model="form.revenue.leaderCommissionRate" :disabled="!canEditConfig" :precision="4" :step="0.01" />
-        </el-form-item>
-        <el-form-item label="提成阶梯">
-          <el-input v-model="commissionTiersText" :disabled="!canEditConfig" type="textarea" :rows="5" />
-        </el-form-item>
-        <el-form-item label="组长配置">
-          <el-input v-model="leaderConfigText" :disabled="!canEditConfig" type="textarea" :rows="3" placeholder='{"A":"A-黄伟","B":"B-李榕"}' />
-        </el-form-item>
-        <el-form-item label="导师后缀映射">
-          <el-input v-model="teacherMapText" :disabled="!canEditConfig" type="textarea" :rows="7" placeholder='{"B-许晓龙":"-xxl"}' />
-        </el-form-item>
-        <el-form-item label="多账号合并">
-          <el-input v-model="userMergeMapText" :disabled="!canEditConfig" type="textarea" :rows="5" placeholder='{"B-姓名":["B-账号1","B-账号2"]}' />
-        </el-form-item>
-
         <el-form-item>
           <el-button v-if="canEditConfig" type="primary" :loading="saving" @click="handleSave">保存配置</el-button>
           <el-tag v-else type="info">普通用户只读，敏感信息已脱敏</el-tag>
@@ -103,10 +80,6 @@ const canEditConfig = computed(() => userStore.hasPermission('crawler:order:conf
 const triggering = ref('')
 const { task, track } = useTaskProgress()
 const excludedCardsText = ref('')
-const commissionTiersText = ref('')
-const leaderConfigText = ref('')
-const teacherMapText = ref('')
-const userMergeMapText = ref('')
 
 const form = reactive({
   paymentApiA: { baseUrl: '', account: '', password: '', verifySsl: true },
@@ -116,15 +89,6 @@ const form = reactive({
     pageSize: 100,
     filterCardNumberExclude: [],
   },
-  revenue: {
-    exchangeRate: 6.73,
-    rateFactor: 0.42,
-    leaderCommissionRate: 0.02,
-    commissionTiers: [],
-    leaderConfig: {},
-    teacherMap: {},
-    userMergeMap: {},
-  },
 })
 
 async function loadConfig() {
@@ -132,12 +96,7 @@ async function loadConfig() {
   Object.assign(form.paymentApiA, configRes.data?.paymentApiA || {})
   Object.assign(form.paymentApiB, configRes.data?.paymentApiB || {})
   Object.assign(form.orderStrategy, configRes.data?.orderStrategy || {})
-  Object.assign(form.revenue, configRes.data?.revenue || {})
   excludedCardsText.value = (form.orderStrategy.filterCardNumberExclude || []).join('\n')
-  commissionTiersText.value = JSON.stringify(form.revenue.commissionTiers || [], null, 2)
-  leaderConfigText.value = JSON.stringify(form.revenue.leaderConfig || {}, null, 2)
-  teacherMapText.value = JSON.stringify(form.revenue.teacherMap || {}, null, 2)
-  userMergeMapText.value = JSON.stringify(form.revenue.userMergeMap || {}, null, 2)
 }
 
 async function handleSave() {
@@ -147,20 +106,15 @@ async function handleSave() {
       .split(/\n|,/)
       .map(item => item.trim())
       .filter(Boolean)
-    form.revenue.commissionTiers = JSON.parse(commissionTiersText.value || '[]')
-    form.revenue.leaderConfig = JSON.parse(leaderConfigText.value || '{}')
-    form.revenue.teacherMap = JSON.parse(teacherMapText.value || '{}')
-    form.revenue.userMergeMap = JSON.parse(userMergeMapText.value || '{}')
     await updateCrawlerConfig({
       paymentApiA: form.paymentApiA,
       paymentApiB: form.paymentApiB,
       orderStrategy: form.orderStrategy,
-      revenue: form.revenue,
     })
     ElMessage.success('保存成功')
     await loadConfig()
   } catch {
-    ElMessage.error('保存失败，请检查提成阶梯 JSON')
+    ElMessage.error('保存失败，请检查配置')
   } finally {
     saving.value = false
   }

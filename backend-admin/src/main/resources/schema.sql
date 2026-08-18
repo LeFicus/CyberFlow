@@ -7,7 +7,7 @@ SET @data_owner_exists = (
 );
 SET @data_owner_sql = IF(
     @data_owner_exists = 0,
-    'ALTER TABLE sys_user ADD COLUMN data_owner VARCHAR(100) COMMENT ''外部数据中的管理员名称，用于普通用户数据隔离''',
+    'ALTER TABLE sys_user ADD COLUMN data_owner VARCHAR(1000) COMMENT ''外部站点/订单管理员名称列表，用逗号分隔''',
     'SELECT 1'
 );
 PREPARE data_owner_stmt FROM @data_owner_sql;
@@ -184,6 +184,17 @@ ON DUPLICATE KEY UPDATE
     perms=VALUES(perms), status=VALUES(status);
 
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES (1, 15), (2, 15);
+
+INSERT INTO sys_menu
+    (id, parent_id, menu_name, menu_type, perms, path, component, icon, sort_order, status)
+VALUES
+    (35, 2, '收入参数', 1, 'crawler:revenue:view', '/crawler/revenue-config', 'crawler/RevenueConfig', 'Money', 6, 1),
+    (36, 35, '修改收入参数', 2, 'crawler:revenue:update', NULL, NULL, NULL, 1, 1)
+ON DUPLICATE KEY UPDATE
+    parent_id=VALUES(parent_id), menu_name=VALUES(menu_name), menu_type=VALUES(menu_type),
+    perms=VALUES(perms), path=VALUES(path), component=VALUES(component), icon=VALUES(icon),
+    sort_order=VALUES(sort_order), status=VALUES(status);
+INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES (1, 35), (1, 36), (2, 35), (2, 36);
 
 -- 系统管理操作权限。旧库可能只有页面查看权限，补齐后端 CRUD 接口所需权限。
 INSERT INTO sys_menu

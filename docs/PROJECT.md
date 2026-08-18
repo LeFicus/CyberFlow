@@ -253,14 +253,15 @@ cp .env.docker .env
 docker compose up -d
 ```
 
-自动启动 5 个容器:
+自动启动 6 个容器（其中 `db-migrate` 执行完成后退出）:
 - **RabbitMQ**: 管理界面 http://localhost:15672
 - **MySQL**: localhost:3306 (root/root123)
+- **DB Migrate**: 按顺序执行未完成的数据库迁移
 - **Redis**: localhost:6379
 - **Admin Backend**: http://localhost:8080 (Swagger: /swagger-ui.html)
 - **Crawler Consumer**: Python 异步抓取服务
 
-首次启动 MySQL 会自动执行 `init_all_databases.sql` 创建数据库和种子数据。
+首次启动 MySQL 会自动执行 `init_all_databases.sql` 创建数据库和种子数据；每次部署会由 `db-migrate` 自动执行 `script/migrations/*.sql` 中尚未记录的迁移。
 
 默认管理员账号: `admin` / `admin123`
 

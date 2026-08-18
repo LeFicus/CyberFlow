@@ -34,9 +34,21 @@ public class DataScopeService {
 
         // dataOwner is the explicit mapping to site_info.admin_name. The
         // username/nickname fallbacks keep existing installations usable.
-        String ownerName = firstNonBlank(user.getDataOwner(), user.getUsername(), user.getNickname());
+        String ownerName = normalizeOwners(user.getDataOwner());
+        if (ownerName.isBlank()) {
+            ownerName = firstNonBlank(user.getUsername(), user.getNickname());
+        }
         boolean operator = roles.stream().anyMatch("ROLE_OPERATOR"::equalsIgnoreCase);
         return new DataScope(false, operator, ownerName);
+    }
+
+    private static String normalizeOwners(String value) {
+        if (value == null || value.isBlank()) return "";
+        return java.util.Arrays.stream(value.split("[,，、\\n]"))
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .distinct()
+                .collect(java.util.stream.Collectors.joining(","));
     }
 
     private static String firstNonBlank(String... values) {

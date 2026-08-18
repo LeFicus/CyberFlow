@@ -41,8 +41,11 @@ public class RevenueSummaryService {
         Map<String, List<String>> mergeMap = stringListMap(config.get("userMergeMap"));
         Map<String, String> teacherMap = stringMap(config.get("teacherMap"));
         Map<String, String> leaderMap = stringMap(config.get("leaderConfig"));
+        List<String> teacherSuffixes = scope.administrator()
+                ? List.of()
+                : teacherSuffixes(scope.ownerNames(), teacherMap, mergeMap);
 
-        Map<String, AccountStats> accounts = loadAccounts(userGroup, ownerName, effectiveStart, effectiveEnd);
+        Map<String, AccountStats> accounts = loadAccounts(userGroup, ownerName, teacherSuffixes, effectiveStart, effectiveEnd);
 
         Map<String, PersonStats> people = new LinkedHashMap<>();
         for (AccountStats account : accounts.values()) {
@@ -54,6 +57,15 @@ public class RevenueSummaryService {
             person.successfulOrders += account.successfulOrders;
             person.siteCount += account.siteCount;
             person.originalAmount = person.originalAmount.add(account.originalAmount);
+        }
+
+        // A mentor may have no direct order/site row while the mapped intern
+        // does. Create the mentor bucket from ownership so the intern amount
+        // can still be synchronized into the mentor's commission.
+        if (!scope.administrator()) {
+            for (String owner : scope.ownerNames()) {
+                people.computeIfAbsent(realName(owner, mergeMap), PersonStats::new);
+            }
         }
 
         // Reference behavior: intern orders stay with the intern; only paid amount is synchronized to mentor.
@@ -97,7 +109,7 @@ public class RevenueSummaryService {
             String visibleLeaderGroup = scope.administrator() ? null : resolveGroup(accounts);
             Map<String, AccountStats> leaderAccounts = scope.administrator() || visibleLeaderGroup == null
                     ? accounts
-                    : loadAccounts(visibleLeaderGroup, null, effectiveStart, effectiveEnd);
+                    : loadAccounts(visibleLeaderGroup, null, List.of(), effectiveStart, effectiveEnd);
 
             for (String group : List.of("A", "B")) {
                 if (userGroup != null && !userGroup.equals(group)) continue;
@@ -127,14 +139,14 @@ public class RevenueSummaryService {
         // platform/group here: a site can contain orders imported by the other
         // platform and those orders must still contribute to the site's cohort.
         Map<String, DomainOrderStats> domainOrders = new HashMap<>();
-        for (Map<String, Object> row : revenueMapper.revenueOrdersByDomain(effectiveStart, effectiveEnd, ownerName)) {
+        for (Map<String, Object> row : revenueMapper.revenueOrdersByDomain(effectiveStart, effectiveEnd, ownerName, teacherSuffixes)) {
             DomainOrderStats stats = domainOrders.computeIfAbsent(domain(text(row, "product_host")), ignored -> new DomainOrderStats());
             stats.totalOrders += number(row.get("total_orders")).longValue();
             stats.successfulOrders += number(row.get("successful_orders")).longValue();
             stats.successfulAmount = stats.successfulAmount.add(number(row.get("successful_amount")));
         }
         Map<String, MonthlyStats> monthlyStats = new LinkedHashMap<>();
-        for (Map<String, Object> site : revenueMapper.revenueSites(userGroup, ownerName, effectiveSiteCreatedMonth)) {
+        for (Map<String, Object> site : revenueMapper.revenueSites(userGroup, ownerName, teacherSuffixes, effectiveSiteCreatedMonth)) {
             String admin = text(site, "admin_name");
             String group = text(site, "user_group");
             String month = text(site, "site_month");
@@ -187,21 +199,34 @@ public class RevenueSummaryService {
     }
 
     private Map<String, AccountStats> loadAccounts(String userGroup, String ownerName,
+                                                    List<String> teacherSuffixes,
                                                     String startDate, String endDate) {
         Map<String, AccountStats> accounts = new LinkedHashMap<>();
-        for (Map<String, Object> row : revenueMapper.adminOrderStats(userGroup, ownerName, startDate, endDate)) {
+        for (Map<String, Object> row : revenueMapper.adminOrderStats(userGroup, ownerName, teacherSuffixes, startDate, endDate)) {
             AccountStats stats = accounts.computeIfAbsent(text(row, "admin_name"), AccountStats::new);
             stats.group = text(row, "user_group");
             stats.totalOrders = number(row.get("total_orders")).longValue();
             stats.successfulOrders = number(row.get("successful_orders")).longValue();
             stats.originalAmount = number(row.get("original_amount"));
         }
-        for (Map<String, Object> row : revenueMapper.adminSiteStats(userGroup, ownerName, startDate, endDate)) {
+        for (Map<String, Object> row : revenueMapper.adminSiteStats(userGroup, ownerName, teacherSuffixes, startDate, endDate)) {
             AccountStats stats = accounts.computeIfAbsent(text(row, "admin_name"), AccountStats::new);
             stats.group = text(row, "user_group");
             stats.siteCount = number(row.get("site_count")).longValue();
         }
         return accounts;
+    }
+
+    private static List<String> teacherSuffixes(List<String> owners,
+                                                Map<String, String> teacherMap,
+                                                Map<String, List<String>> mergeMap) {
+        return teacherMap.entrySet().stream()
+                .filter(entry -> owners.contains(entry.getKey())
+                        || owners.stream().anyMatch(owner -> realName(owner, mergeMap).equals(entry.getKey())))
+                .map(Map.Entry::getValue)
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .toList();
     }
 
     private static String resolveGroup(Map<String, AccountStats> accounts) {

@@ -25,13 +25,27 @@ public class CrawlerConfigController {
     @GetMapping
     @PreAuthorize("hasAnyAuthority('crawler:site:start', 'crawler:order:view', 'crawler:collect:start')")
     public Result<Map<String, Object>> getRuntimeConfig() {
-        return Result.ok(crawlerConfigService.getRuntimeConfig(true));
+        Map<String, Object> result = crawlerConfigService.getRuntimeConfig(true);
+        result.remove("revenue");
+        return Result.ok(result);
     }
 
     @PutMapping
     @PreAuthorize("hasAnyAuthority('crawler:site:config:update', 'crawler:order:config', 'crawler:site:start', 'crawler:collect:start')")
     public Result<Map<String, Object>> updateRuntimeConfig(@RequestBody Map<String, Object> body) {
         return Result.ok(crawlerConfigService.updateRuntimeConfig(body));
+    }
+
+    @GetMapping("/revenue")
+    @PreAuthorize("hasAnyAuthority('crawler:revenue:view', 'crawler:revenue:update')")
+    public Result<Map<String, Object>> getRevenueConfig() {
+        return Result.ok(crawlerConfigService.getRevenueConfig());
+    }
+
+    @PutMapping("/revenue")
+    @PreAuthorize("hasAuthority('crawler:revenue:update')")
+    public Result<Map<String, Object>> updateRevenueConfig(@RequestBody Map<String, Object> body) {
+        return Result.ok(crawlerConfigService.updateRevenueConfig(body));
     }
 
     @GetMapping("/schedules")

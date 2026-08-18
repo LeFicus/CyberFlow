@@ -14,7 +14,9 @@
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="username" label="用户名" width="120" />
       <el-table-column prop="nickname" label="昵称" width="120" />
-      <el-table-column prop="dataOwner" label="数据归属" width="150" />
+      <el-table-column label="数据归属" min-width="180">
+        <template #default="{ row }">{{ formatOwners(row.dataOwner) }}</template>
+      </el-table-column>
       <el-table-column prop="email" label="邮箱" width="180" />
       <el-table-column prop="status" label="状态" width="80">
         <template #default="{ row }">
@@ -51,7 +53,10 @@
           <el-input v-model="form.nickname" />
         </el-form-item>
         <el-form-item label="数据归属">
-          <el-input v-model="form.dataOwner" placeholder="对应站点/订单中的管理员名称" />
+          <el-select v-model="form.dataOwners" multiple filterable allow-create default-first-option
+            placeholder="输入并回车，可配置多个站点/订单管理员名称" style="width: 100%">
+            <el-option v-for="owner in form.dataOwners" :key="owner" :label="owner" :value="owner" />
+          </el-select>
         </el-form-item>
         <el-form-item label="邮箱">
           <el-input v-model="form.email" />
@@ -116,7 +121,16 @@ const allRoles = ref([])
 const selectedRoles = ref([])
 
 /** 用户表单数据 */
-const form = reactive({ username: '', nickname: '', dataOwner: '', email: '', password: '', status: 1 })
+const form = reactive({ username: '', nickname: '', dataOwners: [], email: '', password: '', status: 1 })
+
+function parseOwners(value) {
+  if (Array.isArray(value)) return value
+  return String(value || '').split(/[,，、\n]/).map(item => item.trim()).filter(Boolean)
+}
+
+function formatOwners(value) {
+  return parseOwners(value).join('、') || '未配置'
+}
 
 /**
  * 获取用户列表
@@ -145,10 +159,10 @@ function openDialog(row) {
   isEdit.value = !!row
   if (row) {
     currentUserId.value = row.id
-    Object.assign(form, { username: row.username, nickname: row.nickname, dataOwner: row.dataOwner || '', email: row.email, password: '', status: row.status })
+    Object.assign(form, { username: row.username, nickname: row.nickname, dataOwners: parseOwners(row.dataOwner), email: row.email, password: '', status: row.status })
   } else {
     currentUserId.value = null
-    Object.assign(form, { username: '', nickname: '', dataOwner: '', email: '', password: '', status: 1 })
+    Object.assign(form, { username: '', nickname: '', dataOwners: [], email: '', password: '', status: 1 })
   }
   dialogVisible.value = true
 }
@@ -161,10 +175,24 @@ async function handleSave() {
   saving.value = true
   try {
     if (isEdit.value) {
-      await updateUser(currentUserId.value, { ...form, password: form.password || undefined })
+      await updateUser(currentUserId.value, {
+        username: form.username,
+        nickname: form.nickname,
+        dataOwner: form.dataOwners.join(','),
+        email: form.email,
+        status: form.status,
+        password: form.password || undefined,
+      })
       ElMessage.success('更新成功')
     } else {
-      await createUser(form)
+      await createUser({
+        username: form.username,
+        nickname: form.nickname,
+        dataOwner: form.dataOwners.join(','),
+        email: form.email,
+        password: form.password,
+        status: form.status,
+      })
       ElMessage.success('创建成功')
     }
     dialogVisible.value = false

@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     username    VARCHAR(50)  NOT NULL UNIQUE COMMENT '登录用户名',
     password    VARCHAR(255) NOT NULL COMMENT 'BCrypt 加密密码',
     nickname    VARCHAR(50)  COMMENT '显示昵称',
-    data_owner  VARCHAR(100) COMMENT '外部数据中的管理员名称，用于普通用户数据隔离',
+    data_owner  VARCHAR(1000) COMMENT '外部站点/订单管理员名称列表，用逗号分隔',
     email       VARCHAR(100) COMMENT '邮箱',
     status      TINYINT      NOT NULL DEFAULT 1 COMMENT '0=禁用 1=启用',
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -452,12 +452,14 @@ INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, path, component, icon
 (23, 2, '订单爬虫', 1, '/crawler/order', 'crawler/OrderCrawler', NULL, 3),
 (24, 2, '任务历史', 1, '/crawler/history', 'crawler/TaskHistory', NULL, 4),
 (28, 2, '计划任务', 1, '/crawler/schedule', 'crawler/ScheduleTask', 'Timer', 5),
+(35, 2, '收入参数', 1, '/crawler/revenue-config', 'crawler/RevenueConfig', 'Money', 6),
 -- 爬虫按钮权限
 (25, 21, '触发站点爬虫', 2, NULL, NULL, NULL, 1),
 (26, 22, '触发收录统计', 2, NULL, NULL, NULL, 1),
 (27, 23, '触发订单爬虫', 2, NULL, NULL, NULL, 1),
 (29, 28, '修改计划任务', 2, NULL, NULL, 'crawler:schedule:update', 1),
 (30, 28, '手动触发计划任务', 2, NULL, NULL, 'crawler:schedule:trigger', 2),
+(36, 35, '修改收入参数', 2, NULL, NULL, NULL, 1),
 -- 系统管理子菜单
 (31, 3, '用户管理', 1, '/system/user', 'system/UserList', NULL, 1),
 (32, 3, '角色管理', 1, '/system/role', 'system/RoleList', NULL, 2),
@@ -486,6 +488,8 @@ UPDATE sys_menu SET perms = 'crawler:order:start'     WHERE id = 27;
 UPDATE sys_menu SET perms = 'crawler:order:view'      WHERE id = 23;
 UPDATE sys_menu SET perms = 'crawler:history:view'    WHERE id = 24;
 UPDATE sys_menu SET perms = 'crawler:schedule:view'   WHERE id = 28;
+UPDATE sys_menu SET perms = 'crawler:revenue:view'    WHERE id = 35;
+UPDATE sys_menu SET perms = 'crawler:revenue:update'  WHERE id = 36;
 INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, perms, status, sort_order) VALUES
 (49, 24, '任务控制', 2, 'crawler:task:control', 1, 1),
 (50, 24, '删除任务', 2, 'crawler:task:delete', 1, 2),
@@ -522,6 +526,7 @@ INSERT IGNORE INTO sys_role_menu (role_id, menu_id) SELECT 2, id FROM sys_menu W
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES (2, 15);
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES
 (1, 28), (1, 29), (1, 30), (2, 28), (2, 29), (2, 30),
+(1, 35), (1, 36), (2, 35), (2, 36),
 (1, 49), (1, 50), (1, 51), (2, 49), (2, 50), (2, 51);
 
 DELETE FROM sys_role_menu WHERE role_id = 3;
@@ -607,6 +612,7 @@ USE scraped_data;
 --   custom_category  — 业务自定义分类
 --   source_domain    — 原始站点域名
 --   language         — 语言代码（默认 "en"）
+--   dedupe_key       — 基于站点、名称和首图生成的稳定商品去重键
 --   created_at       — 首次爬取时间
 --   updated_at       — 最后更新时间（ON UPDATE 自动维护）
 -- ------------------------------------------------------------
@@ -622,10 +628,12 @@ CREATE TABLE IF NOT EXISTS ecommerce_products (
     custom_category VARCHAR(100),
     source_domain   VARCHAR(255),
     language        VARCHAR(10) DEFAULT 'en',
+    dedupe_key      VARCHAR(768),
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_product_created_id (created_at, id),
     INDEX idx_product_domain_created (source_domain, created_at, id),
     INDEX idx_product_category_created (custom_category, created_at, id),
-    INDEX idx_product_name_prefix (name(100))
+    INDEX idx_product_name_prefix (name(100)),
+    UNIQUE KEY uk_product_dedupe (dedupe_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

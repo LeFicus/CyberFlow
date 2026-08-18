@@ -34,7 +34,7 @@ public class SysUser {
     /** 用户昵称或显示名称 */
     private String nickname;
 
-    /** 外部站点/订单数据中的管理员名称，用于普通用户的数据范围控制 */
+    /** 外部站点/订单数据中的管理员名称列表（逗号分隔），用于普通用户的数据范围控制 */
     private String dataOwner;
 
     /** 用户邮箱地址 */

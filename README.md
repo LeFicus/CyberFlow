@@ -260,14 +260,14 @@ crawler-service/
 cp .env.docker.example .env
 # 按需编辑 .env 中的密码和端口
 
-# 2. 启动基础设施服务
+# 2. 启动服务；会先自动按顺序执行 script/migrations 下未执行的数据库迁移
 docker compose up -d
 
 # 3. 查看运行状态
 docker compose ps
 ```
 
-当前 `docker-compose.yml` 默认启用 RabbitMQ、MySQL、Redis。`backend-admin` 和 `crawler-consumer` 的 Docker 服务配置仍保留在文件中，但处于注释状态；如需容器化启动应用服务，需要先取消对应服务注释并确认环境变量。
+数据库迁移由一次性 `db-migrate` 服务自动执行，已执行的版本记录在 `cyberflow.schema_migrations` 中。迁移失败时，管理后台和爬虫消费者不会启动，避免线上漏更新。
 
 基础设施端口：
 

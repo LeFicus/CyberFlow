@@ -43,7 +43,7 @@ public interface SiteIndexingHistoryMapper {
             "ON LOWER(TRIM(LEADING 'www.' FROM h.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) " +
             "WHERE h.recorded_at >= #{startDate} AND h.recorded_at < DATE_ADD(#{endDate}, INTERVAL 1 DAY) " +
             "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR s.user_group = #{userGroup}) " +
-            "AND (#{ownerName} IS NULL OR s.admin_name = #{ownerName}) " +
+            "AND (#{ownerName} IS NULL OR FIND_IN_SET(s.admin_name, #{ownerName}) > 0) " +
             "GROUP BY DATE(h.recorded_at) ORDER BY date")
     List<Map<String, Object>> indexTrendByGroup(@Param("startDate") String startDate,
                                                 @Param("endDate") String endDate,
@@ -63,7 +63,7 @@ public interface SiteIndexingHistoryMapper {
     @Select("SELECT DATE(h.recorded_at) as date, h.index_count, h.product_count " +
             "FROM site_indexing_history h JOIN site_info s " +
             "ON LOWER(TRIM(LEADING 'www.' FROM h.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) " +
-            "WHERE h.site_domain = #{domain} AND (#{ownerName} IS NULL OR s.admin_name = #{ownerName}) " +
+            "WHERE h.site_domain = #{domain} AND (#{ownerName} IS NULL OR FIND_IN_SET(s.admin_name, #{ownerName}) > 0) " +
             "ORDER BY h.recorded_at ASC")
     List<Map<String, Object>> listHistoryByDomain(@Param("domain") String domain,
                                                    @Param("ownerName") String ownerName);

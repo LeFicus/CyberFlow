@@ -203,7 +203,8 @@ class MySQLRedisPipeline:
                 description=VALUES(description),
                 cf_opingts=VALUES(cf_opingts),
                 custom_category=VALUES(custom_category),
-                language=VALUES(language)
+                language=VALUES(language),
+                dedupe_key=VALUES(dedupe_key)
         """
 
         # ========== 数据格式转换 ==========

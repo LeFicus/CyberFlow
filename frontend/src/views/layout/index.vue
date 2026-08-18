@@ -131,6 +131,7 @@ const routePermissions = {
   '/crawler/site': 'crawler:site:start',
   '/crawler/collect': 'crawler:collect:start',
   '/crawler/order': 'crawler:order:view',
+  '/crawler/revenue-config': 'crawler:revenue:view',
   '/crawler/history': 'crawler:history:view',
   '/crawler/schedule': 'crawler:schedule:view',
   '/crawler/selector-template': 'selector:template:list',
@@ -170,6 +171,7 @@ const fallbackMenus = [
     { id: 21, menuName: '站点爬虫', path: '/crawler/site' },
     { id: 22, menuName: '收录统计', path: '/crawler/collect' },
     { id: 23, menuName: '订单爬虫', path: '/crawler/order' },
+    { id: 35, menuName: '收入参数', path: '/crawler/revenue-config' },
     { id: 24, menuName: '任务历史', path: '/crawler/history' },
     { id: 28, menuName: '计划任务', path: '/crawler/schedule' },
   ] },
@@ -221,7 +223,7 @@ const menuTree = computed(() => {
   const findCrawlerItem = (path, fallback) => crawlerChildren.find(item => item.path === path) || fallback
   const fallbackSync = fallbackMenus.find(menu => menu.id === 2)
   const fallbackProduct = fallbackMenus.find(menu => menu.id === 4)
-  const syncPaths = ['/crawler/site', '/crawler/collect', '/crawler/order', '/crawler/history', '/crawler/schedule']
+  const syncPaths = ['/crawler/site', '/crawler/collect', '/crawler/order', '/crawler/history', '/crawler/schedule', '/crawler/revenue-config']
   const productPaths = ['/crawler/site-config', '/crawler/selector-template']
   const groupedMenus = source.filter(menu => menu !== crawlerMenu && menu.id !== 4 && menu.menuName !== '商品采集')
   const crawlerIndex = Math.max(0, source.indexOf(crawlerMenu))

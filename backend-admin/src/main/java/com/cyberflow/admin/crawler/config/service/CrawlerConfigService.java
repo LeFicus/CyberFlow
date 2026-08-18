@@ -62,6 +62,9 @@ public class CrawlerConfigService {
     @SuppressWarnings("unchecked")
     public Map<String, Object> updateRuntimeConfig(Map<String, Object> body) {
         for (Map.Entry<String, Object> groupEntry : body.entrySet()) {
+            if ("revenue".equals(groupEntry.getKey())) {
+                continue;
+            }
             if (!(groupEntry.getValue() instanceof Map<?, ?> rawGroup)) {
                 continue;
             }
@@ -76,6 +79,16 @@ public class CrawlerConfigService {
             }
         }
         return getRuntimeConfig(true);
+    }
+
+    /** Dedicated write path for commission and income parameters. */
+    @Transactional
+    public Map<String, Object> updateRevenueConfig(Map<String, Object> body) {
+        for (Map.Entry<String, Object> entry : body.entrySet()) {
+            if (MASK.equals(entry.getValue())) continue;
+            upsertRuntime("revenue", entry.getKey(), entry.getValue(), false);
+        }
+        return getRevenueConfig();
     }
 
     public Map<String, Object> getAdminPlatform() {

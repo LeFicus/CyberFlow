@@ -26,7 +26,7 @@ public interface SiteInfoMapper {
             "<where>",
             "<if test='adminName != null and adminName != &quot;&quot;'> AND admin_name LIKE CONCAT('%', #{adminName}, '%')</if>",
             "<if test='userGroup != null and userGroup != &quot;&quot;'> AND user_group = #{userGroup}</if>",
-            "<if test='ownerName != null'> AND admin_name = #{ownerName}</if>",
+            "<if test='ownerName != null'> AND FIND_IN_SET(admin_name, #{ownerName}) &gt; 0</if>",
             "<if test='domain != null and domain != &quot;&quot;'> AND site_domain LIKE CONCAT('%', #{domain}, '%')</if>",
             "<if test='startDate != null and startDate != &quot;&quot;'> AND created_at &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>",
             "<if test='endDate != null and endDate != &quot;&quot;'> AND created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>",
@@ -47,7 +47,7 @@ public interface SiteInfoMapper {
             "<where>",
             "<if test='adminName != null and adminName != &quot;&quot;'> AND admin_name LIKE CONCAT('%', #{adminName}, '%')</if>",
             "<if test='userGroup != null and userGroup != &quot;&quot;'> AND user_group = #{userGroup}</if>",
-            "<if test='ownerName != null'> AND admin_name = #{ownerName}</if>",
+            "<if test='ownerName != null'> AND FIND_IN_SET(admin_name, #{ownerName}) &gt; 0</if>",
             "<if test='domain != null and domain != &quot;&quot;'> AND site_domain LIKE CONCAT('%', #{domain}, '%')</if>",
             "<if test='startDate != null and startDate != &quot;&quot;'> AND created_at &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>",
             "<if test='endDate != null and endDate != &quot;&quot;'> AND created_at &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>",
@@ -78,7 +78,7 @@ public interface SiteInfoMapper {
     @Select({"<script>", "SELECT COUNT(*) FROM site_info",
             "<where>",
             "<if test='userGroup != null and userGroup != &quot;&quot;'> AND user_group = #{userGroup}</if>",
-            "<if test='ownerName != null'> AND admin_name = #{ownerName}</if>",
+            "<if test='ownerName != null'> AND FIND_IN_SET(admin_name, #{ownerName}) &gt; 0</if>",
             "<if test='startDateTime != null and startDateTime != &quot;&quot;'> AND created_at &gt;= #{startDateTime}</if>",
             "<if test='endDateTime != null and endDateTime != &quot;&quot;'> AND created_at &lt; #{endDateTime}</if>",
             "</where>", "</script>"})
@@ -97,13 +97,13 @@ public interface SiteInfoMapper {
 
     @Select("SELECT admin_name, COUNT(*) AS count FROM site_info " +
             "WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
-            "AND (#{ownerName} IS NULL OR admin_name = #{ownerName}) " +
+            "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) > 0) " +
             "GROUP BY admin_name ORDER BY count DESC")
     List<Map<String, Object>> countByAdminForGroup(@Param("userGroup") String userGroup,
                                                    @Param("ownerName") String ownerName);
 
     @Select("SELECT COALESCE(user_group, '未分组') AS user_group, COUNT(*) AS site_count " +
-            "FROM site_info WHERE (#{ownerName} IS NULL OR admin_name = #{ownerName}) " +
+            "FROM site_info WHERE (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) > 0) " +
             "GROUP BY user_group ORDER BY user_group")
     List<Map<String, Object>> summarizeByGroup(@Param("ownerName") String ownerName);
 
@@ -125,7 +125,7 @@ public interface SiteInfoMapper {
 
     @Select("SELECT product_category, COUNT(*) AS count FROM site_info " +
             "WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
-            "AND (#{ownerName} IS NULL OR admin_name = #{ownerName}) " +
+            "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) > 0) " +
             "GROUP BY product_category ORDER BY count DESC")
     List<Map<String, Object>> countByCategoryForGroup(@Param("userGroup") String userGroup,
                                                       @Param("ownerName") String ownerName);

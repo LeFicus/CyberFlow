@@ -20,10 +20,18 @@ class PlatformCrawlSpider(scrapy.Spider):
         # Generic storefronts often expose large sitemap indexes. Keep a slow
         # or unreachable endpoint from holding the whole task indefinitely.
         "DOWNLOAD_TIMEOUT": 30,
-        "RETRY_TIMES": 1,
-        "CONCURRENT_REQUESTS": 32,
-        "CONCURRENT_REQUESTS_PER_DOMAIN": 8,
-        "DOWNLOAD_DELAY": 0.1,
+        # Be conservative with smaller WooCommerce gateways: one in-flight
+        # request and a 2-second minimum gap substantially reduce 502s.
+        "RETRY_TIMES": 2,
+        "CONCURRENT_REQUESTS": 8,
+        "CONCURRENT_REQUESTS_PER_DOMAIN": 1,
+        "DOWNLOAD_DELAY": 2.0,
+        "RANDOMIZE_DOWNLOAD_DELAY": True,
+        # Increase the delay automatically when response latency/statuses rise.
+        "AUTOTHROTTLE_ENABLED": True,
+        "AUTOTHROTTLE_START_DELAY": 3.0,
+        "AUTOTHROTTLE_MAX_DELAY": 60.0,
+        "AUTOTHROTTLE_TARGET_CONCURRENCY": 0.5,
         # Keep the complete operational log without Scrapy's per-request DEBUG
         # noise; accepted/rejected URL totals are logged explicitly below.
         "LOG_LEVEL": "INFO",
