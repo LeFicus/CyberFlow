@@ -160,14 +160,19 @@ public class DashboardService {
      * @param name 商品名称，为 null 或空时不按名称过滤
      * @return 包含 total（总数）和 list（商品列表）的 Map
      */
-    public Map<String, Object> getProducts(int page, int size, List<String> domains, List<String> categories, String name) {
+    public Map<String, Object> getProducts(int page, int size, List<String> domains,
+                                           List<String> customCategories, List<String> productCategories,
+                                           List<String> productRoles, String name) {
         String ownerName = ownerName();
         List<String> domainFilter = normalizeDomainFilter(domains);
-        List<String> categoryFilter = normalizeCategoryFilter(categories);
+        List<String> customCategoryFilter = normalizeCategoryFilter(customCategories);
+        List<String> productCategoryFilter = normalizeCategoryFilter(productCategories);
+        List<String> productRoleFilter = normalizeProductRoleFilter(productRoles);
         int offset = (page - 1) * size;
-        long total = productMapper.countProductsFiltered(domainFilter, categoryFilter, name, ownerName);
+        long total = productMapper.countProductsFiltered(
+                domainFilter, customCategoryFilter, productCategoryFilter, productRoleFilter, name, ownerName);
         List<Map<String, Object>> list = productMapper.listProductsFiltered(
-                domainFilter, categoryFilter, name, ownerName, offset, size);
+                domainFilter, customCategoryFilter, productCategoryFilter, productRoleFilter, name, ownerName, offset, size);
 
         var result = new LinkedHashMap<String, Object>();
         result.put("total", total);
@@ -208,18 +213,23 @@ public class DashboardService {
 
     /** Delete every product matching the current product-list filters. */
     @Transactional
-    public Map<String, Object> clearProducts(List<String> domains, List<String> categories, String name) {
+    public Map<String, Object> clearProducts(List<String> domains, List<String> customCategories,
+                                             List<String> productCategories, List<String> productRoles, String name) {
         List<String> domainFilter = normalizeDomainFilter(domains);
-        List<String> categoryFilter = normalizeCategoryFilter(categories);
+        List<String> customCategoryFilter = normalizeCategoryFilter(customCategories);
+        List<String> productCategoryFilter = normalizeCategoryFilter(productCategories);
+        List<String> productRoleFilter = normalizeProductRoleFilter(productRoles);
         String ownerName = ownerName();
         // Consume the fingerprint cursor before issuing DELETE so a million-row
         // clear never creates a million-element Java List.
-        try (Cursor<Map<String, Object>> products = productMapper.streamProductFingerprintsFiltered(domainFilter, categoryFilter, name, ownerName)) {
+        try (Cursor<Map<String, Object>> products = productMapper.streamProductFingerprintsFiltered(
+                domainFilter, customCategoryFilter, productCategoryFilter, productRoleFilter, name, ownerName)) {
             for (Map<String, Object> product : products) removeProductFingerprint(product);
         } catch (IOException ex) {
             throw new IllegalStateException("Unable to finish streaming product fingerprints", ex);
         }
-        int deletedCount = productMapper.deleteProductsFiltered(domainFilter, categoryFilter, name, ownerName);
+        int deletedCount = productMapper.deleteProductsFiltered(
+                domainFilter, customCategoryFilter, productCategoryFilter, productRoleFilter, name, ownerName);
 
         var result = new LinkedHashMap<String, Object>();
         result.put("deleted_count", deletedCount);
@@ -240,6 +250,16 @@ public class DashboardService {
                 .filter(Objects::nonNull)
                 .map(String::trim)
                 .filter(value -> !value.isEmpty())
+                .distinct()
+                .toList();
+    }
+
+    private List<String> normalizeProductRoleFilter(List<String> roles) {
+        if (roles == null) return List.of();
+        return roles.stream()
+                .filter(Objects::nonNull)
+                .map(value -> value.trim().toLowerCase(Locale.ROOT))
+                .filter(value -> value.equals("main") || value.equals("supplement"))
                 .distinct()
                 .toList();
     }

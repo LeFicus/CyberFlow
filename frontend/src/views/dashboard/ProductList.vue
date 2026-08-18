@@ -22,7 +22,7 @@
       </el-form-item>
       <el-form-item label="自定义分类">
         <el-tree-select
-          v-model="filters.category"
+          v-model="filters.customCategory"
           :data="categoryTree"
           :props="categoryTreeProps"
           check-strictly
@@ -35,8 +35,37 @@
           filterable
           @change="handleSearch"
           style="width:300px;"
-          placeholder="按类目筛选/导出（可多选）"
+          placeholder="按自定义分类筛选（可多选）"
         />
+      </el-form-item>
+      <el-form-item label="商品分类">
+        <el-select
+          v-model="filters.productCategory"
+          multiple
+          filterable
+          allow-create
+          default-first-option
+          clearable
+          :reserve-keyword="false"
+          style="width:300px;"
+          placeholder="输入商品分类后按 Enter，可多选"
+          @change="handleSearch"
+        />
+      </el-form-item>
+      <el-form-item label="产品标签">
+        <el-select
+          v-model="filters.productRole"
+          multiple
+          clearable
+          collapse-tags
+          collapse-tags-tooltip
+          style="width:200px;"
+          placeholder="主产品/补充产品"
+          @change="handleSearch"
+        >
+          <el-option label="主产品" value="main" />
+          <el-option label="补充产品" value="supplement" />
+        </el-select>
       </el-form-item>
       <el-form-item label="商品名称">
         <el-input v-model="filters.name" placeholder="按商品名称筛选" clearable @keyup.enter="handleSearch" />
@@ -96,6 +125,13 @@
       </el-table-column>
       <el-table-column prop="categories" label="分类" min-width="130" show-overflow-tooltip />
       <el-table-column prop="custom_category" label="自定义分类" min-width="130" show-overflow-tooltip />
+      <el-table-column label="产品标签" width="100">
+        <template #default="{ row }">
+          <el-tag :type="row.product_role === 'supplement' ? 'warning' : 'success'" size="small">
+            {{ row.product_role === 'supplement' ? '补充产品' : '主产品' }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="source_domain" label="来源域名" min-width="190" show-overflow-tooltip />
       <el-table-column prop="language" label="语言" width="80" />
     </el-table>
@@ -137,7 +173,7 @@ const deleting = ref(false)
 const clearing = ref(false)
 const selectedRows = ref([])
 /** 筛选条件 */
-const filters = reactive({ domain: [], category: [], name: '' })
+const filters = reactive({ domain: [], customCategory: [], productCategory: [], productRole: [], name: '' })
 
 function formatPrice(value) {
   const amount = Number(value)
@@ -165,13 +201,27 @@ function handleSelectionChange(rows) {
   selectedRows.value = rows
 }
 
-function selectedCategories() {
-  const categories = filters.category
+function selectedCustomCategories() {
+  const categories = filters.customCategory
     .map(value => (value && typeof value === 'object' ? value.value || value.label : value))
     .map(value => productCategoryLabel(value))
     .map(value => String(value || '').trim())
     .filter(Boolean)
   return categories.length ? [...new Set(categories)] : undefined
+}
+
+function selectedProductCategories() {
+  const categories = filters.productCategory
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+  return categories.length ? [...new Set(categories)] : undefined
+}
+
+function selectedProductRoles() {
+  const roles = filters.productRole
+    .map(value => String(value || '').trim().toLowerCase())
+    .filter(value => value === 'main' || value === 'supplement')
+  return roles.length ? [...new Set(roles)] : undefined
 }
 
 function selectedDomains() {
@@ -208,7 +258,9 @@ async function handleDeleteSelected() {
 async function handleClearFiltered() {
   const activeFilters = [
     selectedDomains()?.length ? `域名：${selectedDomains().join('、')}` : '',
-    selectedCategories()?.length ? `分类：${selectedCategories().join('、')}` : '',
+    selectedCustomCategories()?.length ? `自定义分类：${selectedCustomCategories().join('、')}` : '',
+    selectedProductCategories()?.length ? `商品分类：${selectedProductCategories().join('、')}` : '',
+    selectedProductRoles()?.length ? `产品标签：${selectedProductRoles().map(role => role === 'supplement' ? '补充产品' : '主产品').join('、')}` : '',
     filters.name.trim() ? `商品名称：${filters.name.trim()}` : '',
   ].filter(Boolean)
   const scope = activeFilters.length ? activeFilters.join('，') : '全部商品'
@@ -226,7 +278,9 @@ async function handleClearFiltered() {
   try {
     const res = await clearProducts({
       domain: selectedDomains(),
-      category: selectedCategories(),
+      category: selectedCustomCategories(),
+      productCategory: selectedProductCategories(),
+      productRole: selectedProductRoles(),
       name: filters.name || undefined,
     })
     ElMessage.success(`已清空 ${res.data.deleted_count} 条商品数据`)
@@ -247,7 +301,9 @@ async function fetchData() {
       page: page.value,
       size: size.value,
       domain: selectedDomains(),
-      category: selectedCategories(),
+      category: selectedCustomCategories(),
+      productCategory: selectedProductCategories(),
+      productRole: selectedProductRoles(),
       name: filters.name || undefined,
     })
     tableData.value = Array.isArray(res.data?.list) ? res.data.list : []
@@ -263,7 +319,9 @@ async function fetchData() {
  */
 function resetFilters() {
   filters.domain = []
-  filters.category = []
+  filters.customCategory = []
+  filters.productCategory = []
+  filters.productRole = []
   filters.name = ''
   page.value = 1
   fetchData()
@@ -285,7 +343,9 @@ async function handleExport() {
   try {
     const res = await exportProductsExcel({
       domain: selectedDomains(),
-      category: selectedCategories(),
+      category: selectedCustomCategories(),
+      productCategory: selectedProductCategories(),
+      productRole: selectedProductRoles(),
       name: filters.name || undefined,
     })
     const url = URL.createObjectURL(res.data)

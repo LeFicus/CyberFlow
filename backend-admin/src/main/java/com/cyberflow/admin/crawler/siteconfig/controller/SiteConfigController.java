@@ -41,6 +41,7 @@ public class SiteConfigController {
         "shopify", "woocommerce", "bigcommerce", "opencart", "magento",
         "prestashop", "shopline", "ecwid", "wix", "squarespace", "custom"
     );
+    private static final List<String> SUPPORTED_PRODUCT_ROLES = List.of("main", "supplement");
     private static final Pattern PROHIBITED_CATEGORY = Pattern.compile(
             "保健品|保健|食品|枪支|枪械|弹药|武器|毒品|烟酒|烟草|烟具|酒精|服装|服饰|成人",
         Pattern.CASE_INSENSITIVE
@@ -94,6 +95,9 @@ public class SiteConfigController {
         if (!SUPPORTED_ENGINES.contains(config.getType())) {
             return Result.fail("Unsupported product engine: " + config.getType());
         }
+        if (!SUPPORTED_PRODUCT_ROLES.contains(config.getProductRole())) {
+            return Result.fail("Unsupported product role: " + config.getProductRole());
+        }
         List<SiteTemplateMapping> mappings = parseMappings(body);
         return Result.ok(siteConfigService.create(config, mappings));
     }
@@ -119,6 +123,9 @@ public class SiteConfigController {
         if (!SUPPORTED_ENGINES.contains(config.getType())) {
             return Result.fail("Unsupported product engine: " + config.getType());
         }
+        if (!SUPPORTED_PRODUCT_ROLES.contains(config.getProductRole())) {
+            return Result.fail("Unsupported product role: " + config.getProductRole());
+        }
         config.setStatus(existing.getStatus());
         List<SiteTemplateMapping> mappings = parseMappings(body);
         return Result.ok(siteConfigService.update(id, config, mappings));
@@ -139,7 +146,7 @@ public class SiteConfigController {
         Long userId = Long.valueOf(body.getOrDefault("user_id", "0"));
         return Result.ok(crawlerService.triggerProductCrawl(
             config.getId(), config.getDomain(), config.getType(),
-            config.getCategory(), userId
+            config.getCategory(), config.getProductRole(), userId
         ));
     }
 
@@ -176,7 +183,13 @@ public class SiteConfigController {
                 rawCategory = rawCategory.substring(rawCategory.indexOf("|||") + 3);
             }
             c.setCategory(rawCategory);
+            Object productRoleValue = configData.get("productRole");
+            String productRole = productRoleValue == null
+                    ? "main"
+                    : String.valueOf(productRoleValue).trim().toLowerCase();
+            c.setProductRole(productRole);
         }
+        if (c.getProductRole() == null || c.getProductRole().isBlank()) c.setProductRole("main");
         c.setStatus("active");
         return c;
     }

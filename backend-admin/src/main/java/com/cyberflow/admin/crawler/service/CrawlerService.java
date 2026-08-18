@@ -160,14 +160,14 @@ public class CrawlerService {
      * @return 包含 task_id 和状态信息的 Map
      */
     public Map<String, Object> triggerProductCrawl(Long siteConfigId, String domain, String type,
-                                                   String category, Long triggeredBy) {
+                                                   String category, String productRole, Long triggeredBy) {
         if (!java.util.Set.of("shopify", "woocommerce", "bigcommerce").contains(type.toLowerCase())) {
             return Map.of("status", "Rejected", "message", "Unsupported product crawl engine");
         }
         String taskId = publisher.createTaskId();
         saveTaskHistory(taskId, "product_crawl", "manual", String.valueOf(triggeredBy));
         try {
-            publisher.publishProductCrawl(taskId, siteConfigId, domain, type, category, triggeredBy);
+            publisher.publishProductCrawl(taskId, siteConfigId, domain, type, category, productRole, triggeredBy);
         } catch (RuntimeException ex) {
             taskHistoryService.markDispatchFailed(taskId, ex.getMessage());
             throw ex;

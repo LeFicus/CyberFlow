@@ -155,6 +155,11 @@ class MySQLRedisPipeline:
         if not has_content(item.get('Images')):
             raise DropItem("丢弃商品：商品图片为空")
         item['语言'] = item.get('语言') or 'en'
+        item['产品标签'] = (
+            'supplement'
+            if str(item.get('产品标签', '')).strip().lower() == 'supplement'
+            else 'main'
+        )
         item['_dedupe_key'] = product_dedupe_key(
             item.get('原站域名'), item.get('Name'), item.get('Images')
         )
@@ -193,8 +198,8 @@ class MySQLRedisPipeline:
         # 新记录插入，已有记录按稳定 dedupe_key 更新，避免跨爬虫重复商品。
         sql = """
             INSERT INTO ecommerce_products
-            (sku, name, description, regular_price, categories, images, cf_opingts, custom_category, source_domain, language, dedupe_key)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (sku, name, description, regular_price, categories, images, cf_opingts, custom_category, product_role, source_domain, language, dedupe_key)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 name=VALUES(name),
                 regular_price=VALUES(regular_price),
@@ -203,6 +208,7 @@ class MySQLRedisPipeline:
                 description=VALUES(description),
                 cf_opingts=VALUES(cf_opingts),
                 custom_category=VALUES(custom_category),
+                product_role=VALUES(product_role),
                 language=VALUES(language),
                 dedupe_key=VALUES(dedupe_key)
         """
@@ -221,6 +227,7 @@ class MySQLRedisPipeline:
                     item.get('Images'),
                     item.get('cf_opingts'),      # 商品属性选项
                     item.get('自定义分类'),        # 业务自定义分类
+                    item.get('产品标签', 'main'),   # 主产品/补充产品
                     item.get('原站域名'),          # 原始站点域名
                     item.get('语言'),              # 语言代码（如 'en'）
                     item.get('_dedupe_key'),

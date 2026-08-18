@@ -2,7 +2,7 @@
 产品数据消费者 —— 监听 product.crawl 队列，执行产品数据爬取。
 
 处理流程:
-1. 从 RabbitMQ 消费任务消息（包含 site_config_id、domain、type、category）
+1. 从 RabbitMQ 消费任务消息（包含 site_config_id、domain、type、category、product_role）
 2. 将任务状态更新为 RUNNING
 3. Shopify、BigCommerce 使用独立爬虫；WooCommerce 等平台使用通用地图爬虫
 4. 以子进程方式执行 Scrapy 命令，统计生成的商品数量
@@ -83,6 +83,7 @@ class ProductConsumer(BaseConsumer):
         domain = payload["domain"]
         site_type = payload["type"]
         category = self._safe_category(payload.get("category"))
+        product_role = self._safe_product_role(payload.get("product_role"))
 
         await self.repo.connect()
         start = time.monotonic()
@@ -102,7 +103,7 @@ class ProductConsumer(BaseConsumer):
             site_config = await self.repo.get_site_config(site_config_id)
             selectors = self._selector_config(site_config) if site_type != "shopify" else None
             crawl_task = asyncio.create_task(
-                self._run_platform(domain, category, site_type, selectors, task_id)
+                self._run_platform(domain, category, site_type, product_role, selectors, task_id)
             )
             progress = 25
             deadline = time.monotonic() + PRODUCT_CRAWL_TIMEOUT_SECONDS
@@ -147,7 +148,7 @@ class ProductConsumer(BaseConsumer):
         finally:
             await self.repo.close()
 
-    async def _run_shopify(self, domain: str, category: str,
+    async def _run_shopify(self, domain: str, category: str, product_role: str,
                            task_id: str | None = None) -> int:
         """启动 Shopify 爬虫子进程。
 
@@ -165,22 +166,25 @@ class ProductConsumer(BaseConsumer):
             "scrapy", "crawl", "shopify_crawl_fast",
             "-a", f"domain={domain}",
             "-a", f"category={category}",
+            "-a", f"product_role={product_role}",
             "-a", "mode=prod",
         ]
         return await self._exec_scrapy(cmd, task_id)
 
     async def _run_platform(self, domain: str, category: str, site_type: str,
+                            product_role: str = "main",
                             selectors: dict | None = None,
                             task_id: str | None = None) -> int:
         """Dispatch a crawl to its platform-specific spider."""
         if site_type == "shopify":
-            return await self._run_shopify(domain, category, task_id)
+            return await self._run_shopify(domain, category, product_role, task_id)
         if site_type == "bigcommerce":
-            return await self._run_bigcommerce(domain, category, selectors, task_id)
+            return await self._run_bigcommerce(domain, category, product_role, selectors, task_id)
         cmd = [
             "scrapy", "crawl", "platform_crawl",
             "-a", f"domain={domain}",
             "-a", f"category={category}",
+            "-a", f"product_role={product_role}",
             "-a", f"platform={site_type}",
             "-a", "selector_profile=woocommerce",
             "-a", "mode=prod",
@@ -189,7 +193,7 @@ class ProductConsumer(BaseConsumer):
             cmd.extend(["-a", f"config_json={json.dumps(selectors, ensure_ascii=False)}"])
         return await self._exec_scrapy(cmd, task_id)
 
-    async def _run_bigcommerce(self, domain: str, category: str,
+    async def _run_bigcommerce(self, domain: str, category: str, product_role: str,
                                selectors: dict | None = None,
                                task_id: str | None = None) -> int:
         """Run the dedicated BigCommerce sitemap and JSON-LD spider."""
@@ -197,6 +201,7 @@ class ProductConsumer(BaseConsumer):
             "scrapy", "crawl", "bigcommerce_crawl",
             "-a", f"domain={domain}",
             "-a", f"category={category}",
+            "-a", f"product_role={product_role}",
             "-a", "mode=prod",
         ]
         if selectors:
@@ -267,6 +272,11 @@ class ProductConsumer(BaseConsumer):
         if not category or PROHIBITED_CATEGORY_RE.search(category):
             return "未分类"
         return category
+
+    @staticmethod
+    def _safe_product_role(value: object) -> str:
+        """Normalize the two supported product labels before invoking Scrapy."""
+        return "supplement" if str(value or "").strip().lower() == "supplement" else "main"
 
     async def _exec_scrapy(self, cmd: list[str], task_id: str | None = None) -> int:
         """执行 Scrapy，并将合并后的 stdout/stderr 完整流式写入任务日志。

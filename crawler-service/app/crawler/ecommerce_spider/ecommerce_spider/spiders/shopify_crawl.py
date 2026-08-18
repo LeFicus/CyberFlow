@@ -76,7 +76,7 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         "饮食/烟酒": "FOOD",
     }
 
-    def __init__(self, domain=None, category="未知分类", export_file=None, *args, **kwargs):
+    def __init__(self, domain=None, category="未知分类", product_role="main", export_file=None, *args, **kwargs):
         """
         初始化 Shopify Spider
 
@@ -99,6 +99,7 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         self.domain = domain.rstrip("/")
         self.export_file = export_file or f"{urlparse(self.domain).netloc}_products.xlsx"
         self.custom_category = category.strip() or "未知分类"
+        self.product_role = "supplement" if str(product_role or "").strip().lower() == "supplement" else "main"
         self.page = 1
         self.limit = 250
         self.shop_currency = "USD"
@@ -532,6 +533,7 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
             "Images": image,
             "cf_opingts": attr_str,
             "自定义分类": self.custom_category,
+            "产品标签": self.product_role,
             "原站域名": urlparse(self.domain).netloc,  # 使用urlparse更安全
             "分布网站识别": 0,
             "语言": "en",

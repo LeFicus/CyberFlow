@@ -32,6 +32,9 @@ public class CrawlSiteConfig {
     /** 商品分类，如 "电子产品"、"服装" 等 */
     private String category;
 
+    /** 商品标签：main-主产品、supplement-补充产品。 */
+    private String productRole;
+
     /** 站点状态，active-激活、inactive-停用 */
     private String status;
 

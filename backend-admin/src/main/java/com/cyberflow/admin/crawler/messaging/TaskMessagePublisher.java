@@ -141,16 +141,17 @@ public class TaskMessagePublisher {
      * @param domain       目标站点域名
      * @param type         站点类型
      * @param category     商品分类
+     * @param productRole  商品标签：main-主产品，supplement-补充产品
      * @param triggeredBy  触发者用户 ID
      * @return 生成的任务唯一标识（UUID）
      */
     public String publishProductCrawl(Long siteConfigId, String domain, String type,
-                                      String category, Long triggeredBy) {
-        return publishProductCrawl(createTaskId(), siteConfigId, domain, type, category, triggeredBy);
+                                      String category, String productRole, Long triggeredBy) {
+        return publishProductCrawl(createTaskId(), siteConfigId, domain, type, category, productRole, triggeredBy);
     }
 
     public String publishProductCrawl(String taskId, Long siteConfigId, String domain, String type,
-                                      String category, Long triggeredBy) {
+                                      String category, String productRole, Long triggeredBy) {
         Map<String, Object> message = Map.of(
             "task_id", taskId,
             "type", "product_crawl",
@@ -161,7 +162,8 @@ public class TaskMessagePublisher {
                 "site_config_id", siteConfigId,
                 "domain", domain,
                 "type", type,
-                "category", category
+                "category", category,
+                "product_role", productRole == null || productRole.isBlank() ? "main" : productRole
             )
         );
         rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_TASKS, RabbitMQConfig.RK_PRODUCT, message);

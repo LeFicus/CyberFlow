@@ -91,7 +91,7 @@ class PlatformCrawlSpider(scrapy.Spider):
         "currency": "USD",
     }
 
-    def __init__(self, domain=None, category="未知分类", platform=None,
+    def __init__(self, domain=None, category="未知分类", product_role="main", platform=None,
                  selector_profile="woocommerce", config_json=None,
                  mode="prod", *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -108,6 +108,7 @@ class PlatformCrawlSpider(scrapy.Spider):
         self.platform = platform
         self.selector_profile = "woocommerce"
         self.custom_category = str(category or "未知分类").strip() or "未知分类"
+        self.product_role = "supplement" if str(product_role or "").strip().lower() == "supplement" else "main"
         self.mode = mode
         self.max_items = 10 if mode == "dev" else 20000
         self.seen_sitemap_urls = set()
@@ -277,6 +278,7 @@ class PlatformCrawlSpider(scrapy.Spider):
             "Images": response.urljoin(image),
             "cf_opingts": "",
             "自定义分类": self.custom_category,
+            "产品标签": self.product_role,
             "原站域名": urlparse(response.url).netloc,
             "分布网站识别": 0,
             "语言": "en",

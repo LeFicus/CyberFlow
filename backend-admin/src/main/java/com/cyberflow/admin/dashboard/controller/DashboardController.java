@@ -128,8 +128,10 @@ public class DashboardController {
                                                 @RequestParam(defaultValue = "10") int size,
                                                 @RequestParam(required = false) List<String> domain,
                                                 @RequestParam(required = false) List<String> category,
+                                                @RequestParam(required = false) List<String> productCategory,
+                                                @RequestParam(required = false) List<String> productRole,
                                                 @RequestParam(required = false) String name) {
-        return Result.ok(dashboardService.getProducts(page, size, domain, category, name));
+        return Result.ok(dashboardService.getProducts(page, size, domain, category, productCategory, productRole, name));
     }
 
     /** Delete only the products explicitly selected in the product table. */
@@ -144,8 +146,10 @@ public class DashboardController {
     @PreAuthorize("hasAuthority('dashboard:product:delete')")
     public Result<Map<String, Object>> clearProducts(@RequestParam(required = false) List<String> domain,
                                                       @RequestParam(required = false) List<String> category,
+                                                      @RequestParam(required = false) List<String> productCategory,
+                                                      @RequestParam(required = false) List<String> productRole,
                                                       @RequestParam(required = false) String name) {
-        return Result.ok(dashboardService.clearProducts(domain, category, name));
+        return Result.ok(dashboardService.clearProducts(domain, category, productCategory, productRole, name));
     }
 
     /** Export normalized products to the CSV layout required by the selected engine. */
@@ -154,6 +158,8 @@ public class DashboardController {
     public void exportProducts(@RequestParam String engine,
                                @RequestParam(required = false) List<String> domain,
                                @RequestParam(required = false) List<String> category,
+                               @RequestParam(required = false) List<String> productCategory,
+                               @RequestParam(required = false) List<String> productRole,
                                @RequestParam(required = false) String name,
                                HttpServletResponse response) throws IOException {
         String normalizedEngine = engine.toLowerCase();
@@ -162,7 +168,7 @@ public class DashboardController {
         response.setHeader("Content-Disposition", "attachment; filename=products-" + normalizedEngine + ".csv");
         var writer = response.getWriter();
         writer.write("\uFEFF"); // Excel UTF-8 BOM
-        productExportService.writeCsv(normalizedEngine, domain, category, name, writer);
+        productExportService.writeCsv(normalizedEngine, domain, category, productCategory, productRole, name, writer);
     }
 
     /** Export the normalized crawler fields as XLSX, filtered by domain/custom category. */
@@ -171,6 +177,8 @@ public class DashboardController {
     @PreAuthorize("hasAuthority('dashboard:product:view')")
     public void exportProductsExcel(@RequestParam(required = false) List<String> domain,
                                     @RequestParam(required = false) List<String> category,
+                                    @RequestParam(required = false) List<String> productCategory,
+                                    @RequestParam(required = false) List<String> productRole,
                                     @RequestParam(required = false) String name,
                                     @RequestParam(required = false) String customCategory,
                                     HttpServletResponse response) throws IOException {
@@ -183,7 +191,7 @@ public class DashboardController {
         List<String> effectiveCategories = category == null || category.isEmpty()
                 ? (customCategory == null || customCategory.isBlank() ? List.of() : List.of(customCategory))
                 : category;
-        productExportService.writeExcel(domain, effectiveCategories, name, response.getOutputStream());
+        productExportService.writeExcel(domain, effectiveCategories, productCategory, productRole, name, response.getOutputStream());
     }
 
     private void writeCsv(java.io.Writer writer, java.util.List<String> row) throws IOException {

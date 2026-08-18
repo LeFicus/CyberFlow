@@ -41,6 +41,13 @@
           </el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="产品标签" width="110">
+        <template #default="{ row }">
+          <el-tag :type="row.productRole === 'supplement' ? 'warning' : 'success'" size="small">
+            {{ row.productRole === 'supplement' ? '补充产品' : '主产品' }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="category" label="分类" width="120" />
       <el-table-column prop="status" label="状态" width="90">
         <template #default="{ row }">
@@ -90,10 +97,16 @@
           <div v-if="batchMode" class="selector-hint">将按当前商城引擎和类目批量创建数据源站点</div>
         </el-form-item>
         <el-form-item label="商城引擎" required>
-          <el-select v-model="form.type" style="width:240px;" filterable>
+          <el-select v-model="form.type" style="width:240px;" filterable @change="handleEngineChange">
             <el-option v-for="engine in ENGINES" :key="engine.value" :label="engine.label" :value="engine.value" />
           </el-select>
           <span class="selector-hint">{{ form.type === 'shopify' ? '使用 Shopify 专用采集器' : '复用 WooCommerce 选择器' }}</span>
+        </el-form-item>
+        <el-form-item label="产品标签" required>
+          <el-radio-group v-model="form.productRole">
+            <el-radio-button label="main">主产品</el-radio-button>
+            <el-radio-button label="supplement">补充产品</el-radio-button>
+          </el-radio-group>
         </el-form-item>
         <el-form-item label="分类" required>
           <el-tree-select
@@ -107,6 +120,26 @@
             style="width:360px;"
             placeholder="选择商品类目"
           />
+        </el-form-item>
+        <el-form-item label="爬取模板" required>
+          <el-select
+            v-model="form.templateId"
+            filterable
+            clearable
+            :loading="templateLoading"
+            style="width:360px;"
+            placeholder="选择商品解析模板"
+          >
+            <el-option
+              v-for="template in templates"
+              :key="template.id"
+              :label="`${template.name}${template.isSystem === 1 ? '（系统）' : ''}`"
+              :value="template.id"
+            />
+          </el-select>
+          <span class="selector-hint">
+            {{ form.type === 'shopify' ? 'Shopify 使用商品接口，模板仅作配置记录' : '该模板会用于本次商品页面解析' }}
+          </span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -133,6 +166,7 @@ import {
   updateSiteConfig,
   triggerSiteCrawl,
   deleteSiteConfig,
+  listTemplates,
 } from '@/api/selector'
 import TaskProgress from '@/components/TaskProgress.vue'
 import { useTaskProgress } from '@/composables/useTaskProgress'
@@ -179,6 +213,9 @@ const batchMode = ref(false)
 const editingId = ref(null)
 /** 编辑时保留站点当前绑定的选择器模板。 */
 const editingMappings = ref([])
+/** 当前商城引擎可用的选择器模板。 */
+const templates = ref([])
+const templateLoading = ref(false)
 /** 商品分类树，值为完整的 `一级|||二级` 路径。 */
 const categoryTree = PRODUCT_CATEGORY_TREE
 const categoryTreeProps = { value: 'value', label: 'label', children: 'children' }
@@ -189,7 +226,9 @@ const { task, track } = useTaskProgress()
 const form = reactive({
   domain: '',
   type: 'shopify',
+  productRole: 'main',
   category: PRODUCT_CATEGORIES[0],
+  templateId: null,
 })
 
 /**
@@ -198,9 +237,33 @@ const form = reactive({
 function resetForm() {
   form.domain = ''
   form.type = 'shopify'
+  form.productRole = 'main'
   form.category = PRODUCT_CATEGORIES[0]
+  form.templateId = null
   editingId.value = null
   editingMappings.value = []
+}
+
+/**
+ * 加载当前商城引擎可用的模板。
+ * 非 Shopify 引擎统一使用 WooCommerce 选择器模板；Shopify 模板仅作配置记录。
+ */
+async function fetchTemplates() {
+  templateLoading.value = true
+  try {
+    const platform = form.type === 'shopify' ? 'shopify' : 'woocommerce'
+    const res = await listTemplates({ platform, page: 1, size: 100 })
+    templates.value = res.data?.records || []
+    if (!templates.value.some(template => Number(template.id) === Number(form.templateId))) {
+      form.templateId = templates.value[0]?.id || null
+    }
+  } catch {
+    templates.value = []
+    form.templateId = null
+    ElMessage.error('加载爬取模板失败')
+  } finally {
+    templateLoading.value = false
+  }
 }
 
 /**
@@ -228,6 +291,7 @@ function handleCreate() {
   isEditing.value = false
   batchMode.value = false
   resetForm()
+  fetchTemplates()
   dialogVisible.value = true
 }
 
@@ -235,7 +299,14 @@ function handleBatchCreate() {
   isEditing.value = false
   batchMode.value = true
   resetForm()
+  fetchTemplates()
   dialogVisible.value = true
+}
+
+/** 切换商城引擎时刷新可选模板，避免把其他平台模板提交给爬虫。 */
+async function handleEngineChange() {
+  form.templateId = null
+  await fetchTemplates()
 }
 
 /**
@@ -253,12 +324,15 @@ async function handleEdit(row) {
     Object.assign(form, {
       domain: data.config?.domain || row.domain,
       type: data.config?.type || row.type,
+      productRole: data.config?.productRole || row.productRole || 'main',
       category: resolveProductCategoryPath(data.config?.category || row.category),
     })
     editingMappings.value = (data.mappings || []).map(mapping => ({
       template_id: mapping.templateId,
       extra_selectors: mapping.extraSelectors,
     }))
+    await fetchTemplates()
+    form.templateId = editingMappings.value[0]?.template_id || templates.value[0]?.id || null
     dialogVisible.value = true
   } catch {
     ElMessage.error('获取站点详情失败')
@@ -284,9 +358,19 @@ async function handleSave() {
   saving.value = true
   try {
     const category = productCategoryLabel(normalizeCategoryValue(form.category))
+    if (!form.templateId && form.type !== 'shopify') {
+      ElMessage.warning('请选择商品爬取模板')
+      return
+    }
+    const selectedMapping = editingMappings.value.find(
+      mapping => Number(mapping.template_id) === Number(form.templateId),
+    )
     const buildPayload = domain => ({
-      config: { domain, type: form.type, category },
-      mappings: isEditing.value ? editingMappings.value : [],
+      config: { domain, type: form.type, productRole: form.productRole, category },
+      mappings: form.templateId ? [{
+        template_id: Number(form.templateId),
+        extra_selectors: selectedMapping?.extra_selectors || null,
+      }] : [],
     })
     if (isEditing.value) {
       await updateSiteConfig(editingId.value, buildPayload(domains[0]))

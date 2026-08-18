@@ -52,14 +52,18 @@ public class ProductExportService {
     public void writeExcel(String domain, String customCategory, OutputStream outputStream) throws IOException {
         writeExcel(domain == null || domain.isBlank() ? List.of() : List.of(domain),
                 customCategory == null || customCategory.isBlank() ? List.of() : List.of(customCategory),
-                null, outputStream);
+                List.of(), List.of(), null, outputStream);
     }
 
     /** Write a filtered XLSX export without loading the matching rows into memory. */
     @Transactional(readOnly = true)
-    public void writeExcel(List<String> domains, List<String> categories, String name, OutputStream outputStream) throws IOException {
+    public void writeExcel(List<String> domains, List<String> customCategories,
+                           List<String> productCategories, List<String> productRoles, String name,
+                           OutputStream outputStream) throws IOException {
         List<String> domainFilter = normalizeDomains(domains);
-        List<String> categoryFilter = normalizeCategories(categories);
+        List<String> customCategoryFilter = normalizeCategories(customCategories);
+        List<String> productCategoryFilter = normalizeCategories(productCategories);
+        List<String> productRoleFilter = normalizeProductRoles(productRoles);
         try (SXSSFWorkbook workbook = new SXSSFWorkbook(100)) {
             workbook.setCompressTempFiles(true);
 
@@ -73,7 +77,8 @@ public class ProductExportService {
             List<Sheet> sheets = new ArrayList<>();
             Sheet sheet = createSheet(workbook, sheets, 1, headerStyle);
             int rowIndex = 1;
-            try (Cursor<Map<String, Object>> products = productMapper.streamProductsForExport(domainFilter, categoryFilter, name, ownerName())) {
+            try (Cursor<Map<String, Object>> products = productMapper.streamProductsForExport(
+                    domainFilter, customCategoryFilter, productCategoryFilter, productRoleFilter, name, ownerName())) {
                 for (Map<String, Object> product : products) {
                     // Excel has a hard limit of 1,048,576 rows per sheet. Split
                     // large exports instead of failing after the first million rows.
@@ -94,10 +99,13 @@ public class ProductExportService {
 
     /** Stream a CSV export directly to the HTTP response writer. */
     @Transactional(readOnly = true)
-    public void writeCsv(String engine, List<String> domains, List<String> categories, String name, Writer writer) throws IOException {
+    public void writeCsv(String engine, List<String> domains, List<String> customCategories,
+                         List<String> productCategories, List<String> productRoles,
+                         String name, Writer writer) throws IOException {
         writeCsvRow(writer, headers(engine));
         try (Cursor<Map<String, Object>> products = productMapper.streamProductsForExport(
-                normalizeDomains(domains), normalizeCategories(categories), name, ownerName())) {
+                normalizeDomains(domains), normalizeCategories(customCategories),
+                normalizeCategories(productCategories), normalizeProductRoles(productRoles), name, ownerName())) {
             for (Map<String, Object> product : products) writeCsvRow(writer, csvValues(engine, product));
         }
     }
@@ -106,6 +114,14 @@ public class ProductExportService {
         if (categories == null) return List.of();
         return categories.stream().filter(value -> value != null && !value.isBlank())
                 .map(String::trim).distinct().toList();
+    }
+
+    private static List<String> normalizeProductRoles(List<String> roles) {
+        if (roles == null) return List.of();
+        return roles.stream().filter(value -> value != null && !value.isBlank())
+                .map(value -> value.trim().toLowerCase())
+                .filter(value -> value.equals("main") || value.equals("supplement"))
+                .distinct().toList();
     }
 
     private String ownerName() {

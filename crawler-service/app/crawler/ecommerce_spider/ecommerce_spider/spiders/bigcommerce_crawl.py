@@ -26,11 +26,12 @@ class BigCommerceCrawlSpider(PlatformCrawlSpider):
         re.IGNORECASE | re.DOTALL,
     )
 
-    def __init__(self, domain=None, category="未知分类", config_json=None,
+    def __init__(self, domain=None, category="未知分类", product_role="main", config_json=None,
                  mode="prod", *args, **kwargs):
         super().__init__(
             domain=domain,
             category=category,
+            product_role=product_role,
             platform="bigcommerce",
             selector_profile="woocommerce",
             config_json=config_json,
@@ -77,6 +78,7 @@ class BigCommerceCrawlSpider(PlatformCrawlSpider):
             "Images": response.urljoin(image),
             "cf_opingts": "",
             "自定义分类": self.custom_category,
+            "产品标签": self.product_role,
             "原站域名": urlparse(response.url).netloc,
             "分布网站识别": 0,
             "语言": "en",

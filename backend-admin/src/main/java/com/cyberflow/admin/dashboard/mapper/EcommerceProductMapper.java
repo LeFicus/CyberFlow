@@ -82,7 +82,7 @@ public interface EcommerceProductMapper {
      * @param size   每页条数
      * @return 商品信息列表
      */
-    @Select("SELECT id, sku, name, regular_price, categories, custom_category, source_domain, language, images " +
+    @Select("SELECT id, sku, name, regular_price, categories, custom_category, product_role, source_domain, language, images " +
             "FROM scraped_data.ecommerce_products ORDER BY created_at DESC, id DESC LIMIT #{offset}, #{size}")
     List<Map<String, Object>> listProducts(int offset, int size);
 
@@ -94,20 +94,29 @@ public interface EcommerceProductMapper {
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
             "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
             "</foreach></if>" +
-            "<if test='categoriesFilter != null and categoriesFilter.size() > 0'>" +
-            "AND <foreach collection='categoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
-            "(categories LIKE CONCAT('%', TRIM(#{category}), '%') OR custom_category LIKE CONCAT('%', TRIM(#{category}), '%'))" +
+            "<if test='customCategoriesFilter != null and customCategoriesFilter.size() > 0'>" +
+            "AND <foreach collection='customCategoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "custom_category LIKE CONCAT('%', TRIM(#{category}), '%')" +
             "</foreach></if>" +
+            "<if test='productCategoriesFilter != null and productCategoriesFilter.size() > 0'>" +
+            "AND <foreach collection='productCategoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "categories LIKE CONCAT('%', TRIM(#{category}), '%')" +
+            "</foreach></if>" +
+            "<if test='productRolesFilter != null and productRolesFilter.size() > 0'>" +
+            "AND product_role IN <foreach collection='productRolesFilter' item='productRole' separator=',' open='(' close=')'>#{productRole}</foreach>" +
+            "</if>" +
             "<if test='name != null and name.trim() != \"\"'>" +
             "AND name LIKE CONCAT('%', TRIM(#{name}), '%') </if>" +
             "</where></script>")
     long countProductsFiltered(@Param("domainsFilter") List<String> domainsFilter,
-                               @Param("categoriesFilter") List<String> categoriesFilter,
+                               @Param("customCategoriesFilter") List<String> customCategoriesFilter,
+                               @Param("productCategoriesFilter") List<String> productCategoriesFilter,
+                               @Param("productRolesFilter") List<String> productRolesFilter,
                                @Param("name") String name,
                                @Param("ownerName") String ownerName);
 
     /** List products matching the optional filters. */
-    @Select("<script>SELECT id, sku, name, regular_price, categories, custom_category, source_domain, language, images " +
+    @Select("<script>SELECT id, sku, name, regular_price, categories, custom_category, product_role, source_domain, language, images " +
             "FROM scraped_data.ecommerce_products " +
             "<where>" +
             "<if test='ownerName != null'> AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND FIND_IN_SET(s.admin_name, #{ownerName}) &gt; 0)</if>" +
@@ -115,15 +124,24 @@ public interface EcommerceProductMapper {
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
             "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
             "</foreach></if>" +
-            "<if test='categoriesFilter != null and categoriesFilter.size() > 0'>" +
-            "AND <foreach collection='categoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
-            "(categories LIKE CONCAT('%', TRIM(#{category}), '%') OR custom_category LIKE CONCAT('%', TRIM(#{category}), '%'))" +
+            "<if test='customCategoriesFilter != null and customCategoriesFilter.size() > 0'>" +
+            "AND <foreach collection='customCategoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "custom_category LIKE CONCAT('%', TRIM(#{category}), '%')" +
             "</foreach></if>" +
+            "<if test='productCategoriesFilter != null and productCategoriesFilter.size() > 0'>" +
+            "AND <foreach collection='productCategoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "categories LIKE CONCAT('%', TRIM(#{category}), '%')" +
+            "</foreach></if>" +
+            "<if test='productRolesFilter != null and productRolesFilter.size() > 0'>" +
+            "AND product_role IN <foreach collection='productRolesFilter' item='productRole' separator=',' open='(' close=')'>#{productRole}</foreach>" +
+            "</if>" +
             "<if test='name != null and name.trim() != \"\"'>" +
             "AND name LIKE CONCAT('%', TRIM(#{name}), '%') </if>" +
             "</where>ORDER BY created_at DESC, id DESC LIMIT #{offset}, #{size}</script>")
     List<Map<String, Object>> listProductsFiltered(@Param("domainsFilter") List<String> domainsFilter,
-                                                   @Param("categoriesFilter") List<String> categoriesFilter,
+                                                   @Param("customCategoriesFilter") List<String> customCategoriesFilter,
+                                                   @Param("productCategoriesFilter") List<String> productCategoriesFilter,
+                                                   @Param("productRolesFilter") List<String> productRolesFilter,
                                                    @Param("name") String name,
                                                    @Param("ownerName") String ownerName,
                                                    @Param("offset") int offset,
@@ -153,16 +171,25 @@ public interface EcommerceProductMapper {
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
             "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
             "</foreach></if>" +
-            "<if test='categoriesFilter != null and categoriesFilter.size() > 0'>" +
-            "AND <foreach collection='categoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
-            "(categories LIKE CONCAT('%', TRIM(#{category}), '%') OR custom_category LIKE CONCAT('%', TRIM(#{category}), '%'))" +
+            "<if test='customCategoriesFilter != null and customCategoriesFilter.size() > 0'>" +
+            "AND <foreach collection='customCategoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "custom_category LIKE CONCAT('%', TRIM(#{category}), '%')" +
             "</foreach></if>" +
+            "<if test='productCategoriesFilter != null and productCategoriesFilter.size() > 0'>" +
+            "AND <foreach collection='productCategoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "categories LIKE CONCAT('%', TRIM(#{category}), '%')" +
+            "</foreach></if>" +
+            "<if test='productRolesFilter != null and productRolesFilter.size() > 0'>" +
+            "AND product_role IN <foreach collection='productRolesFilter' item='productRole' separator=',' open='(' close=')'>#{productRole}</foreach>" +
+            "</if>" +
             "<if test='name != null and name.trim() != \"\"'>" +
             "AND name LIKE CONCAT('%', TRIM(#{name}), '%') </if>" +
             "</where>ORDER BY id</script>")
     @Options(fetchSize = 500, resultSetType = ResultSetType.FORWARD_ONLY)
     Cursor<Map<String, Object>> streamProductFingerprintsFiltered(@Param("domainsFilter") List<String> domainsFilter,
-                                                                    @Param("categoriesFilter") List<String> categoriesFilter,
+                                                                    @Param("customCategoriesFilter") List<String> customCategoriesFilter,
+                                                                    @Param("productCategoriesFilter") List<String> productCategoriesFilter,
+                                                                    @Param("productRolesFilter") List<String> productRolesFilter,
                                                                     @Param("name") String name,
                                                                     @Param("ownerName") String ownerName);
 
@@ -174,15 +201,24 @@ public interface EcommerceProductMapper {
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
             "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
             "</foreach></if>" +
-            "<if test='categoriesFilter != null and categoriesFilter.size() > 0'>" +
-            "AND <foreach collection='categoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
-            "(categories LIKE CONCAT('%', TRIM(#{category}), '%') OR custom_category LIKE CONCAT('%', TRIM(#{category}), '%'))" +
+            "<if test='customCategoriesFilter != null and customCategoriesFilter.size() > 0'>" +
+            "AND <foreach collection='customCategoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "custom_category LIKE CONCAT('%', TRIM(#{category}), '%')" +
             "</foreach></if>" +
+            "<if test='productCategoriesFilter != null and productCategoriesFilter.size() > 0'>" +
+            "AND <foreach collection='productCategoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "categories LIKE CONCAT('%', TRIM(#{category}), '%')" +
+            "</foreach></if>" +
+            "<if test='productRolesFilter != null and productRolesFilter.size() > 0'>" +
+            "AND product_role IN <foreach collection='productRolesFilter' item='productRole' separator=',' open='(' close=')'>#{productRole}</foreach>" +
+            "</if>" +
             "<if test='name != null and name.trim() != \"\"'>" +
             "AND name LIKE CONCAT('%', TRIM(#{name}), '%') </if>" +
             "</where></script>")
     int deleteProductsFiltered(@Param("domainsFilter") List<String> domainsFilter,
-                                @Param("categoriesFilter") List<String> categoriesFilter,
+                                @Param("customCategoriesFilter") List<String> customCategoriesFilter,
+                                @Param("productCategoriesFilter") List<String> productCategoriesFilter,
+                                @Param("productRolesFilter") List<String> productRolesFilter,
                                 @Param("name") String name,
                                 @Param("ownerName") String ownerName);
 
@@ -196,22 +232,31 @@ public interface EcommerceProductMapper {
 
     /** Stream normalized products so large exports never materialize the full table. */
     @Select("<script>SELECT sku, name, description, regular_price, categories, images, cf_opingts, " +
-            "custom_category, source_domain, language FROM scraped_data.ecommerce_products " +
+            "custom_category, product_role, source_domain, language FROM scraped_data.ecommerce_products " +
             "<where>" +
             "<if test='ownerName != null'> AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND FIND_IN_SET(s.admin_name, #{ownerName}) &gt; 0)</if>" +
             "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
             "source_domain LIKE CONCAT(TRIM(#{domain}), '%')" +
             "</foreach></if>" +
-            "<if test='categoriesFilter != null and categoriesFilter.size() > 0'>" +
-            "AND <foreach collection='categoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
-            "(categories LIKE CONCAT('%', TRIM(#{category}), '%') OR custom_category LIKE CONCAT('%', TRIM(#{category}), '%'))" +
+            "<if test='customCategoriesFilter != null and customCategoriesFilter.size() > 0'>" +
+            "AND <foreach collection='customCategoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "custom_category LIKE CONCAT('%', TRIM(#{category}), '%')" +
             "</foreach></if>" +
+            "<if test='productCategoriesFilter != null and productCategoriesFilter.size() > 0'>" +
+            "AND <foreach collection='productCategoriesFilter' item='category' separator=' OR ' open='(' close=')'>" +
+            "categories LIKE CONCAT('%', TRIM(#{category}), '%')" +
+            "</foreach></if>" +
+            "<if test='productRolesFilter != null and productRolesFilter.size() > 0'>" +
+            "AND product_role IN <foreach collection='productRolesFilter' item='productRole' separator=',' open='(' close=')'>#{productRole}</foreach>" +
+            "</if>" +
             "<if test='name != null and name.trim() != \"\"'>AND name LIKE CONCAT('%', TRIM(#{name}), '%') </if>" +
             "</where>ORDER BY id</script>")
     @Options(fetchSize = 500, resultSetType = ResultSetType.FORWARD_ONLY)
     Cursor<Map<String, Object>> streamProductsForExport(@Param("domainsFilter") List<String> domainsFilter,
-                                                         @Param("categoriesFilter") List<String> categoriesFilter,
+                                                         @Param("customCategoriesFilter") List<String> customCategoriesFilter,
+                                                         @Param("productCategoriesFilter") List<String> productCategoriesFilter,
+                                                         @Param("productRolesFilter") List<String> productRolesFilter,
                                                          @Param("name") String name,
                                                          @Param("ownerName") String ownerName);
 

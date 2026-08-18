@@ -52,7 +52,7 @@ export function clearAllOrders() {
 
 /**
  * 获取商品列表（分页）
- * @param {Object} params - 查询参数 { page, size, domain, category, name }
+ * @param {Object} params - 查询参数 { page, size, domain[], category[], productCategory[], name }
  * @returns {Promise<Object>} 返回 { total, list } 分页结果
  */
 export function getProducts(params) {

@@ -58,7 +58,7 @@
             <el-table-column label="原成交金额" min-width="120" align="right"><template #default="{ row }">{{ formatMoney(row.original_amount) }}</template></el-table-column>
             <el-table-column label="实习生同步" min-width="115" align="right"><template #default="{ row }">{{ formatMoney(row.synced_amount) }}</template></el-table-column>
             <el-table-column label="成功金额" min-width="115" align="right"><template #default="{ row }">{{ formatMoney(row.successful_amount) }}</template></el-table-column>
-            <el-table-column label="个人提成(RMB)" min-width="135" align="right"><template #default="{ row }"><strong class="commission-value">¥{{ formatPlainMoney(row.commission_rmb) }}</strong></template></el-table-column>
+            <el-table-column label="个人提成(RMB)" min-width="135" align="right"><template #default="{ row }"><strong class="commission-value">{{ formatCommission(row.commission_rmb) }}</strong></template></el-table-column>
           </el-table>
         </el-tab-pane>
         <el-tab-pane v-if="canViewLeaderSummary" label="组长汇总" name="leaders">
@@ -183,7 +183,8 @@ const todayLabel = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'l
 const toNumber = value => Number(value || 0)
 const formatNumber = value => value === undefined || value === null ? '—' : toNumber(value).toLocaleString('en-US')
 const formatMoney = value => value === undefined || value === null ? '—' : `$${toNumber(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-const formatPlainMoney = value => toNumber(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const formatPlainMoney = value => value === undefined || value === null ? '—' : toNumber(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const formatCommission = value => value === undefined || value === null ? '—' : `¥${formatPlainMoney(value)}`
 const formatPercent = value => `${toNumber(value).toFixed(2)}%`
 const formatRate = value => value === undefined || value === null ? '—' : `${(toNumber(value) * 100).toFixed(2)}%`
 const revenueParameters = computed(() => revenue.value.parameters || {})

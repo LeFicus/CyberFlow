@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS crawl_site_config (
     id         BIGINT AUTO_INCREMENT PRIMARY KEY,
     domain     VARCHAR(255) NOT NULL,
     type       VARCHAR(32) NOT NULL DEFAULT 'shopify',
+    product_role VARCHAR(20) NOT NULL DEFAULT 'main' COMMENT 'main-主产品 supplement-补充产品',
     category   VARCHAR(100),
     status     VARCHAR(20) NOT NULL DEFAULT 'active',
     created_by BIGINT,
@@ -133,6 +134,7 @@ CREATE TABLE IF NOT EXISTS scraped_data.ecommerce_products (
     images          TEXT,
     cf_opingts      TEXT,
     custom_category VARCHAR(100),
+    product_role    VARCHAR(20) NOT NULL DEFAULT 'main' COMMENT 'main-主产品 supplement-补充产品',
     source_domain   VARCHAR(255),
     language        VARCHAR(10) DEFAULT 'en',
     dedupe_key      VARCHAR(768),
@@ -141,6 +143,7 @@ CREATE TABLE IF NOT EXISTS scraped_data.ecommerce_products (
     INDEX idx_product_created_id (created_at, id),
     INDEX idx_product_domain_created (source_domain, created_at, id),
     INDEX idx_product_category_created (custom_category, created_at, id),
+    INDEX idx_product_role_created (product_role, created_at, id),
     INDEX idx_product_name_prefix (name(100)),
     UNIQUE KEY uk_sku (sku),
     UNIQUE KEY uk_product_dedupe (dedupe_key)

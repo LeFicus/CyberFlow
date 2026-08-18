@@ -57,6 +57,9 @@ public class RevenueSummaryService {
             person.successfulOrders += account.successfulOrders;
             person.siteCount += account.siteCount;
             person.originalAmount = person.originalAmount.add(account.originalAmount);
+            if (!isTeacherSuffixAccount(account.adminName, teacherMap)) {
+                person.commissionEligible = true;
+            }
         }
 
         // A mentor may have no direct order/site row while the mapped intern
@@ -64,16 +67,21 @@ public class RevenueSummaryService {
         // can still be synchronized into the mentor's commission.
         if (!scope.administrator()) {
             for (String owner : scope.ownerNames()) {
-                people.computeIfAbsent(realName(owner, mergeMap), PersonStats::new);
+                PersonStats mentor = people.computeIfAbsent(realName(owner, mergeMap), PersonStats::new);
+                mentor.commissionEligible = true;
             }
         }
 
         // Reference behavior: intern orders stay with the intern; only paid amount is synchronized to mentor.
         for (AccountStats account : accounts.values()) {
             for (Map.Entry<String, String> rule : teacherMap.entrySet()) {
-                if (account.adminName.endsWith(rule.getValue())) {
+                if (hasSuffix(account.adminName, rule.getValue())) {
                     PersonStats mentor = people.get(rule.getKey());
-                    if (mentor != null) mentor.syncedAmount = mentor.syncedAmount.add(account.originalAmount);
+                    if (mentor == null) mentor = people.get(realName(rule.getKey(), mergeMap));
+                    if (mentor != null) {
+                        mentor.syncedAmount = mentor.syncedAmount.add(account.originalAmount);
+                        mentor.commissionEligible = true;
+                    }
                     break;
                 }
             }
@@ -94,7 +102,7 @@ public class RevenueSummaryService {
             item.put("successful_amount", money(successAmount));
             item.put("site_count", person.siteCount);
             item.put("conversion_rate", percent(person.totalOrders, person.siteCount));
-            item.put("commission_rmb", money(commission(successAmount, config)));
+            item.put("commission_rmb", person.commissionEligible ? money(commission(successAmount, config)) : null);
             personal.add(item);
         }
         personal.sort(Comparator.comparing((Map<String, Object> row) -> text(row, "user_group"))
@@ -225,8 +233,20 @@ public class RevenueSummaryService {
                         || owners.stream().anyMatch(owner -> realName(owner, mergeMap).equals(entry.getKey())))
                 .map(Map.Entry::getValue)
                 .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
                 .distinct()
                 .toList();
+    }
+
+    private static boolean isTeacherSuffixAccount(String adminName, Map<String, String> teacherMap) {
+        return teacherMap.values().stream()
+                .anyMatch(value -> hasSuffix(adminName, value));
+    }
+
+    private static boolean hasSuffix(String accountName, String suffix) {
+        String account = Objects.toString(accountName, "").trim().toLowerCase(Locale.ROOT);
+        String normalizedSuffix = Objects.toString(suffix, "").trim().toLowerCase(Locale.ROOT);
+        return !account.isEmpty() && !normalizedSuffix.isEmpty() && account.endsWith(normalizedSuffix);
     }
 
     private static String resolveGroup(Map<String, AccountStats> accounts) {
@@ -337,6 +357,7 @@ public class RevenueSummaryService {
         long siteCount;
         BigDecimal originalAmount = BigDecimal.ZERO;
         BigDecimal syncedAmount = BigDecimal.ZERO;
+        boolean commissionEligible;
         PersonStats(String realName) { this.realName = realName; }
     }
 
