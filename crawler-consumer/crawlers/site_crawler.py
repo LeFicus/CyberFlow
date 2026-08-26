@@ -13,6 +13,7 @@
 import asyncio
 import aiohttp
 from loguru import logger
+from crawlers.site_index_crawler import normalize_datetime
 
 
 class AsyncSiteCrawler:
@@ -137,10 +138,19 @@ class AsyncSiteCrawler:
                 for item in items:
                     domain = item.get("site_domain", "").strip()
                     if domain:
+                        server_info = item.get("server_info") if isinstance(item.get("server_info"), dict) else {}
+                        admin_info = item.get("admin_info") if isinstance(item.get("admin_info"), dict) else {}
                         site_map[domain] = {
                             "theme_name": item.get("theme_name", ""),
                             "product_category": item.get("product_category", ""),
-                            "admin_name": item.get("admin_name", ""),
+                            "builder_username": admin_info.get("username") or "",
+                            "admin_name": item.get("admin_name") or admin_info.get("realname") or "",
+                            "server_name": server_info.get("server_name") or item.get("site_fwq_name") or item.get("fwq_name") or "",
+                            "server_ip": server_info.get("server_ip") or "",
+                            # site/list.adddate is the actual site build time.
+                            "created_at": normalize_datetime(
+                                item.get("adddate") or item.get("create_data") or item.get("created_at")
+                            ),
                         }
                 # 若当前页记录数少于页大小，说明已到最后一页
                 if not self._has_next_page(data, len(items), page):
@@ -186,22 +196,34 @@ class AsyncSiteCrawler:
                     # 跳过超级管理员；filter_built_only 开启时只保留已建站(status=2)
                     if admin_name == "super":
                         continue
-                    if self.filter_built_only and status != 2:
+                    # The local table is an authoritative mirror of currently
+                    # built sites.  Pending/abandoned domains never enter it.
+                    if str(status).strip() != "2" or not domain:
                         continue
-                    add_date = item.get("add_date") or item.get("add_time") or item.get("created_at")
+                    applied_at = normalize_datetime(
+                        item.get("add_date") or item.get("add_time") or item.get("created_at")
+                    )
                     record = {
                         "site_domain": domain,
                         "admin_name": admin_name,
                         "user_group": self._user_group(admin_name),
                         "username": self.username,
-                        # The remote site's add_date is the business creation date.
-                        "add_date": add_date,
-                        "created_at": add_date,
+                        "server_name": item.get("server_name") or "",
+                        "server_ip": "",
+                        "last_submitted_at": normalize_datetime(item.get("last_submit")),
+                        # domain/list owns month attribution; site/list owns the
+                        # later, actual build timestamp displayed in site lists.
+                        "domain_applied_at": applied_at,
+                        "created_at": applied_at,
                     }
                     # 从站点映射中合并主题和分类信息
                     if domain in site_map:
                         record["theme_name"] = site_map[domain]["theme_name"]
                         record["product_category"] = site_map[domain]["product_category"]
+                        record["builder_username"] = site_map[domain].get("builder_username") or ""
+                        record["server_name"] = record.get("server_name") or site_map[domain].get("server_name")
+                        record["server_ip"] = site_map[domain].get("server_ip") or ""
+                        record["created_at"] = site_map[domain].get("created_at") or applied_at
                     results.append(record)
                 if not self._has_next_page(data, len(items), page):
                     break

@@ -194,11 +194,12 @@ class OrderConsumer(BaseConsumer):
 
                     await cur.execute(
                         """INSERT INTO orders (id, amount, currency, create_time, product_host,
-                           pay_status_text, customer_ip_country, shipping_email,
+                           pay_status_text, card_number, customer_ip_country, shipping_email,
                            admin_name, user_group, theme_name, product_category, product_info)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                            ON DUPLICATE KEY UPDATE
                            amount=VALUES(amount), pay_status_text=VALUES(pay_status_text),
+                           card_number=VALUES(card_number),
                            admin_name=VALUES(admin_name), user_group=VALUES(user_group),
                            theme_name=VALUES(theme_name), product_category=VALUES(product_category),
                            product_info=CASE
@@ -207,7 +208,9 @@ class OrderConsumer(BaseConsumer):
                            END""",
                         (r.get("id"), r.get("amount"), r.get("currency"),
                          r.get("create_time"), product_host,
-                         r.get("pay_status_text"), r.get("timeZone"),
+                         r.get("pay_status_text"),
+                         r.get("cardNumber") or r.get("card_no") or r.get("card_number"),
+                         r.get("timeZone"),
                          r.get("shipping_email"), admin_name, effective_user_group, theme_name,
                          product_category, product_info),
                     )

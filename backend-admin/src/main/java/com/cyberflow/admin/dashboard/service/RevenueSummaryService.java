@@ -36,6 +36,7 @@ public class RevenueSummaryService {
                 ? today.withDayOfMonth(1).toString() : startDate;
         String effectiveEnd = endDate == null || endDate.isBlank()
                 ? today.toString() : endDate;
+        String siteCreatedBefore = today.withDayOfMonth(1).toString();
         String effectiveSiteCreatedMonth = normalizeMonth(siteCreatedMonth, today);
         Map<String, Object> config = configService.getRevenueConfig();
         Map<String, List<String>> mergeMap = stringListMap(config.get("userMergeMap"));
@@ -45,7 +46,8 @@ public class RevenueSummaryService {
                 ? List.of()
                 : teacherSuffixes(scope.ownerNames(), teacherMap, mergeMap);
 
-        Map<String, AccountStats> accounts = loadAccounts(userGroup, ownerName, teacherSuffixes, effectiveStart, effectiveEnd);
+        Map<String, AccountStats> accounts = loadAccounts(
+                userGroup, ownerName, teacherSuffixes, effectiveStart, effectiveEnd, siteCreatedBefore);
 
         Map<String, PersonStats> people = new LinkedHashMap<>();
         for (AccountStats account : accounts.values()) {
@@ -117,26 +119,39 @@ public class RevenueSummaryService {
             String visibleLeaderGroup = scope.administrator() ? null : resolveGroup(accounts);
             Map<String, AccountStats> leaderAccounts = scope.administrator() || visibleLeaderGroup == null
                     ? accounts
-                    : loadAccounts(visibleLeaderGroup, null, List.of(), effectiveStart, effectiveEnd);
+                    : loadAccounts(visibleLeaderGroup, null, List.of(), effectiveStart, effectiveEnd, siteCreatedBefore);
+            String leaderTotalsGroup = scope.administrator() ? userGroup : visibleLeaderGroup;
+            Map<String, Map<String, Object>> groupOrderTotals = new HashMap<>();
+            for (Map<String, Object> row : revenueMapper.groupOrderStats(
+                    leaderTotalsGroup, effectiveStart, effectiveEnd)) {
+                groupOrderTotals.put(text(row, "user_group"), row);
+            }
 
             for (String group : List.of("A", "B")) {
                 if (userGroup != null && !userGroup.equals(group)) continue;
                 if (visibleLeaderGroup != null && !visibleLeaderGroup.equals(group)) continue;
                 List<AccountStats> members = leaderAccounts.values().stream().filter(a -> group.equals(a.group)).toList();
-                BigDecimal originalAmount = members.stream().map(a -> a.originalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+                Map<String, Object> groupTotals = groupOrderTotals.getOrDefault(group, Map.of());
+                BigDecimal originalAmount = number(groupTotals.get("original_amount"));
+                String leaderName = leaderMap.getOrDefault(group, group + "组组长");
+                BigDecimal leaderPersonalAmount = personalSuccessfulAmount(
+                        leaderName, members, mergeMap, teacherMap);
+                BigDecimal commissionBaseAmount = originalAmount.subtract(leaderPersonalAmount).max(BigDecimal.ZERO);
                 long sites = members.stream().mapToLong(a -> a.siteCount).sum();
-                long orders = members.stream().mapToLong(a -> a.totalOrders).sum();
-                BigDecimal leaderCommission = originalAmount
+                long orders = number(groupTotals.get("total_orders")).longValue();
+                BigDecimal leaderCommission = commissionBaseAmount
                         .multiply(decimal(config.get("exchangeRate"), "6.73"))
                         .multiply(decimal(config.get("rateFactor"), "0.42"))
                         .multiply(decimal(config.get("leaderCommissionRate"), "0.02"));
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("user_group", group);
-                item.put("leader_name", leaderMap.getOrDefault(group, group + "组组长"));
+                item.put("leader_name", leaderName);
                 item.put("member_count", members.stream().map(a -> realName(a.adminName, mergeMap)).distinct().count());
                 item.put("site_count", sites);
                 item.put("deduplicated_orders", orders);
                 item.put("original_amount", money(originalAmount));
+                item.put("leader_personal_amount", money(leaderPersonalAmount));
+                item.put("commission_base_amount", money(commissionBaseAmount));
                 item.put("conversion_rate", percent(orders, sites));
                 item.put("leader_commission_rmb", money(leaderCommission));
                 leaders.add(item);
@@ -194,6 +209,7 @@ public class RevenueSummaryService {
         result.put("start_date", effectiveStart);
         result.put("end_date", effectiveEnd);
         result.put("site_created_month", effectiveSiteCreatedMonth);
+        result.put("site_created_before", siteCreatedBefore);
         result.put("parameters", Map.of(
                 "exchange_rate", decimal(config.get("exchangeRate"), "6.73"),
                 "rate_factor", decimal(config.get("rateFactor"), "0.42"),
@@ -208,7 +224,8 @@ public class RevenueSummaryService {
 
     private Map<String, AccountStats> loadAccounts(String userGroup, String ownerName,
                                                     List<String> teacherSuffixes,
-                                                    String startDate, String endDate) {
+                                                    String startDate, String endDate,
+                                                    String siteCreatedBefore) {
         Map<String, AccountStats> accounts = new LinkedHashMap<>();
         for (Map<String, Object> row : revenueMapper.adminOrderStats(userGroup, ownerName, teacherSuffixes, startDate, endDate)) {
             AccountStats stats = accounts.computeIfAbsent(text(row, "admin_name"), AccountStats::new);
@@ -217,7 +234,8 @@ public class RevenueSummaryService {
             stats.successfulOrders = number(row.get("successful_orders")).longValue();
             stats.originalAmount = number(row.get("original_amount"));
         }
-        for (Map<String, Object> row : revenueMapper.adminSiteStats(userGroup, ownerName, teacherSuffixes, startDate, endDate)) {
+        for (Map<String, Object> row : revenueMapper.adminSiteStats(
+                userGroup, ownerName, teacherSuffixes, siteCreatedBefore)) {
             AccountStats stats = accounts.computeIfAbsent(text(row, "admin_name"), AccountStats::new);
             stats.group = text(row, "user_group");
             stats.siteCount = number(row.get("site_count")).longValue();
@@ -256,6 +274,33 @@ public class RevenueSummaryService {
                 .distinct()
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * Uses the same successful-amount definition as personal performance:
+     * the leader's own merged accounts plus paid amounts synchronized from
+     * accounts matching the leader's mentor suffix.
+     */
+    private static BigDecimal personalSuccessfulAmount(String configuredLeaderName,
+                                                        Collection<AccountStats> accounts,
+                                                        Map<String, List<String>> mergeMap,
+                                                        Map<String, String> teacherMap) {
+        String leaderName = realName(configuredLeaderName, mergeMap);
+        BigDecimal amount = accounts.stream()
+                .filter(account -> leaderName.equals(realName(account.adminName, mergeMap)))
+                .map(account -> account.originalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        for (AccountStats account : accounts) {
+            for (Map.Entry<String, String> rule : teacherMap.entrySet()) {
+                if (!hasSuffix(account.adminName, rule.getValue())) continue;
+                if (leaderName.equals(rule.getKey()) || leaderName.equals(realName(rule.getKey(), mergeMap))) {
+                    amount = amount.add(account.originalAmount);
+                }
+                break;
+            }
+        }
+        return amount;
     }
 
     private BigDecimal commission(BigDecimal usd, Map<String, Object> config) {

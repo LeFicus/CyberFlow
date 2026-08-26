@@ -300,6 +300,29 @@ CREATE TABLE IF NOT EXISTS crawl_site_config (
     UNIQUE KEY uk_domain (domain)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS new_site (
+    id                                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+    domain                              VARCHAR(255) NOT NULL,
+    custom_category                    VARCHAR(255) NOT NULL,
+    main_product_categories            JSON NOT NULL,
+    supplement_product_categories      JSON NOT NULL,
+    main_product_category              TEXT NOT NULL,
+    supplement_product_category        TEXT NOT NULL,
+    supplement_product_category_key    TEXT NOT NULL,
+    source_domains                     JSON NOT NULL,
+    site_title                         VARCHAR(255) NOT NULL,
+    tag_line                           VARCHAR(500) NOT NULL,
+    status                              VARCHAR(32) NOT NULL DEFAULT 'pending_review',
+    domain_check_status                VARCHAR(32) NOT NULL DEFAULT 'available',
+    domain_check_provider              VARCHAR(64) NOT NULL DEFAULT 'rdap',
+    generation_attempts                INT NOT NULL DEFAULT 1,
+    created_by                         BIGINT,
+    created_at                         DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at                         DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_new_site_domain (domain),
+    INDEX idx_new_site_status_created (status, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ------------------------------------------------------------
 -- 站点↔模板多对多关联表 — 一个站点可使用多个选择器模板
 -- ------------------------------------------------------------
@@ -326,14 +349,22 @@ CREATE TABLE IF NOT EXISTS site_template_mapping (
 CREATE TABLE IF NOT EXISTS site_info (
     id               BIGINT AUTO_INCREMENT PRIMARY KEY,
     username         VARCHAR(100) COMMENT '电商平台用户名',
+    builder_username VARCHAR(100) COMMENT '建站者账号',
     site_domain      VARCHAR(255) NOT NULL UNIQUE COMMENT '站点域名',
+    server_name      VARCHAR(255) COMMENT '站点所在服务器',
+    server_ip        VARCHAR(45) COMMENT '站点服务器 IP',
     admin_name       VARCHAR(100) COMMENT '管理员名称',
     user_group       VARCHAR(1) COMMENT '负责人用户组: A/B',
     theme_name       VARCHAR(100) COMMENT '主题名称',
     product_category VARCHAR(100) COMMENT '商品分类',
-    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_submitted_at DATETIME COMMENT '最近提交收录时间',
+    domain_applied_at DATETIME COMMENT '域名申请时间，用于站点月份归属',
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'site/list 建站时间',
     UNIQUE KEY uk_site_domain (site_domain),
-    INDEX idx_site_user_group (user_group)
+    INDEX idx_site_user_group (user_group),
+    INDEX idx_site_builder_username (builder_username),
+    INDEX idx_site_domain_applied_at (domain_applied_at),
+    INDEX idx_site_server (server_name, server_ip)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='站点信息';
 
 -- ------------------------------------------------------------
@@ -350,6 +381,7 @@ CREATE TABLE IF NOT EXISTS orders (
     create_time           DATETIME COMMENT '下单时间',
     product_host          VARCHAR(255) COMMENT '商品站点域名',
     pay_status_text       VARCHAR(50) COMMENT '支付状态',
+    card_number           VARCHAR(100) COMMENT '支付卡号（可能为掩码）',
     customer_ip_country   VARCHAR(100) COMMENT '客户IP国家',
     shipping_email        VARCHAR(255) COMMENT '收货邮箱',
     admin_name            VARCHAR(100) COMMENT '店铺管理员',
@@ -376,6 +408,9 @@ CREATE TABLE IF NOT EXISTS site_indexing_history (
     site_domain    VARCHAR(255) NOT NULL COMMENT '站点域名',
     index_count    INT NOT NULL DEFAULT 0 COMMENT '索引数量',
     product_count  INT NOT NULL DEFAULT 0 COMMENT '商品数量',
+    server_name    VARCHAR(255) COMMENT '采集时站点所在服务器',
+    server_ip      VARCHAR(45) COMMENT '采集时站点服务器 IP',
+    last_submitted_at DATETIME COMMENT '最近提交收录时间',
     recorded_at    DATETIME NOT NULL COMMENT '记录时间',
     INDEX idx_recorded_at (recorded_at),
     INDEX idx_site_domain (site_domain)
@@ -446,6 +481,7 @@ INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, path, component, icon
 (12, 1, '站点列表', 1, '/dashboard/sites', 'dashboard/SiteList', NULL, 2),
 (13, 1, '订单列表', 1, '/dashboard/orders', 'dashboard/OrderList', NULL, 3),
 (14, 1, '商品列表', 1, '/dashboard/products', 'dashboard/ProductList', NULL, 4),
+(16, 1, '收录数据列表', 1, '/dashboard/indexing', 'dashboard/IndexingList', NULL, 5),
 (15, 14, '删除商品', 2, NULL, NULL, NULL, 1),
 -- 爬虫子菜单
 (21, 2, '站点爬虫', 1, '/crawler/site', 'crawler/SiteCrawler', NULL, 1),
@@ -482,6 +518,7 @@ UPDATE sys_menu SET perms = 'dashboard:overview'      WHERE id = 11;
 UPDATE sys_menu SET perms = 'dashboard:site:view'     WHERE id = 12;
 UPDATE sys_menu SET perms = 'dashboard:order:view'    WHERE id = 13;
 UPDATE sys_menu SET perms = 'dashboard:product:view'  WHERE id = 14;
+UPDATE sys_menu SET perms = 'dashboard:site:view'     WHERE id = 16;
 UPDATE sys_menu SET perms = 'dashboard:product:delete' WHERE id = 15;
 UPDATE sys_menu SET perms = 'crawler:site:start'      WHERE id = 25;
 UPDATE sys_menu SET perms = 'crawler:collect:start'   WHERE id = 26;
@@ -500,6 +537,20 @@ UPDATE sys_menu SET perms = 'system:user:list'        WHERE id = 31;
 UPDATE sys_menu SET perms = 'system:role:list'        WHERE id = 32;
 UPDATE sys_menu SET perms = 'system:menu:list'        WHERE id = 33;
 UPDATE sys_menu SET perms = 'system:log:view'         WHERE id = 34;
+INSERT INTO sys_menu
+    (id, parent_id, menu_name, menu_type, perms, path, component, icon, sort_order, status)
+VALUES
+    (5, 0, '站点建设', 0, NULL, '/new-site', NULL, 'Shop', 4, 1),
+    (63, 5, '新站点管理', 1, 'newsite:list', '/new-site', 'newsite/NewSiteList', 'Plus', 1, 1),
+    (64, 63, '创建新站点', 2, 'newsite:create', NULL, NULL, NULL, 1, 1),
+    (65, 63, '修改站点状态', 2, 'newsite:status', NULL, NULL, NULL, 2, 1),
+    (66, 63, '配置 AI 服务', 2, 'newsite:config', NULL, NULL, NULL, 3, 1)
+ON DUPLICATE KEY UPDATE
+    parent_id=VALUES(parent_id), menu_name=VALUES(menu_name), menu_type=VALUES(menu_type),
+    perms=VALUES(perms), path=VALUES(path), component=VALUES(component), icon=VALUES(icon),
+    sort_order=VALUES(sort_order), status=VALUES(status);
+INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES
+    (1, 63), (1, 64), (1, 65), (1, 66), (2, 63), (2, 64), (2, 65), (2, 66);
 INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, perms, status, sort_order) VALUES
 (52, 31, '新增用户', 2, 'system:user:create', 1, 1),
 (53, 31, '修改用户', 2, 'system:user:update', 1, 2),
@@ -532,7 +583,7 @@ INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES
 
 DELETE FROM sys_role_menu WHERE role_id = 3;
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES
-(3, 1), (3, 11), (3, 12), (3, 13), (3, 2), (3, 23), (3, 24), (3, 27);
+(3, 1), (3, 11), (3, 12), (3, 13), (3, 16), (3, 2), (3, 23), (3, 24), (3, 27);
 
 INSERT INTO sys_user (id, username, password, nickname, status) VALUES
 (2, 'normal_user', '$2b$12$VA8lCR9fDcXkscYPUls7.O6dGD67C1FKpx9HtTIwuX3nzq5fVJ7KC', '普通用户', 1)

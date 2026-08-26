@@ -70,6 +70,29 @@ CREATE TABLE IF NOT EXISTS crawl_site_config (
     UNIQUE KEY uk_domain (domain)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS new_site (
+    id                                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+    domain                              VARCHAR(255) NOT NULL,
+    custom_category                    VARCHAR(255) NOT NULL,
+    main_product_categories            JSON NOT NULL,
+    supplement_product_categories      JSON NOT NULL,
+    main_product_category              TEXT NOT NULL,
+    supplement_product_category        TEXT NOT NULL,
+    supplement_product_category_key    TEXT NOT NULL,
+    source_domains                     JSON NOT NULL,
+    site_title                         VARCHAR(255) NOT NULL,
+    tag_line                           VARCHAR(500) NOT NULL,
+    status                              VARCHAR(32) NOT NULL DEFAULT 'pending_review',
+    domain_check_status                VARCHAR(32) NOT NULL DEFAULT 'available',
+    domain_check_provider              VARCHAR(64) NOT NULL DEFAULT 'rdap',
+    generation_attempts                INT NOT NULL DEFAULT 1,
+    created_by                         BIGINT,
+    created_at                         DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at                         DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_new_site_domain (domain),
+    INDEX idx_new_site_status_created (status, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS site_template_mapping (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     site_config_id  BIGINT NOT NULL,
@@ -84,14 +107,22 @@ CREATE TABLE IF NOT EXISTS site_template_mapping (
 CREATE TABLE IF NOT EXISTS site_info (
     id               BIGINT AUTO_INCREMENT PRIMARY KEY,
     username         VARCHAR(100),
+    builder_username VARCHAR(100),
     site_domain      VARCHAR(255) NOT NULL,
+    server_name      VARCHAR(255),
+    server_ip        VARCHAR(45),
     admin_name       VARCHAR(100),
     user_group       VARCHAR(1),
     theme_name       VARCHAR(100),
     product_category VARCHAR(100),
+    last_submitted_at DATETIME,
+    domain_applied_at DATETIME,
     created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_site_domain (site_domain),
-    INDEX idx_site_user_group (user_group)
+    INDEX idx_site_user_group (user_group),
+    INDEX idx_site_builder_username (builder_username),
+    INDEX idx_site_domain_applied_at (domain_applied_at),
+    INDEX idx_site_server (server_name, server_ip)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -101,6 +132,7 @@ CREATE TABLE IF NOT EXISTS orders (
     create_time         DATETIME,
     product_host        VARCHAR(255),
     pay_status_text     VARCHAR(50),
+    card_number         VARCHAR(100),
     customer_ip_country VARCHAR(100),
     shipping_email      VARCHAR(255),
     admin_name          VARCHAR(100),
@@ -119,6 +151,9 @@ CREATE TABLE IF NOT EXISTS site_indexing_history (
     site_domain   VARCHAR(255) NOT NULL,
     index_count   INT NOT NULL DEFAULT 0,
     product_count INT NOT NULL DEFAULT 0,
+    server_name   VARCHAR(255),
+    server_ip     VARCHAR(45),
+    last_submitted_at DATETIME,
     recorded_at   DATETIME NOT NULL,
     INDEX idx_recorded_at (recorded_at),
     INDEX idx_site_domain (site_domain)
@@ -219,3 +254,18 @@ ON DUPLICATE KEY UPDATE
     perms=VALUES(perms), status=VALUES(status);
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id)
 SELECT 1, id FROM sys_menu WHERE id BETWEEN 52 AND 62;
+
+INSERT INTO sys_menu
+    (id, parent_id, menu_name, menu_type, perms, path, component, icon, sort_order, status)
+VALUES
+    (5, 0, '站点建设', 0, NULL, '/new-site', NULL, 'Shop', 4, 1),
+    (63, 5, '新站点管理', 1, 'newsite:list', '/new-site', 'newsite/NewSiteList', 'Plus', 1, 1),
+    (64, 63, '创建新站点', 2, 'newsite:create', NULL, NULL, NULL, 1, 1),
+    (65, 63, '修改站点状态', 2, 'newsite:status', NULL, NULL, NULL, 2, 1),
+    (66, 63, '配置 AI 服务', 2, 'newsite:config', NULL, NULL, NULL, 3, 1)
+ON DUPLICATE KEY UPDATE
+    parent_id=VALUES(parent_id), menu_name=VALUES(menu_name), menu_type=VALUES(menu_type),
+    perms=VALUES(perms), path=VALUES(path), component=VALUES(component), icon=VALUES(icon),
+    sort_order=VALUES(sort_order), status=VALUES(status);
+INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES
+    (1, 63), (1, 64), (1, 65), (1, 66), (2, 63), (2, 64), (2, 65), (2, 66);

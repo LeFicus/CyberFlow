@@ -1,6 +1,7 @@
 """Async crawler for daily site indexing statistics."""
 
 import asyncio
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -22,6 +23,42 @@ def _as_int(value: object) -> int:
         return max(0, int(float(value or 0)))
     except (TypeError, ValueError):
         return 0
+
+
+def normalize_datetime(value: object) -> str | None:
+    """Convert remote timestamp values to a MySQL DATETIME string.
+
+    The platform uses human-readable placeholders such as ``未提交`` when a
+    site has never been submitted.  Treat those and malformed values as
+    missing data so one dirty value cannot roll back the full snapshot.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        raw = str(value).strip()
+        if not raw or raw.lower() in {
+            "none", "null", "n/a", "na", "-", "--", "未提交", "暂无", "无",
+        }:
+            return None
+        if raw.isdigit() and len(raw) >= 10:
+            try:
+                timestamp = int(raw)
+                if len(raw) >= 13:
+                    timestamp /= 1000
+                parsed = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+            except (OverflowError, OSError, ValueError):
+                return None
+        else:
+            candidate = raw.replace("/", "-").replace("T", " ").removesuffix("Z")
+            try:
+                parsed = datetime.fromisoformat(candidate)
+            except ValueError:
+                return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+    return parsed.strftime("%Y-%m-%d %H:%M:%S")
 
 
 class AsyncSiteIndexCrawler:
@@ -73,12 +110,26 @@ class AsyncSiteIndexCrawler:
             if not items:
                 break
             for item in items:
+                # The statistics endpoint exposes built and historical site
+                # rows through the same shape.  Only status=2 is a currently
+                # built site and may enter the local current-site snapshot.
+                if str(item.get("site_status") or "").strip() != "2":
+                    continue
                 domain = normalize_domain(item.get("site_domain") or item.get("domain"))
                 if domain:
+                    server_info = item.get("server_info") if isinstance(item.get("server_info"), dict) else {}
+                    admin_info = item.get("admin_info") if isinstance(item.get("admin_info"), dict) else {}
                     records[domain] = {
                         "site_domain": domain,
                         "index_count": _as_int(item.get("google_count")),
                         "product_count": _as_int(item.get("total_product")),
+                        "server_name": server_info.get("server_name") or item.get("site_fwq_name") or item.get("fwq_name") or "",
+                        "server_ip": server_info.get("server_ip") or "",
+                        "builder_username": admin_info.get("username") or "",
+                        "admin_name": admin_info.get("realname") or "",
+                        "user_group": str(admin_info.get("realname") or "").strip()[:1].upper(),
+                        "theme_name": item.get("theme_name") or "",
+                        "last_submitted_at": normalize_datetime(item.get("submit_time")),
                     }
             if len(items) < self.page_size:
                 break

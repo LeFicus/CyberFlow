@@ -88,6 +88,11 @@ export function getSiteIndexHistory(params) {
   return request.get('/admin/dashboard/site-index-history', { params })
 }
 
+/** 获取按站点、建站者或服务器聚合的最新收录数据。 */
+export function getSiteIndexes(params) {
+  return request.get('/admin/dashboard/site-indexes', { params })
+}
+
 /**
  * 根据域名查询关联订单列表
  * @param {Object} params - 查询参数 { domain, page, size, startDate, endDate }

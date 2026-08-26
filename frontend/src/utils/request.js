@@ -74,7 +74,7 @@ service.interceptors.response.use(
     if (error.response?.status === 401 && !isLoginRequest) {
       handleSessionExpired()
     } else {
-      ElMessage.error(error.message || '网络错误')
+      ElMessage.error(error.response?.data?.msg || error.message || '网络错误')
     }
     return Promise.reject(error)
   },

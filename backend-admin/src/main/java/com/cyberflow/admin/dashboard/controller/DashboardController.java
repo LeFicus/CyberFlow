@@ -73,9 +73,13 @@ public class DashboardController {
                                              @RequestParam(required = false) String adminName,
                                              @RequestParam(required = false) String userGroup,
                                              @RequestParam(required = false) String domain,
+                                             @RequestParam(required = false) String serverName,
+                                             @RequestParam(required = false) String themeName,
+                                             @RequestParam(required = false) String productCategory,
                                              @RequestParam(required = false) String startDate,
                                              @RequestParam(required = false) String endDate) {
-        return Result.ok(dashboardService.getSites(page, size, adminName, userGroup, domain, startDate, endDate));
+        return Result.ok(dashboardService.getSites(page, size, adminName, userGroup, domain,
+                serverName, themeName, productCategory, startDate, endDate));
     }
 
     /**
@@ -208,6 +212,35 @@ public class DashboardController {
     @PreAuthorize("hasAuthority('dashboard:site:view')")
     public Result<Object> siteIndexHistory(@RequestParam String domain) {
         return Result.ok(dashboardService.getSiteIndexHistory(domain));
+    }
+
+    @GetMapping("/site-indexes")
+    @PreAuthorize("hasAuthority('dashboard:site:view')")
+    public Result<Map<String, Object>> siteIndexes(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "site") String dimension,
+            @RequestParam(required = false) String userGroup,
+            @RequestParam(required = false) String adminName,
+            @RequestParam(required = false) String builderUsername,
+            @RequestParam(required = false) String serverName,
+            @RequestParam(required = false) String serverIp,
+            @RequestParam(required = false) String domain,
+            @RequestParam(required = false) String themeName,
+            @RequestParam(required = false) String productCategory,
+            @RequestParam(required = false) String siteStartDate,
+            @RequestParam(required = false) String siteEndDate,
+            @RequestParam(required = false) String submittedStartDate,
+            @RequestParam(required = false) String submittedEndDate,
+            @RequestParam(required = false) String updatedStartDate,
+            @RequestParam(required = false) String updatedEndDate,
+            @RequestParam(required = false) Integer minIndexCount,
+            @RequestParam(required = false) Integer maxIndexCount,
+            @RequestParam(required = false) String changeDirection) {
+        return Result.ok(dashboardService.getSiteIndexData(page, size, dimension, userGroup,
+                adminName, builderUsername, serverName, serverIp, domain, themeName, productCategory,
+                siteStartDate, siteEndDate, submittedStartDate, submittedEndDate,
+                updatedStartDate, updatedEndDate, minIndexCount, maxIndexCount, changeDirection));
     }
 
     @GetMapping("/orders-by-domain")

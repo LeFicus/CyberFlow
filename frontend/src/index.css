@@ -140,13 +140,13 @@ textarea:focus-visible {
   transform: translateY(1px);
 }
 
-.el-button--primary:not(.is-link) {
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain) {
   border-color: transparent;
   background: linear-gradient(110deg, var(--cf-blue), #6658e8);
   box-shadow: 0 7px 16px rgb(79 107 237 / 18%);
 }
 
-.el-button--primary:not(.is-link):hover {
+.el-button--primary:not(.is-link):not(.is-text):not(.is-plain):hover {
   border-color: transparent;
   background: linear-gradient(110deg, #6179ef, #7669eb);
   box-shadow: 0 9px 20px rgb(79 107 237 / 24%);

@@ -127,6 +127,7 @@ MySQL :3306
 │   ├── sys_operation_log                        # 操作日志
 │   ├── selector_template                        # 选择器模板
 │   ├── crawl_site_config                        # 站点配置
+│   ├── new_site                                  # AI 生成的新站点
 │   ├── site_template_mapping                    # 站点-模板映射
 │   ├── task_history                             # 任务历史
 │   └── crawl_cursor                             # 采集游标 (断点续爬)
@@ -353,6 +354,11 @@ python main.py
 | `RABBITMQ_USER` | `admin` | RabbitMQ 用户名 |
 | `RABBITMQ_PASS` | `admin123` | RabbitMQ 密码 |
 | `JWT_SECRET` | `cyberflow-admin-jwt-secret-key-2026` | JWT 签名密钥 |
+| `DEEPSEEK_API_KEY` | — | 新站点标题、标语和域名生成所需的 DeepSeek API Key |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek OpenAI 兼容接口地址 |
+| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 新站点生成使用的 DeepSeek 模型 |
+| `RDAP_URL` | `https://rdap.org/domain/{domain}` | 域名注册状态查询地址；404 视为可候选购买 |
+| `SITE_GENERATION_MAX_ATTEMPTS` | `5` | 单个站点候选域名生成与校验的最大次数 |
 | `ADMIN_API_BASE_URL` | — | Admin API 地址，后台配置优先 |
 | `ADMIN_API_USERNAME` | — | Admin API 账号，后台配置优先 |
 | `ADMIN_API_PASSWORD` | — | Admin API 密码，后台配置优先 |

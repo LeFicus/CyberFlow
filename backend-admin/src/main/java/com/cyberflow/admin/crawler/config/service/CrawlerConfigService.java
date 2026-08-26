@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 爬虫平台、策略和定时配置服务。
@@ -36,6 +37,35 @@ import java.util.Map;
 public class CrawlerConfigService {
 
     private static final String MASK = "******";
+
+    /** Default US-market SEO brief used when the operator has not supplied a custom prompt. */
+    public static final String DEFAULT_AI_PROMPT = """
+            You are an English-language ecommerce brand strategist and SEO copywriter for the United States market.
+            Create one complete new-store proposal for the product categories and custom category supplied by the user.
+            This endpoint is called once per domain-generation attempt so each attempt must return exactly one proposal.
+            Use the attempt number to vary the angle across these five scenarios: practical problem solving | premium quality and durability | gift and lifestyle discovery | beginner friendly family use | seasonal home project or outdoor use.
+
+            Write for real US shoppers first. Use natural American English and specific search intent terms that a shopper would genuinely use for the supplied categories. Prefer useful descriptive phrases such as product type | use case | audience | material | season or shopping intent when supported by the inputs. If live web access is available you may use current US search-intent patterns as a reference. Never invent exact search volume | rankings | trend percentages or Google guarantees. Do not keyword stuff | repeat synonyms unnaturally | copy competitor text | make unsupported medical or performance claims | or use generic filler.
+
+            site_title requirements:
+            - English only and approximately 12 to 20 words.
+            - Clearly describe the store positioning and include the most important product or use-case phrase naturally.
+            - Make it distinctive and useful as a Google title and do not use commas.
+
+            tag_line requirements:
+            - English only and approximately 70 to 100 words.
+            - Explain what the store sells | who it serves | the main customer problem or use case | and why the assortment is useful.
+            - Make it persuasive but factual and suitable for a US ecommerce homepage.
+            - Do not use commas. Use the vertical bar character | to separate clauses when helpful.
+
+            domain requirements:
+            - Generate a lowercase English .com domain that lets a shopper identify the store positioning at a glance.
+            - Use two or three readable words or keyword tokens. Include the clearest main product category or use case plus one positioning token such as tools | garden | kids | outdoor | gifts | home or supplies when accurate.
+            - Prefer a descriptive domain over an invented brand-only domain. Do not use trademarks | celebrity names | hyphens at the beginning or end | repeated hyphens | numbers unless essential | or keyword stuffing.
+            - The domain must contain only lowercase letters | numbers | hyphens and dots and must be no longer than 63 characters before the top-level domain.
+
+            Return only one valid JSON object with exactly these string fields: site_title | tag_line | domain. Do not return Markdown | explanations | multiple examples or extra fields.
+            """;
 
     private final CrawlerRuntimeConfigMapper runtimeConfigMapper;
     private final CrawlerScheduleConfigMapper scheduleConfigMapper;
@@ -114,6 +144,49 @@ public class CrawlerConfigService {
     public Map<String, Object> getRevenueConfig() {
         Map<String, Object> cfg = getRuntimeConfig(false);
         return group(cfg, "revenue");
+    }
+
+    /** AI generation settings used by the new-site module. */
+    public Map<String, Object> getAiGenerationConfig(boolean masked) {
+        Map<String, Object> cfg = getRuntimeConfig(masked);
+        Map<String, Object> ai = group(cfg, "aiGeneration");
+        if (ai.get("prompt") == null || String.valueOf(ai.get("prompt")).isBlank()) {
+            ai.put("prompt", DEFAULT_AI_PROMPT);
+        }
+        return ai;
+    }
+
+    /**
+     * Update only the supported AI settings. The API key is masked on reads
+     * and a masked value is intentionally ignored by updateRuntimeConfig().
+     */
+    @Transactional
+    public Map<String, Object> updateAiGenerationConfig(Map<String, Object> body) {
+        Set<String> allowed = Set.of("provider", "baseUrl", "apiKey", "model", "prompt", "maxAttempts");
+        Map<String, Object> sanitized = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : body.entrySet()) {
+            if (!allowed.contains(entry.getKey())) continue;
+            if ("maxAttempts".equals(entry.getKey())) {
+                int attempts;
+                try {
+                    attempts = Integer.parseInt(String.valueOf(entry.getValue()));
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException("AI 最大重试次数必须是数字");
+                }
+                if (attempts < 1 || attempts > 10) {
+                    throw new IllegalArgumentException("AI 最大重试次数必须在 1 到 10 之间");
+                }
+                sanitized.put(entry.getKey(), attempts);
+            } else {
+                sanitized.put(entry.getKey(), entry.getValue() == null ? "" : String.valueOf(entry.getValue()).trim());
+            }
+        }
+        String baseUrl = String.valueOf(sanitized.getOrDefault("baseUrl", ""));
+        if (!baseUrl.isBlank() && !(baseUrl.startsWith("http://") || baseUrl.startsWith("https://"))) {
+            throw new IllegalArgumentException("AI Base URL 必须以 http:// 或 https:// 开头");
+        }
+        updateRuntimeConfig(Map.of("aiGeneration", sanitized));
+        return getAiGenerationConfig(true);
     }
 
     public List<CrawlerScheduleConfig> listSchedules() {
@@ -247,6 +320,14 @@ public class CrawlerConfigService {
             "filterBuiltOnly", false,
             "pageSize", 100
         )));
+        root.put("aiGeneration", new LinkedHashMap<>(Map.of(
+            "provider", "deepseek",
+            "baseUrl", "https://api.deepseek.com",
+            "apiKey", "",
+            "model", "deepseek-v4-flash",
+            "prompt", DEFAULT_AI_PROMPT,
+            "maxAttempts", 5
+        )));
         root.put("orderStrategy", new LinkedHashMap<>(Map.of(
             "filterCardNumberExclude", new ArrayList<>(List.of("400000******0000", "411111******1111", "411111111111")),
             "pageSize", 100,
@@ -299,7 +380,10 @@ public class CrawlerConfigService {
     }
 
     private boolean isSensitiveKey(String key) {
-        return key.toLowerCase().contains("password");
+        String normalized = key.toLowerCase();
+        return normalized.contains("password") || normalized.contains("apikey")
+                || normalized.contains("api_key") || normalized.contains("secret")
+                || normalized.contains("token");
     }
 
     private String encodeValue(Object value) {

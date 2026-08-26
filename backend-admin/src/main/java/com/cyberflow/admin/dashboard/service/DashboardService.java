@@ -70,16 +70,26 @@ public class DashboardService {
         String tomorrowStart = dbDateTime(businessToday.plusDays(1));
         var today = orderMapper.businessSummaryByGroup(todayStart, tomorrowStart, userGroup, ownerName);
         var month = orderMapper.businessSummaryByGroup(monthStart, nextMonthStart, userGroup, ownerName);
-        overview.put("total_sites", siteInfoMapper.countSitesByGroupAndDateRange(userGroup, ownerName, todayStart, tomorrowStart));
+        long todaySites = siteInfoMapper.countSitesByGroupAndDateRange(userGroup, ownerName, todayStart, tomorrowStart);
+        long monthSites = siteInfoMapper.countSitesByGroupAndDateRange(userGroup, ownerName, monthStart, nextMonthStart);
+        overview.put("total_sites", todaySites);
+        overview.put("today_sites", todaySites);
+        overview.put("month_sites", monthSites);
         overview.put("deduplicated_orders", today.getOrDefault("deduplicated_orders", 0L));
         overview.put("successful_orders", today.getOrDefault("successful_orders", 0L));
         overview.put("successful_amount", today.getOrDefault("successful_amount", 0.0));
         overview.put("total_orders", today.getOrDefault("deduplicated_orders", 0L));
         overview.put("period", "TODAY");
         overview.put("today_orders", today.getOrDefault("successful_orders", 0L));
+        overview.put("today_deduplicated_orders", today.getOrDefault("deduplicated_orders", 0L));
+        overview.put("today_successful_orders", today.getOrDefault("successful_orders", 0L));
+        overview.put("today_successful_amount", today.getOrDefault("successful_amount", 0.0));
         overview.put("today_amount", today.getOrDefault("successful_amount", 0.0));
         overview.put("month_orders", month.getOrDefault("successful_orders", 0L));
         overview.put("month_amount", month.getOrDefault("successful_amount", 0.0));
+        overview.put("month_deduplicated_orders", month.getOrDefault("deduplicated_orders", 0L));
+        overview.put("month_successful_orders", month.getOrDefault("successful_orders", 0L));
+        overview.put("month_successful_amount", month.getOrDefault("successful_amount", 0.0));
         overview.put("site_group_summary", siteInfoMapper.summarizeByGroup(ownerName));
         overview.put("order_group_summary", orderMapper.summarizeByGroup(ownerName));
 
@@ -96,13 +106,16 @@ public class DashboardService {
      * @return 包含 total（总数）和 list（站点列表）的 Map
      */
     public Map<String, Object> getSites(int page, int size, String adminName, String rawUserGroup, String domain,
+                                        String serverName, String themeName, String productCategory,
                                         String startDate, String endDate) {
         String userGroup = normalizeUserGroup(rawUserGroup);
         String ownerName = ownerName();
         int offset = (page - 1) * size;
-        long total = siteInfoMapper.countSitesFiltered(adminName, userGroup, ownerName, domain, startDate, endDate);
+        long total = siteInfoMapper.countSitesFiltered(adminName, userGroup, ownerName, domain,
+                serverName, themeName, productCategory, startDate, endDate);
         List<Map<String, Object>> list = siteInfoMapper.listSitesFiltered(
-                adminName, userGroup, ownerName, domain, startDate, endDate, offset, size);
+                adminName, userGroup, ownerName, domain, serverName, themeName, productCategory,
+                startDate, endDate, offset, size);
 
         var result = new LinkedHashMap<String, Object>();
         result.put("total", total);
@@ -279,6 +292,68 @@ public class DashboardService {
             return List.of();
         }
         return indexingMapper.listHistoryByDomain(domain, ownerName());
+    }
+
+    /** Latest indexing snapshot report, grouped by site, builder, or server. */
+    public Map<String, Object> getSiteIndexData(int page, int size, String dimension,
+                                                 String rawUserGroup, String adminName,
+                                                 String builderUsername, String serverName,
+                                                 String serverIp, String domain,
+                                                 String themeName, String productCategory,
+                                                 String siteStartDate, String siteEndDate,
+                                                 String submittedStartDate, String submittedEndDate,
+                                                 String updatedStartDate, String updatedEndDate,
+                                                 Integer minIndexCount, Integer maxIndexCount,
+                                                 String changeDirection) {
+        String normalizedDimension = dimension == null ? "site" : dimension.trim().toLowerCase(Locale.ROOT);
+        if (!Set.of("site", "builder", "server").contains(normalizedDimension)) {
+            throw new IllegalArgumentException("dimension must be site, builder or server");
+        }
+        int safePage = Math.max(1, page);
+        int safeSize = Math.min(200, Math.max(1, size));
+        Map<String, Object> filters = new LinkedHashMap<>();
+        filters.put("userGroup", normalizeUserGroup(rawUserGroup));
+        filters.put("ownerName", ownerName());
+        filters.put("adminName", adminName);
+        filters.put("builderUsername", builderUsername);
+        filters.put("serverName", serverName);
+        filters.put("serverIp", serverIp);
+        filters.put("domain", domain);
+        filters.put("themeName", themeName);
+        filters.put("productCategory", productCategory);
+        filters.put("siteStartDate", siteStartDate);
+        filters.put("siteEndDate", siteEndDate);
+        filters.put("submittedStartDate", submittedStartDate);
+        filters.put("submittedEndDate", submittedEndDate);
+        filters.put("updatedStartDate", updatedStartDate);
+        filters.put("updatedEndDate", updatedEndDate);
+        filters.put("minIndexCount", minIndexCount);
+        filters.put("maxIndexCount", maxIndexCount);
+        String normalizedChange = changeDirection == null ? null : changeDirection.trim().toLowerCase(Locale.ROOT);
+        filters.put("changeDirection", normalizedChange != null
+                && Set.of("up", "down", "flat").contains(normalizedChange) ? normalizedChange : null);
+
+        long total;
+        List<Map<String, Object>> list;
+        if ("site".equals(normalizedDimension)) {
+            total = indexingMapper.countLatestSites(filters);
+            list = indexingMapper.listLatestSites(filters, (safePage - 1) * safeSize, safeSize);
+        } else {
+            List<Map<String, Object>> grouped = "builder".equals(normalizedDimension)
+                    ? indexingMapper.summarizeByBuilder(filters)
+                    : indexingMapper.summarizeByServer(filters);
+            total = grouped.size();
+            int from = Math.min((safePage - 1) * safeSize, grouped.size());
+            int to = Math.min(from + safeSize, grouped.size());
+            list = grouped.subList(from, to);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("dimension", normalizedDimension);
+        result.put("total", total);
+        result.put("list", list);
+        result.put("summary", indexingMapper.summarizeLatestSites(filters));
+        return result;
     }
 
     public Map<String, Object> getOrdersByDomain(int page, int size, String domain, String startDate, String endDate) {

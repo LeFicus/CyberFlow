@@ -41,7 +41,7 @@
         <div><h2>收入转化与提成</h2><p>按 monthly_revenue_conversion.py 口径实时汇总</p></div>
         <div class="revenue-rules">
           <div class="revenue-date-control"><span>订单统计</span><el-date-picker v-model="revenueDateRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" class="revenue-date" @change="loadDashboard" /></div>
-          <div class="revenue-date-control"><span>建站月份</span><el-date-picker v-model="siteCreatedMonth" type="month" value-format="YYYY-MM" placeholder="选择建站月份" class="revenue-month" @change="loadDashboard" /></div>
+          <div class="revenue-date-control"><span>域名申请月份</span><el-date-picker v-model="siteCreatedMonth" type="month" value-format="YYYY-MM" placeholder="选择申请月份" class="revenue-month" @change="loadDashboard" /></div>
           <span>汇率 {{ revenueParameters.exchange_rate || '—' }}</span>
           <span>折算系数 {{ revenueParameters.rate_factor || '—' }}</span>
           <span>组长比例 {{ formatRate(revenueParameters.leader_commission_rate) }}</span>
@@ -52,7 +52,7 @@
           <el-table :data="personalPerformance" stripe max-height="390" empty-text="暂无绩效数据">
             <el-table-column prop="user_group" label="组别" width="70" />
             <el-table-column prop="real_name" label="姓名" min-width="120" />
-            <el-table-column prop="site_count" label="全局站点" width="90" align="right" />
+            <el-table-column prop="site_count" label="成熟站点" width="90" align="right" />
             <el-table-column prop="deduplicated_orders" label="去重订单" width="95" align="right" />
             <el-table-column label="转化率" width="95" align="right"><template #default="{ row }">{{ formatPercent(row.conversion_rate) }}</template></el-table-column>
             <el-table-column label="原成交金额" min-width="120" align="right"><template #default="{ row }">{{ formatMoney(row.original_amount) }}</template></el-table-column>
@@ -66,16 +66,18 @@
             <el-table-column prop="user_group" label="组别" width="70" />
             <el-table-column prop="leader_name" label="组长" min-width="120" />
             <el-table-column prop="member_count" label="成员" width="80" align="right" />
-            <el-table-column prop="site_count" label="全局站点" width="95" align="right" />
+            <el-table-column prop="site_count" label="成熟站点" width="95" align="right" />
             <el-table-column prop="deduplicated_orders" label="去重订单" width="100" align="right" />
             <el-table-column label="转化率" width="100" align="right"><template #default="{ row }">{{ formatPercent(row.conversion_rate) }}</template></el-table-column>
-            <el-table-column label="小组原成交金额" min-width="145" align="right"><template #default="{ row }">{{ formatMoney(row.original_amount) }}</template></el-table-column>
+            <el-table-column label="小组成功金额" min-width="145" align="right"><template #default="{ row }">{{ formatMoney(row.original_amount) }}</template></el-table-column>
+            <el-table-column label="扣除组长绩效" min-width="135" align="right"><template #default="{ row }">{{ formatMoney(row.leader_personal_amount) }}</template></el-table-column>
+            <el-table-column label="提成计算基数" min-width="135" align="right"><template #default="{ row }">{{ formatMoney(row.commission_base_amount) }}</template></el-table-column>
             <el-table-column label="组长提成(RMB)" min-width="145" align="right"><template #default="{ row }"><strong class="commission-value">¥{{ formatPlainMoney(row.leader_commission_rmb) }}</strong></template></el-table-column>
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="月度转化" name="monthly">
           <el-table :data="monthlyConversion" stripe max-height="390" empty-text="暂无月度数据">
-            <el-table-column prop="site_month" label="建站月份" width="105" />
+            <el-table-column prop="site_month" label="申请月份" width="105" />
             <el-table-column prop="user_group" label="组别" width="70" />
             <el-table-column prop="real_name" label="姓名" min-width="120" />
             <el-table-column prop="admin_name" label="账号" min-width="130" />
@@ -93,7 +95,7 @@
     <section class="content-grid">
       <article class="panel chart-panel">
         <div class="panel-heading">
-          <div><h2>去重订单与交易趋势</h2><p>近 30 天按订单 ID 去重的订单量和成功金额变化</p></div>
+          <div><h2>去重订单与交易趋势</h2><p>按日期、来源、支付卡、订单站点及收货邮箱去重</p></div>
           <span class="panel-chip blue">最近 30 天</span>
         </div>
         <v-chart :option="orderTrendOption" autoresize class="chart chart-large" />
@@ -222,10 +224,14 @@ const briefMetrics = computed(() => [
 ])
 
 const stats = computed(() => [
-  { label: '纳管站点', value: formatNumber(overview.value.total_sites), icon: DataBoard, tone: 'blue', trend: `${(charts.value.sites_by_admin || []).length} 位`, trendTone: 'neutral', note: '站点管理员' },
-  { label: '去重订单', value: formatNumber(overview.value.deduplicated_orders ?? overview.value.total_orders), icon: ShoppingCart, tone: 'violet', trend: growthLabel.value, trendTone: orderGrowth.value >= 0 ? 'up' : 'down', note: '优先按订单 ID 去重' },
-  { label: '成功订单', value: formatNumber(overview.value.successful_orders), icon: Goods, tone: 'amber', trend: `${formatNumber(overview.value.today_orders)} 笔`, trendTone: 'neutral', note: '今日成功' },
-  { label: '成功金额', value: formatMoney(overview.value.successful_amount), icon: Money, tone: 'green', trend: formatMoney(overview.value.today_amount), trendTone: 'up', note: '今日成功金额' },
+  { label: '今日新增站点', value: formatNumber(overview.value.today_sites ?? overview.value.total_sites), icon: DataBoard, tone: 'blue', trend: '本日', trendTone: 'neutral', note: '今日建站' },
+  { label: '今日去重订单', value: formatNumber(overview.value.today_deduplicated_orders ?? overview.value.deduplicated_orders), icon: ShoppingCart, tone: 'violet', trend: growthLabel.value, trendTone: orderGrowth.value >= 0 ? 'up' : 'down', note: '业务订单指纹' },
+  { label: '今日成功订单', value: formatNumber(overview.value.today_successful_orders ?? overview.value.successful_orders), icon: Goods, tone: 'amber', trend: '本日', trendTone: 'neutral', note: '已支付订单' },
+  { label: '今日成功金额', value: formatMoney(overview.value.today_successful_amount ?? overview.value.successful_amount), icon: Money, tone: 'green', trend: '本日', trendTone: 'up', note: '已支付金额' },
+  { label: '本月新增站点', value: formatNumber(overview.value.month_sites), icon: DataBoard, tone: 'blue', trend: '本月', trendTone: 'neutral', note: '本月建站' },
+  { label: '本月去重订单', value: formatNumber(overview.value.month_deduplicated_orders), icon: ShoppingCart, tone: 'violet', trend: '本月', trendTone: 'neutral', note: '业务订单指纹' },
+  { label: '本月成功订单', value: formatNumber(overview.value.month_successful_orders ?? overview.value.month_orders), icon: Goods, tone: 'amber', trend: '本月', trendTone: 'neutral', note: '已支付订单' },
+  { label: '本月成功金额', value: formatMoney(overview.value.month_successful_amount ?? overview.value.month_amount), icon: Money, tone: 'green', trend: '本月', trendTone: 'up', note: '已支付金额' },
 ])
 
 const quickActions = [

@@ -55,6 +55,14 @@ springdoc:
     path: /admin/swagger-ui.html
 
 cyberflow:
+  site-generation:
+    # Keep the key in the deployment environment; never commit it to the repository.
+    deepseek-api-key: ${DEEPSEEK_API_KEY:}
+    deepseek-base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    deepseek-model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
+    rdap-url: ${RDAP_URL:https://rdap.org/domain/{domain}}
+    max-attempts: ${SITE_GENERATION_MAX_ATTEMPTS:5}
+    prompt: ${SITE_GENERATION_PROMPT:}
   crawler:
     site-cron: "0 0 */6 * * ?"     # 从00:00开始，每6小时整点执行
     index-cron: "0 0 0 * * ?"      # 每天00:00采集站点收录快照

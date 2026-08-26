@@ -23,6 +23,18 @@ import java.util.Map;
 @Mapper
 public interface EcommerceProductMapper {
 
+    /** Distinct source domains available for new-site creation. */
+    @Select("SELECT DISTINCT TRIM(p.source_domain) FROM scraped_data.ecommerce_products p " +
+            "WHERE p.source_domain IS NOT NULL AND TRIM(p.source_domain) <> '' " +
+            "ORDER BY 1")
+    List<String> listDistinctSourceDomains();
+
+    /** Raw category values are split into leaf options by the new-site service. */
+    @Select("SELECT DISTINCT TRIM(p.categories) FROM scraped_data.ecommerce_products p " +
+            "WHERE p.categories IS NOT NULL AND TRIM(p.categories) <> '' " +
+            "ORDER BY 1")
+    List<String> listDistinctProductCategories();
+
     /**
      * 统计商品总数。
      *

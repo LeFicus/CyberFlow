@@ -12,10 +12,19 @@
         <el-segmented v-model="filters.userGroup" :options="groupOptions" @change="handleSearch" />
       </el-form-item>
       <el-form-item label="管理员">
-        <el-input v-model="filters.adminName" placeholder="输入管理员名称" clearable @keyup.enter="handleSearch" />
+        <el-input v-model="filters.adminName" placeholder="建站者账号或姓名" clearable @keyup.enter="handleSearch" />
       </el-form-item>
       <el-form-item label="站点域名">
         <el-input v-model="filters.domain" placeholder="例如 example.com" clearable @keyup.enter="handleSearch" />
+      </el-form-item>
+      <el-form-item label="所属服务器">
+        <el-input v-model="filters.serverName" placeholder="服务器名称或 IP" clearable @keyup.enter="handleSearch" />
+      </el-form-item>
+      <el-form-item label="主题">
+        <el-input v-model="filters.themeName" placeholder="输入主题" clearable @keyup.enter="handleSearch" />
+      </el-form-item>
+      <el-form-item label="产品分类">
+        <el-input v-model="filters.productCategory" placeholder="输入产品分类" clearable @keyup.enter="handleSearch" />
       </el-form-item>
       <el-form-item label="建站日期">
         <el-date-picker
@@ -86,13 +95,15 @@
       </el-table-column>
       <el-table-column prop="id" label="ID" width="84" />
       <el-table-column prop="site_domain" label="域名" min-width="200" />
-      <el-table-column prop="admin_name" label="管理员" width="100" />
+      <el-table-column prop="server_name" label="所属服务器" min-width="190"><template #default="{ row }"><div>{{ row.server_name || '—' }}</div><small v-if="row.server_ip">{{ row.server_ip }}</small></template></el-table-column>
+      <el-table-column label="建站者" width="150"><template #default="{ row }"><div>{{ row.builder_username || '—' }}</div><small>{{ row.admin_name || '—' }}</small></template></el-table-column>
       <el-table-column label="用户组" width="86" align="center">
         <template #default="{ row }"><el-tag v-if="row.user_group" :type="row.user_group === 'A' ? 'primary' : 'success'">{{ row.user_group }}组</el-tag><span v-else>—</span></template>
       </el-table-column>
       <el-table-column prop="theme_name" label="主题" width="100" />
       <el-table-column prop="product_category" label="产品分类" width="100" />
-      <el-table-column prop="created_at" label="创建时间" width="180" />
+      <el-table-column prop="domain_applied_at" label="域名申请时间" width="180" />
+      <el-table-column prop="created_at" label="建站时间" width="180" />
       <el-table-column label="操作" width="120" fixed="right">
         <template #default="{ row }">
           <el-button type="primary" size="small" link @click.stop="openIndexDrawer(row)">收录详情</el-button>
@@ -120,7 +131,8 @@
         <div class="drawer-site-info">
           <el-descriptions :column="2" border size="small">
             <el-descriptions-item label="域名">{{ drawerSite.site_domain }}</el-descriptions-item>
-            <el-descriptions-item label="管理员">{{ drawerSite.admin_name }}</el-descriptions-item>
+            <el-descriptions-item label="建站者">{{ drawerSite.builder_username || '—' }} / {{ drawerSite.admin_name || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="所属服务器">{{ drawerSite.server_name || '—' }}<span v-if="drawerSite.server_ip"> / {{ drawerSite.server_ip }}</span></el-descriptions-item>
             <el-descriptions-item label="主题">{{ drawerSite.theme_name }}</el-descriptions-item>
             <el-descriptions-item label="产品分类">{{ drawerSite.product_category }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ drawerSite.created_at }}</el-descriptions-item>
@@ -170,8 +182,8 @@ const userStore = useUserStore()
 /** 筛选条件 */
 const groupOptions = [{ label: '全部', value: '' }, { label: 'A组', value: 'A' }, { label: 'B组', value: 'B' }]
 const isAdmin = computed(() => (userStore.userInfo?.roles || []).some(role => String(role).toUpperCase() === 'ROLE_ADMIN'))
-const filters = reactive({ userGroup: '', adminName: '', domain: '', dateRange: [] })
-const activeFilterCount = computed(() => [filters.userGroup, filters.adminName, filters.domain, filters.dateRange?.length].filter(Boolean).length)
+const filters = reactive({ userGroup: '', adminName: '', domain: '', serverName: '', themeName: '', productCategory: '', dateRange: [] })
+const activeFilterCount = computed(() => [filters.userGroup, filters.adminName, filters.domain, filters.serverName, filters.themeName, filters.productCategory, filters.dateRange?.length].filter(Boolean).length)
 
 // 展开行的订单数据缓存 (key: row.id)
 /** @type {import('vue').Ref<Object>} 订单数据缓存 { [rowId]: { list, total } } */
@@ -342,6 +354,9 @@ async function fetchData() {
       adminName: filters.adminName.trim() || undefined,
       userGroup: filters.userGroup || undefined,
       domain: filters.domain.trim() || undefined,
+      serverName: filters.serverName.trim() || undefined,
+      themeName: filters.themeName.trim() || undefined,
+      productCategory: filters.productCategory.trim() || undefined,
       startDate: filters.dateRange?.[0] || undefined,
       endDate: filters.dateRange?.[1] || undefined,
     }
@@ -374,6 +389,9 @@ function resetFilters() {
   filters.userGroup = ''
   filters.adminName = ''
   filters.domain = ''
+  filters.serverName = ''
+  filters.themeName = ''
+  filters.productCategory = ''
   filters.dateRange = []
   page.value = 1
   fetchData()

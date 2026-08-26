@@ -128,6 +128,7 @@ const routePermissions = {
   '/dashboard/sites': 'dashboard:site:view',
   '/dashboard/orders': 'dashboard:order:view',
   '/dashboard/products': 'dashboard:product:view',
+  '/dashboard/indexing': 'dashboard:site:view',
   '/crawler/site': 'crawler:site:start',
   '/crawler/collect': 'crawler:collect:start',
   '/crawler/order': 'crawler:order:view',
@@ -136,6 +137,7 @@ const routePermissions = {
   '/crawler/schedule': 'crawler:schedule:view',
   '/crawler/selector-template': 'selector:template:list',
   '/crawler/site-config': 'crawler:site:config:list',
+  '/new-site': 'newsite:list',
   '/system/user': 'system:user:list',
   '/system/role': 'system:role:list',
   '/system/menu': 'system:menu:list',
@@ -166,6 +168,7 @@ const fallbackMenus = [
     { id: 12, menuName: '站点列表', path: '/dashboard/sites' },
     { id: 13, menuName: '订单列表', path: '/dashboard/orders' },
     { id: 14, menuName: '商品列表', path: '/dashboard/products' },
+    { id: 16, menuName: '收录数据列表', path: '/dashboard/indexing' },
   ] },
   { id: 2, menuName: '数据同步', icon: 'RefreshRight', children: [
     { id: 21, menuName: '站点爬虫', path: '/crawler/site' },
@@ -178,6 +181,9 @@ const fallbackMenus = [
   { id: 4, menuName: '商品采集', icon: 'Goods', children: [
     { id: 41, menuName: '数据源站点', path: '/crawler/site-config' },
     { id: 42, menuName: '选择器模板', path: '/crawler/selector-template' },
+  ] },
+  { id: 5, menuName: '站点建设', icon: 'Shop', children: [
+    { id: 63, menuName: '新站点管理', path: '/new-site' },
   ] },
   { id: 3, menuName: '系统管理', icon: 'Setting', children: [
     { id: 31, menuName: '用户管理', path: '/system/user' },

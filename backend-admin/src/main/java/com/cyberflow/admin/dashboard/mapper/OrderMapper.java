@@ -20,6 +20,28 @@ import java.util.Map;
 @Mapper
 public interface OrderMapper {
 
+    /** Normalized order-site expression shared by all business aggregates. */
+    String NORMALIZED_PRODUCT_HOST_SQL =
+            "LOWER(CASE WHEN LEFT(TRIM(product_host), 4) = 'www.' " +
+            "THEN SUBSTRING(TRIM(product_host), 5) ELSE TRIM(product_host) END)";
+
+    /**
+     * Business deduplication fingerprint: order day + source platform/site +
+     * payment card + order site + recipient email. Incomplete historical rows
+     * fall back to their physical order identity so missing values never cause
+     * unrelated orders to collapse into one.
+     */
+    String DEDUPLICATED_ORDER_KEY_SQL =
+            "CASE WHEN create_time IS NOT NULL " +
+            "AND LENGTH(TRIM(COALESCE(user_group, ''))) > 0 " +
+            "AND LENGTH(TRIM(COALESCE(card_number, ''))) > 0 " +
+            "AND LENGTH(TRIM(COALESCE(product_host, ''))) > 0 " +
+            "AND LENGTH(TRIM(COALESCE(shipping_email, ''))) > 0 " +
+            "THEN CONCAT(DATE_FORMAT(create_time, '%Y-%m-%d'), CHAR(31), " +
+            "UPPER(TRIM(user_group)), CHAR(31), TRIM(card_number), CHAR(31), " +
+            NORMALIZED_PRODUCT_HOST_SQL + ", CHAR(31), LOWER(TRIM(shipping_email))) " +
+            "ELSE CONCAT('ORDER_ID', CHAR(31), COALESCE(user_group, ''), CHAR(31), CAST(id AS CHAR)) END";
+
     /** Delete every order across both user groups. This endpoint is admin-only. */
     @Delete("DELETE FROM orders")
     int deleteAllOrders();
@@ -85,18 +107,18 @@ public interface OrderMapper {
                                                 @Param("startDate") String startDate,
                                                 @Param("endDate") String endDate);
 
-    /** Overview metrics follow monthly_revenue_conversion.py: order ID first. */
-    @Select("SELECT COUNT(DISTINCT CONCAT(user_group, CHAR(31), CAST(id AS CHAR))) AS deduplicated_orders, " +
+    /** Overview metrics use the shared business deduplication fingerprint. */
+    @Select("SELECT COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS deduplicated_orders, " +
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' " +
-            "THEN CONCAT(user_group, CHAR(31), CAST(id AS CHAR)) END) AS successful_orders, " +
+            "THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount " +
             "FROM orders")
     Map<String, Object> businessSummary();
 
     @Select({"<script>",
-            "SELECT COUNT(DISTINCT CONCAT(user_group, CHAR(31), CAST(id AS CHAR))) AS deduplicated_orders, " +
+            "SELECT COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS deduplicated_orders, " +
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' " +
-            "THEN CONCAT(user_group, CHAR(31), CAST(id AS CHAR)) END) AS successful_orders, " +
+            "THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount " +
             "FROM orders WHERE create_time &gt;= #{startDateTime} AND create_time &lt; #{endDateTime} " +
             "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
@@ -148,11 +170,7 @@ public interface OrderMapper {
      * @param endDate   结束日期（年月日格式）
      * @return 每日订单趋势列表，每组包含 date（日期）、count（订单数）、amount（金额）
      */
-    @Select("SELECT DATE(create_time) as date, COUNT(DISTINCT CASE " +
-            "WHEN TRIM(COALESCE(product_host, '')) <> '' " +
-            "AND TRIM(COALESCE(shipping_email, '')) <> '' " +
-            "THEN CONCAT(LOWER(TRIM(product_host)), CHAR(31), LOWER(TRIM(shipping_email))) " +
-            "END) as count, " +
+    @Select("SELECT DATE(create_time) as date, COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") as count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) as amount " +
             "FROM orders WHERE create_time >= #{startDateTime} AND create_time < #{endDateTime} " +
             "GROUP BY DATE(create_time) ORDER BY date")
@@ -160,7 +178,7 @@ public interface OrderMapper {
                                          @Param("endDateTime") String endDateTime);
 
     @Select("SELECT DATE(create_time) AS date, " +
-            "COUNT(DISTINCT CONCAT(user_group, CHAR(31), CAST(id AS CHAR))) AS count, " +
+            "COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS amount " +
             "FROM orders WHERE create_time >= #{startDateTime} AND create_time < #{endDateTime} " +
             "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
@@ -182,7 +200,7 @@ public interface OrderMapper {
     List<Map<String, Object>> countByAdmin();
 
     @Select("SELECT admin_name, " +
-            "COUNT(DISTINCT CONCAT(user_group, CHAR(31), CAST(id AS CHAR))) AS count, " +
+            "COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS amount " +
             "FROM orders WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
             "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) > 0) " +
