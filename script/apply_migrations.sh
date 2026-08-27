@@ -14,6 +14,7 @@ export MYSQL_PWD="$MYSQL_PASSWORD"
 
 mysql_exec() {
     mysql \
+        --default-character-set=utf8mb4 \
         --protocol=TCP \
         --host="$MYSQL_HOST" \
         --port="$MYSQL_PORT" \

@@ -42,3 +42,7 @@
 - 可选 `CYBERFLOW_PRODUCT_DB_TEST=1 mvn -o -Dtest=ProductQueryDatabaseTest test` 验证百万条临时数据的游标分页、范围限制和图片过滤后列表/统计/导出一致性。
 
 - 可选 `CYBERFLOW_PRODUCT_DB_TEST=1 mvn -o -Dtest=SiteIndexingGroupingDatabaseTest test` 验证同名/未分配分组下钻与权限过滤；只写临时站点表，收录历史为只读。
+
+## 生产分类乱码
+
+若旧迁移由 latin1 客户端执行，见 [分类乱码诊断与恢复](CATEGORY_ENCODING_REPAIR.md)。新迁移会有条件地恢复已知乱码及关联字段，不会重新播种或清空分类。

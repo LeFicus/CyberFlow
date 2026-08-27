@@ -1,3 +1,5 @@
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- Editable shared catalog. Seed exactly once: deleted categories must not reappear at startup.
 CREATE TABLE IF NOT EXISTS custom_category (
  id BIGINT PRIMARY KEY AUTO_INCREMENT, parent_id BIGINT NOT NULL DEFAULT 0,
