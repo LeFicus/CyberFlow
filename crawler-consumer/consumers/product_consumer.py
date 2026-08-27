@@ -26,7 +26,7 @@ from config import QUEUE_PRODUCT_CRAWL, EXCHANGE_TASKS
 import pika
 
 
-PRODUCT_CRAWL_TIMEOUT_SECONDS = max(60, int(os.getenv("PRODUCT_CRAWL_TIMEOUT_SECONDS", "1800")))
+PRODUCT_CRAWL_TIMEOUT_SECONDS = max(60, int(os.getenv("PRODUCT_CRAWL_TIMEOUT_SECONDS", "7200")))
 PROHIBITED_CATEGORY_RE = re.compile(
     r"保健品|保健|食品|枪支|枪械|弹药|武器|毒品|烟酒|烟草|烟具|酒精|服装|服饰|成人",
     re.IGNORECASE,
