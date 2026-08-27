@@ -119,7 +119,7 @@ services:
       PAYMENT_API_PASSWORD: ${PAYMENT_API_PASSWORD:-}
       VERIFY_SSL: ${VERIFY_SSL:-true}
       SCRAPY_PROJECT_PATH: /app/scrapy_app
-      PRODUCT_CRAWL_TIMEOUT_SECONDS: ${PRODUCT_CRAWL_TIMEOUT_SECONDS:-1800}
+      PRODUCT_CRAWL_TIMEOUT_SECONDS: ${PRODUCT_CRAWL_TIMEOUT_SECONDS:-7200}
     depends_on:
       db-migrate:
         condition: service_completed_successfully
