@@ -18,7 +18,7 @@ SET @site_server_ip_exists = (
     WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='site_info' AND COLUMN_NAME='server_ip'
 );
 SET @site_server_ip_sql = IF(@site_server_ip_exists=0,
-    'ALTER TABLE site_info ADD COLUMN server_ip VARCHAR(45) NULL COMMENT ''站点服务器 IP'' AFTER server_name',
+    'ALTER TABLE site_info ADD COLUMN server_ip VARCHAR(45) NULL COMMENT ''站点服务器 IP'' AFTER site_domain',
     'SELECT 1');
 PREPARE site_server_ip_stmt FROM @site_server_ip_sql;
 EXECUTE site_server_ip_stmt;
@@ -29,7 +29,7 @@ SET @history_server_ip_exists = (
     WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='site_indexing_history' AND COLUMN_NAME='server_ip'
 );
 SET @history_server_ip_sql = IF(@history_server_ip_exists=0,
-    'ALTER TABLE site_indexing_history ADD COLUMN server_ip VARCHAR(45) NULL COMMENT ''采集时站点服务器 IP'' AFTER server_name',
+    'ALTER TABLE site_indexing_history ADD COLUMN server_ip VARCHAR(45) NULL COMMENT ''采集时站点服务器 IP'' AFTER product_count',
     'SELECT 1');
 PREPARE history_server_ip_stmt FROM @history_server_ip_sql;
 EXECUTE history_server_ip_stmt;

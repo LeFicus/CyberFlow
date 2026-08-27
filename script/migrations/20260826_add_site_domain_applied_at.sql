@@ -7,7 +7,7 @@ SET @domain_applied_at_exists = (
     WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='site_info' AND COLUMN_NAME='domain_applied_at'
 );
 SET @domain_applied_at_sql = IF(@domain_applied_at_exists=0,
-    'ALTER TABLE site_info ADD COLUMN domain_applied_at DATETIME NULL COMMENT ''域名申请时间，用于站点月份归属'' AFTER last_submitted_at',
+    'ALTER TABLE site_info ADD COLUMN domain_applied_at DATETIME NULL COMMENT ''域名申请时间，用于站点月份归属'' AFTER product_category',
     'SELECT 1');
 PREPARE domain_applied_at_stmt FROM @domain_applied_at_sql;
 EXECUTE domain_applied_at_stmt;
