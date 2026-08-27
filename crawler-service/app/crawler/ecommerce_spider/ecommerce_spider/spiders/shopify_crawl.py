@@ -1,82 +1,27 @@
-"""
-Shopify 平台商品爬虫 — 通过 products.json API 高速采集商品数据
+"""Shopify public catalog discovery with one database row per stable variant.
 
-本爬虫专为 Shopify 电商平台设计，利用 Shopify 内置的 products.json
-和 meta.json 接口获取完整的商品信息，避免了逐页解析 HTML 的低效方式。
-
-核心特性:
-    1. 高速采集   — 通过 /products.json 接口批量获取商品（每页 250 条）
-    2. 自动变体   — 解析 product options 生成 cf_opingts 属性字符串
-    3. 唯一 SKU   — 基于分类前缀 + MD5 哈希生成全局唯一 SKU
-    4. 多币种支持  — 通过 meta.json 获取店铺货币 + exchange_rates.json 汇率换算
-    5. 深度清洗   — BeautifulSoup 白名单过滤 + 表格结构保留描述内容
-    6. 合并策略   — 每个产品只产出 1 个 Item（不含变体拆分）
-
-数据流:
-    meta.json (货币) → products.json (商品列表) → 逐产品构建 Item
-        → clean_description() 清洗描述 → generate_unique_sku() 生成SKU
-        → format_shopify_options() 格式化属性 → build_item() 组装 Item
+Public JSON emits every returned variant. An authorized Storefront token enables
+cursor pagination; suspected public variant truncation is reported as failure.
+Currency conversion and quality filtering happen once in the shared pipeline.
 """
 
-import hashlib
 import json
-import os
 import scrapy
 import re
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
+from ecommerce_spider.crawl_result import get_metrics
+from ecommerce_spider.crawl_options import CrawlOptions, currency_code, resolve_currency
+from ecommerce_spider.shopify_variants import ShopifyVariants
 
 
 class ShopifyCrawlFastSpider(scrapy.Spider):
-    """
-    Shopify 快速商品爬虫
-
-    通过 Shopify 标准 API 接口采集商品信息：
-        - /meta.json      — 获取店铺货币代码
-        - /products.json  — 分页获取商品列表（含变体、选项、图片等完整数据）
-
-    特点:
-        - 速度极快（绕过 HTML 解析，直接获取 JSON 结构化数据）
-        - 自动处理变体和属性，生成统一的 cf_opingts 格式
-        - 基于 MD5 哈希生成全局唯一 SKU（避免不同站点 SKU 冲突）
-        - 支持多币种汇率转换（USD 基准）
-
-    属性:
-        domain              (str) : 目标 Shopify 站点 URL
-        export_file         (str) : 导出文件路径（预留）
-        custom_category     (str) : 业务自定义分类名称
-        page                (int) : 当前分页页码（从 1 开始）
-        limit               (int) : 每页商品数（默认 250）
-        shop_currency       (str) : 店铺货币代码（如 USD、EUR）
-        exchange_rates      (dict): 汇率字典（货币代码 → 汇率倍率）
-        processed_product_ids (set): 已处理产品 ID 集合（去重）
-    """
+    """Shopify catalog and complete, independently priced variant collection."""
     name = "shopify_crawl_fast"
 
-    # 分类SKU前缀映射
-    CATEGORY_SKU_MAP = {
-        "五金/硬件": "HARD",
-        "交通工具/汽车/飞机/船舶": "VEH",
-        "体育用品": "SPORT",
-        "保健/美容/卫生/护理": "CARE",
-        "办公用品": "OFFC",
-        "动物/宠物用品": "PET",
-        "商业/工业": "IND",
-        "婴幼儿用品": "BABY",
-        "媒体": "MEDIA",
-        "家具": "FURN",
-        "家居与园艺": "HOME",
-        "成人": "ADULT",
-        "服饰与配饰": "APP",
-        "玩具/游戏": "TOY",
-        "电子产品": "ELEC",
-        "箱包": "BAG",
-        "艺术与娱乐": "ART",
-        "饮食/烟酒": "FOOD",
-    }
-
-    def __init__(self, domain=None, category="未知分类", product_role="main", export_file=None, *args, **kwargs):
+    def __init__(self, domain=None, category="未知分类", product_role="main", export_file=None,
+                 crawl_options_json=None, config_json=None, *args, **kwargs):
         """
         初始化 Shopify Spider
 
@@ -102,33 +47,24 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         self.product_role = "supplement" if str(product_role or "").strip().lower() == "supplement" else "main"
         self.page = 1
         self.limit = 250
-        self.shop_currency = "USD"
-        self.exchange_rates = self.load_exchange_rates()
+        self.crawl_options = CrawlOptions.from_json(crawl_options_json)
+        self.selectors = json.loads(config_json) if config_json else {}
+        self.shop_currency = ""
         self.logger.setLevel(1)
         # 记录已处理的产品ID，避免重复
         self.processed_product_ids = set()
+        self.processed_variant_ids = set()
+        self.variant_cursors = set()
+        self.storefront_token = ""
 
-    def load_exchange_rates(self):
-        """
-        从本地 exchange_rates.json 文件加载汇率数据
-
-        汇率文件位于与爬虫脚本同目录下，JSON 格式：
-            {"USD": 1.0, "EUR": 1.08, "GBP": 1.27, ...}
-
-        若文件不存在或加载失败，回退为 {"USD": 1.0}。
-
-        Returns:
-            dict: 货币代码 → 对美元汇率的映射字典
-        """
-        try:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            rate_path = os.path.join(base_dir, "exchange_rates.json")
-            if os.path.exists(rate_path):
-                with open(rate_path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-        except Exception as e:
-            self.logger.warning(f"⚠️  加载汇率文件失败: {e}")
-        return {"USD": 1.0}
+    @classmethod
+    def from_crawler(cls, crawler, *args, **kwargs):
+        spider = super().from_crawler(crawler, *args, **kwargs)
+        configs = crawler.settings.get("PRODUCT_PLATFORM_CONFIGS") or {}
+        configs = json.loads(configs) if isinstance(configs, str) else configs
+        config = {**configs.get(urlparse(spider.domain).hostname, {}), **spider.selectors.get("platform_config", {})}
+        spider.storefront_token = str(config.get("storefront_token") or "")
+        return spider
 
     def clean_text_regex(self, text):
         """
@@ -254,36 +190,13 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         cleaned_html = re.sub(r'\s+', ' ', cleaned_html)  # 压缩多余空格
         return cleaned_html.strip()
 
-    def generate_unique_sku(self, product_id, variant_id=None):
-        """
-        生成全局唯一 SKU 编码
-
-        SKU 格式:
-            {分类前缀}-{产品MD5前6位}[-{变体MD5前3位}]
-
-        示例:
-            ELEC-A1B2C3       (无变体)
-            ELEC-A1B2C3-D4E   (有变体)
-
-        Args:
-            product_id  (int/str): Shopify 产品 ID
-            variant_id  (int/str): Shopify 变体 ID（可选）
-
-        Returns:
-            str: 全局唯一的 SKU 字符串
-        """
-        # 基础前缀
-        prefix = self.CATEGORY_SKU_MAP.get(self.custom_category, 'GEN')
-
-        # 产品哈希
-        product_hash = hashlib.md5(str(product_id).encode()).hexdigest()[:6].upper()
-
-        # 如果有变体ID，添加变体标识
-        if variant_id:
-            variant_hash = hashlib.md5(str(variant_id).encode()).hexdigest()[:3].upper()
-            return f"{prefix}-{product_hash}-{variant_hash}"
-        else:
-            return f"{prefix}-{product_hash}"
+    def generate_unique_sku(self, product_id, variant_id):
+        """Stable within source_domain; independent of category or merchant SKU."""
+        product_id = str(product_id).rsplit("/", 1)[-1]
+        variant_id = str(variant_id).rsplit("/", 1)[-1]
+        if not product_id.isdigit() or not variant_id.isdigit():
+            raise ValueError("Invalid Shopify product/variant ID")
+        return f"SHOPIFY-{product_id}-{variant_id}"
 
     def start_requests(self):
         """
@@ -295,6 +208,7 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         """
         self.logger.info(f"🔍 开始爬取: {self.domain}")
         self.logger.info(f"📦 自定义分类: {self.custom_category}")
+        self.logger.warning("Shopify 以变体 ID 独立保存；旧版聚合商品不会自动删除，上线前请按升级文档核查历史记录")
 
         # 先请求meta获取货币信息
         yield scrapy.Request(
@@ -317,7 +231,7 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         """
         try:
             meta_data = json.loads(response.text)
-            self.shop_currency = meta_data.get("currency", "USD").upper()
+            self.shop_currency = currency_code(meta_data.get("currency"))
             self.logger.info(f"💱 店铺货币: {self.shop_currency}")
         except Exception as e:
             self.logger.warning(f"⚠️  解析meta失败: {e}")
@@ -329,12 +243,12 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         """
         处理 meta.json 请求失败的错误回调
 
-        如果 meta.json 请求失败，使用默认货币 USD 继续爬取。
+        如果 meta.json 请求失败，继续采集并尝试任务/域名配置；不推测为 USD。
 
         Args:
             failure (scrapy.http.Failure): 请求失败信息
         """
-        self.logger.warning(f"⚠️  获取meta信息失败，使用默认货币USD")
+        self.logger.warning("获取店铺币种失败，将检查任务/站点币种配置")
         yield from self.request_page()
 
     def request_page(self):
@@ -352,9 +266,18 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         yield scrapy.Request(
             url,
             callback=self.parse_products,
+            errback=self.products_failed,
             dont_filter=True,
             meta={'page': self.page}
         )
+
+    @property
+    def metrics(self):
+        return get_metrics(self.crawler)
+
+    def products_failed(self, failure):
+        self.metrics.counts["requests_failed"] += 1
+        self.metrics.error("products_request", failure.getErrorMessage())
 
     def format_shopify_options(self, options):
         """
@@ -416,94 +339,21 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         # 4. 用 ||| 连接所有属性段
         return "|||".join(option_segments)
 
-    def parse_products(self, response):
-        """
-        解析 products.json 响应 — 遍历产品列表并构建 Item
-
-        处理流程:
-            1. 解析 JSON 获取 products 列表
-            2. 遍历每个产品，使用 processed_product_ids 去重
-            3. 提取标题、描述、分类、首图、价格（含汇率换算）
-            4. 使用 format_shopify_options() 格式化产品属性
-            5. 调用 build_item() 组装 Scrapy Item
-            6. 若当前页满（== limit），继续请求下一页
-
-        Args:
-            response (scrapy.http.Response): products.json 的 HTTP 响应
-        """
-        try:
-            data = json.loads(response.text)
-        except json.JSONDecodeError as e:
-            self.logger.error(f"❌ JSON解析失败: {e}")
-            return
-
-        products = data.get("products", [])
-        current_page = response.meta.get('page', 1)
-
-        if not products:
-            self.logger.info(f"📭 第 {current_page} 页没有产品数据，爬取完成")
-            return
-
-        rate = self.exchange_rates.get(self.shop_currency, 1.0)
-
-        for product in products:
-            product_id = product.get("id")
-            if product_id in self.processed_product_ids:
-                continue
-            self.processed_product_ids.add(product_id)
-
-            # 1. 提取基础信息
-            title = self.clean_text_regex(product.get("title", ""))
-            raw_desc = product.get("body_html", "")
-            desc = self.clean_description(raw_desc)
-            category = self.clean_text_regex(product.get("product_type", "")) or "Others"
-            # ✅ 修正：更健壮的图片提取逻辑
-            images_list = product.get("images", [])
-            if images_list:
-                # 获取第一张图的 src
-                default_image = images_list[0].get("src", "")
-            else:
-                # 兜底方案：尝试旧的单数形式
-                default_image = product.get("image", {}).get("src", "")
-
-            if default_image == '':
-                continue
-            variants = product.get("variants", [])
-            options = product.get("options", [])
-            final_options = self.format_shopify_options(options)
-
-
-            # 处理变体价格
-            variant_price = float(variants[0].get("price") or 0) * rate
-
-
-
-
-            # 每一条变体都生成一个 Item
-            yield self.build_item(
-                sku=self.generate_unique_sku(product_id),
-                name=title,
-                desc=desc,
-                price=variant_price,
-                category=category,
-                image=default_image,
-                attr_str=final_options,
-            )
-
-        # 4. 翻页逻辑
-        if len(products) == self.limit:
-            self.page += 1
-            yield from self.request_page()
+    # Variant parsing lives in an adapter shared by public JSON and Storefront GraphQL.
+    parse_products = ShopifyVariants.parse_products
+    emit_variants = ShopifyVariants.emit_variants
+    variant_request = ShopifyVariants.variant_request
+    parse_variant_page = ShopifyVariants.parse_variant_page
 
     def build_item(self, sku, name, desc, price, category, image, attr_str):
         """
         构建标准格式的商品 Item 字典
 
         Item 字段说明:
-            SKU          : 全局唯一库存编码（由 generate_unique_sku 生成）
+            SKU          : 站点内稳定的商品/变体编码（与来源域名组成唯一身份）
             Name         : 商品名称
             Description  : 清洗后的 HTML 描述
-            Regular price: 汇率换算后的价格（保留 2 位小数）
+            Regular price: 来源币种价格（由 Pipeline 统一换算为 USD）
             Categories   : 商品分类（来自 Shopify product_type）
             Images       : 首图 URL
             cf_opingts   : 商品属性选项（格式: Name^Val1#Val2|||...）
@@ -524,6 +374,7 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
         Returns:
             dict: 标准 Item 字典
         """
+        currency, currency_source = resolve_currency(self, preferred=self.shop_currency)
         item = {
             "SKU": sku,
             "Name": name,
@@ -537,7 +388,8 @@ class ShopifyCrawlFastSpider(scrapy.Spider):
             "原站域名": urlparse(self.domain).netloc,  # 使用urlparse更安全
             "分布网站识别": 0,
             "语言": "en",
-            "货币": "USD",
+            "货币": currency,
+            "币种来源": currency_source,
         }
 
         # 调试信息

@@ -94,8 +94,6 @@ services:
         condition: service_healthy
       mysql:
         condition: service_healthy
-      redis:
-        condition: service_healthy
 
   crawler-consumer:
     build:
@@ -120,14 +118,18 @@ services:
       VERIFY_SSL: ${VERIFY_SSL:-true}
       SCRAPY_PROJECT_PATH: /app/scrapy_app
       PRODUCT_CRAWL_TIMEOUT_SECONDS: ${PRODUCT_CRAWL_TIMEOUT_SECONDS:-7200}
+      PRODUCT_CRAWL_PROXY_URL: ${PRODUCT_CRAWL_PROXY_URL:-}
+      PRODUCT_DOMAIN_CURRENCIES: ${PRODUCT_DOMAIN_CURRENCIES:-}
+      PRODUCT_DISCOVERY_MAX_PAGES: ${PRODUCT_DISCOVERY_MAX_PAGES:-100}
+      PRODUCT_CRAWL_CA_BUNDLE: ${PRODUCT_CRAWL_CA_BUNDLE:-}
+      PRODUCT_REDIS_ENABLED: ${PRODUCT_REDIS_ENABLED:-true}
+      PRODUCT_PLATFORM_CONFIGS: ${PRODUCT_PLATFORM_CONFIGS:-}
     depends_on:
       db-migrate:
         condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
       mysql:
-        condition: service_healthy
-      redis:
         condition: service_healthy
 
 volumes:

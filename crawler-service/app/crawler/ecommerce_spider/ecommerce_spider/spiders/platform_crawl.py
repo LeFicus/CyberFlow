@@ -6,12 +6,18 @@ dedicated spider because its Schema.org Product JSON-LD is the primary source.
 """
 
 import hashlib
+import gzip
+import io
 import json
 import re
 from html import unescape
 from urllib.parse import unquote, urlparse, urlunparse
 
 import scrapy
+
+from ecommerce_spider.crawl_result import get_metrics
+from ecommerce_spider.crawl_options import CrawlOptions, resolve_currency
+from ecommerce_spider.request_policy import same_store
 
 
 class PlatformCrawlSpider(scrapy.Spider):
@@ -36,10 +42,7 @@ class PlatformCrawlSpider(scrapy.Spider):
         # noise; accepted/rejected URL totals are logged explicitly below.
         "LOG_LEVEL": "INFO",
     }
-    SUPPORTED = {
-        "woocommerce", "opencart", "magento", "prestashop",
-        "shopline", "ecwid", "wix", "squarespace", "custom",
-    }
+    SUPPORTED = {"woocommerce"}
     SITEMAP_PATHS = ("/sitemap_index.xml", "/sitemap.xml", "/wp-sitemap.xml")
     SITEMAP_INDEX_XPATH = "//*[local-name()='sitemap']/*[local-name()='loc']/text()"
     PRODUCT_PATH_SEGMENTS = {"product", "products", "item", "items", "p"}
@@ -88,11 +91,11 @@ class PlatformCrawlSpider(scrapy.Spider):
             "//*[contains(@class,'breadcrumbs')]//*[last()]//text()"
         ),
         "site_map": SITEMAP_INDEX_XPATH,
-        "currency": "USD",
+        "currency": "",
     }
 
     def __init__(self, domain=None, category="未知分类", product_role="main", platform=None,
-                 selector_profile="woocommerce", config_json=None,
+                 selector_profile="woocommerce", config_json=None, crawl_options_json=None,
                  mode="prod", *args, **kwargs):
         super().__init__(*args, **kwargs)
         platform = str(platform or "").lower().strip()
@@ -104,12 +107,14 @@ class PlatformCrawlSpider(scrapy.Spider):
         raw_domain = domain if str(domain).startswith(("http://", "https://")) else f"https://{domain}"
         parsed = urlparse(raw_domain)
         self.domain = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
-        self.allowed_domains = [parsed.netloc]
+        hostname = (parsed.hostname or "").lower().removeprefix("www.")
+        self.allowed_domains = [hostname, f"www.{hostname}"]
         self.platform = platform
         self.selector_profile = "woocommerce"
         self.custom_category = str(category or "未知分类").strip() or "未知分类"
         self.product_role = "supplement" if str(product_role or "").strip().lower() == "supplement" else "main"
         self.mode = mode
+        self.crawl_options = CrawlOptions.from_json(crawl_options_json)
         self.max_items = 10 if mode == "dev" else 20000
         self.seen_sitemap_urls = set()
         self.seen_product_urls = set()
@@ -124,6 +129,10 @@ class PlatformCrawlSpider(scrapy.Spider):
     async def start(self):
         yield self._sitemap_request(0)
 
+    @property
+    def metrics(self):
+        return get_metrics(self.crawler)
+
     def _sitemap_request(self, index):
         url = f"{self.domain}{self.SITEMAP_PATHS[index]}"
         self.seen_sitemap_urls.add(url)
@@ -136,13 +145,37 @@ class PlatformCrawlSpider(scrapy.Spider):
         )
 
     def sitemap_failed(self, failure):
+        self.metrics.counts["requests_failed"] += 1
+        if "sitemap_attempt" not in failure.request.meta:
+            yield from self.discovery_failed("sitemap_request", failure.getErrorMessage())
+            return
         index = failure.request.meta.get("sitemap_attempt", 0) + 1
         if index < len(self.SITEMAP_PATHS):
             yield self._sitemap_request(index)
         else:
-            self.logger.error("No accessible sitemap found for %s", self.domain)
+            yield from self.discovery_failed("sitemap_exhausted", f"No accessible sitemap found for {self.domain}")
+
+    def discovery_failed(self, reason, message):
+        self.metrics.error(reason, message)
+        return ()
+
+    def product_failed(self, failure):
+        self.metrics.counts["requests_failed"] += 1
+        response = getattr(failure.value, "response", None) if hasattr(failure, "value") else None
+        reason = "verification_required" if response and "verification-required" in response.flags else "product_request"
+        self.metrics.error(reason, failure.getErrorMessage())
 
     def parse_sitemap(self, response):
+        if response.body.startswith(b"\x1f\x8b"):
+            try:
+                with gzip.GzipFile(fileobj=io.BytesIO(response.body)) as source:
+                    body = source.read(20 * 1024 * 1024 + 1)
+                if len(body) > 20 * 1024 * 1024:
+                    raise ValueError("Sitemap exceeds decompressed size limit")
+                response = scrapy.http.XmlResponse(response.url, body=body, request=response.request)
+            except (OSError, EOFError, ValueError) as exc:
+                yield from self.discovery_failed("invalid_sitemap", str(exc))
+                return
         # Standard XML sitemap discovery is a platform rule, not a configurable
         # product-page selector. Retain an old custom sitemap selector only as
         # a fallback for non-standard storefronts.
@@ -163,6 +196,7 @@ class PlatformCrawlSpider(scrapy.Spider):
                     )
                     yield self._sitemap_request(attempt + 1)
                 else:
+                    yield from self.discovery_failed("sitemap_discovery", "Sitemap index contains no recognized product maps")
                     self.logger.error(
                         "地图索引未发现商品子地图，已跳过 %d 个非商品地图: %s",
                         len(sitemap_urls),
@@ -176,6 +210,7 @@ class PlatformCrawlSpider(scrapy.Spider):
                     yield scrapy.Request(
                         url,
                         callback=self.parse_sitemap,
+                        errback=self.sitemap_failed,
                         meta={
                             "product_sitemap": (
                                 response.meta.get("product_sitemap", False)
@@ -195,6 +230,10 @@ class PlatformCrawlSpider(scrapy.Spider):
                 yield self._sitemap_request(attempt + 1)
             else:
                 self.logger.warning("Sitemap contains no product URLs: %s", response.url)
+                if response.xpath("/*[local-name()='urlset']"):
+                    yield from self.empty_sitemap(response)
+                else:
+                    yield from self.discovery_failed("invalid_sitemap", f"Invalid sitemap: {response.url}")
             return
         trusted_product_sitemap = response.meta.get("product_sitemap", False)
         accepted = 0
@@ -209,13 +248,20 @@ class PlatformCrawlSpider(scrapy.Spider):
             if url and url not in self.seen_product_urls:
                 accepted += 1
                 self.seen_product_urls.add(url)
-                yield scrapy.Request(url, callback=self.parse_product_detail)
+                self.metrics.counts["discovered"] += 1
+                yield scrapy.Request(url, callback=self.parse_product_detail, errback=self.product_failed)
         self.logger.info(
             "商品 URL 过滤 → %s | 接受 %d | 排除非商品 %d",
             response.url,
             accepted,
             rejected,
         )
+        if not accepted and not self.seen_product_urls:
+            yield from self.discovery_failed("sitemap_no_products", "Sitemap contains no recognized product detail URLs")
+
+    def empty_sitemap(self, response):
+        self.metrics.confirmed_empty = True
+        return ()
 
     @staticmethod
     def _is_product_sitemap_url(url):
@@ -227,7 +273,7 @@ class PlatformCrawlSpider(scrapy.Spider):
     def _is_product_detail_url(self, url, trusted_product_sitemap=False):
         """Reject content/category URLs before issuing expensive detail requests."""
         parsed = urlparse(url)
-        if parsed.netloc.lower() not in {domain.lower() for domain in self.allowed_domains}:
+        if not same_store(url, self.domain):
             return False
 
         path = unquote(parsed.path).lower().strip("/")
@@ -254,10 +300,12 @@ class PlatformCrawlSpider(scrapy.Spider):
         return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
 
     def parse_product_detail(self, response):
+        self.metrics.counts["fetched"] += 1
         name = self._first(response, "title")
         price = self._price(response)
         image = self._first_url(response, "images")
-        if not name or price <= 0 or not image:
+        if not name or price <= 0:
+            self.metrics.error("product_parse", f"Missing product title or price: {response.url}")
             return
 
         original_sku = self._first(response, "sku")
@@ -268,6 +316,7 @@ class PlatformCrawlSpider(scrapy.Spider):
         breadcrumbs = [value.strip() for value in response.xpath(self.selectors["breadcrumb_links"]).getall() if value.strip()]
         breadcrumbs = [value for value in breadcrumbs if value.lower() not in {"home", name.lower()}]
         categories = "|||".join(breadcrumbs[:2]) or "Others"
+        currency, currency_source = resolve_currency(self, response)
 
         yield {
             "SKU": sku,
@@ -275,14 +324,15 @@ class PlatformCrawlSpider(scrapy.Spider):
             "Description": description,
             "Regular price": f"{price:.2f}",
             "Categories": categories,
-            "Images": response.urljoin(image),
+            "Images": response.urljoin(image) if image else "",
             "cf_opingts": "",
             "自定义分类": self.custom_category,
             "产品标签": self.product_role,
-            "原站域名": urlparse(response.url).netloc,
+            "原站域名": urlparse(self.domain).netloc,
             "分布网站识别": 0,
             "语言": "en",
-            "货币": self._currency(response),
+            "货币": currency,
+            "币种来源": currency_source,
         }
         self.logger.info("成功生成商品 → %s | %s", sku, name[:60])
 
@@ -343,14 +393,8 @@ class PlatformCrawlSpider(scrapy.Spider):
             pass
         return default
 
-    @staticmethod
-    def _currency(response):
-        values = response.xpath(
-            "//meta[@itemprop='priceCurrency']/@content | "
-            "//meta[@property='product:price:currency']/@content | "
-            "//*[@itemprop='priceCurrency']/text()"
-        ).getall()
-        return next((str(value).strip().upper() for value in values if str(value).strip()), "USD")
+    def _currency(self, response):
+        return resolve_currency(self, response)[0]
 
     @staticmethod
     def _clean_description(value):

@@ -3,6 +3,7 @@
 import json
 import html
 import re
+import math
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -30,7 +31,8 @@ _CATEGORY_NOISE = {
     "shop all",
     "trending",
 }
-MAX_PRODUCT_PRICE_USD = 130.0
+class UnknownCurrencyError(ValueError):
+    pass
 
 
 def normalize_name(value: object) -> str:
@@ -58,12 +60,7 @@ def has_content(value: object) -> bool:
 
 
 def product_dedupe_key(domain: object, name: object, image: object) -> str:
-    """Build a stable per-site identity for the same product across crawl runs.
-
-    SKU values are not reliable across storefront engines (and may differ for
-    variants), so the database also keys a product by normalized domain, title,
-    and the image path with tracking query parameters removed.
-    """
+    """Build a non-unique lookup hint; domain/SKU remains the product identity."""
     raw_domain = str(domain or "").strip().lower()
     parsed_domain = urlparse(raw_domain if "://" in raw_domain else f"//{raw_domain}")
     domain_key = (parsed_domain.netloc or parsed_domain.path).split("/")[0].split(":")[0]
@@ -109,9 +106,13 @@ def currency_to_usd(value: object, currency: object = "USD") -> float:
         number = float(re.sub(r"[^\d.,-]", "", str(value or "")).replace(",", ""))
     except (TypeError, ValueError):
         return 0.0
-    code = str(currency or "USD").strip().upper()
+    if not math.isfinite(number):
+        return 0.0
+    code = str(currency or "").strip().upper()
     rates = load_exchange_rates()
-    return round(number * float(rates.get(code, 1.0)), 2)
+    if code not in rates or not math.isfinite(float(rates[code])) or float(rates[code]) <= 0:
+        raise UnknownCurrencyError(f"Unknown currency or missing USD rate: {code or 'missing'}")
+    return round(number * float(rates[code]), 2)
 
 
 def load_exchange_rates() -> dict:

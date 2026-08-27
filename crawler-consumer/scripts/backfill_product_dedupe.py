@@ -1,4 +1,4 @@
-"""Backfill and enforce the stable product identity on existing data."""
+"""Backfill non-unique product lookup hints without merging or deleting products."""
 
 import os
 from urllib.parse import urlparse
@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 import pymysql
 
 from ecommerce_spider.normalization import product_dedupe_key
+from ecommerce_spider.pipelines import MySQLRedisPipeline
 
 
 def config():
@@ -20,13 +21,9 @@ def config():
 def main():
     conn = pymysql.connect(**config())
     try:
+        with conn.cursor() as cur:
+            MySQLRedisPipeline._check_identity(cur)
         with conn.cursor(pymysql.cursors.DictCursor) as cur:
-            cur.execute(
-                "SELECT COUNT(*) AS n FROM information_schema.columns "
-                "WHERE table_schema=DATABASE() AND table_name='ecommerce_products' AND column_name='dedupe_key'"
-            )
-            if cur.fetchone()["n"] == 0:
-                cur.execute("ALTER TABLE ecommerce_products ADD COLUMN dedupe_key VARCHAR(768) NULL")
             cur.execute("SELECT id, source_domain, name, images FROM ecommerce_products")
             rows = cur.fetchall()
             for row in rows:
@@ -34,32 +31,13 @@ def main():
                     "UPDATE ecommerce_products SET dedupe_key=%s WHERE id=%s",
                     (product_dedupe_key(row.get("source_domain"), row.get("name"), row.get("images")), row["id"]),
                 )
-            cur.execute(
-                "SELECT dedupe_key, GROUP_CONCAT(id ORDER BY id) ids FROM ecommerce_products "
-                "WHERE dedupe_key IS NOT NULL GROUP BY dedupe_key HAVING COUNT(*) > 1"
-            )
-            duplicate_groups = cur.fetchall()
-            deleted = 0
-            for group in duplicate_groups:
-                ids = [int(value) for value in str(group["ids"]).split(",")]
-                if len(ids) > 1:
-                    placeholders = ",".join(["%s"] * (len(ids) - 1))
-                    cur.execute(f"DELETE FROM ecommerce_products WHERE id IN ({placeholders})", tuple(ids[1:]))
-                    deleted += len(ids) - 1
-            cur.execute(
-                "SELECT COUNT(*) FROM information_schema.statistics "
-                "WHERE table_schema=DATABASE() AND table_name='ecommerce_products' "
-                "AND index_name='uk_product_dedupe'"
-            )
-            if cur.fetchone()["COUNT(*)"] == 0:
-                cur.execute("ALTER TABLE ecommerce_products ADD UNIQUE KEY uk_product_dedupe (dedupe_key)")
         conn.commit()
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
-    print(f"scanned={len(rows)} duplicate_groups={len(duplicate_groups)} deleted={deleted}")
+    print(f"scanned={len(rows)} deleted=0; product identity remains (source_domain, sku)")
 
 
 if __name__ == "__main__":

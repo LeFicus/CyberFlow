@@ -3,6 +3,7 @@ package com.cyberflow.admin.dashboard.service;
 import com.cyberflow.admin.dashboard.mapper.*;
 import com.cyberflow.admin.common.DataScopeService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.cursor.Cursor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,7 @@ import java.util.*;
  * @author CyberFlow
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class DashboardService {
 
@@ -212,11 +214,7 @@ public class DashboardService {
         List<Map<String, Object>> products = productMapper.listProductFingerprintsByIds(ids, ownerName);
         int deletedCount = productMapper.deleteProductsByIds(ids, ownerName);
         for (Map<String, Object> product : products) {
-            String sku = Objects.toString(product.get("sku"), "").trim();
-            String domain = Objects.toString(product.get("source_domain"), "").trim();
-            if (sku.isEmpty() || domain.isEmpty()) continue;
-            redisTemplate.opsForSet().remove("scraped_skus:shopify_crawl_fast:" + domain, sku);
-            redisTemplate.opsForSet().remove("scraped_skus:platform_crawl:" + domain, sku);
+            if (!removeProductFingerprint(product)) break;
         }
 
         var result = new LinkedHashMap<String, Object>();
@@ -237,7 +235,9 @@ public class DashboardService {
         // clear never creates a million-element Java List.
         try (Cursor<Map<String, Object>> products = productMapper.streamProductFingerprintsFiltered(
                 domainFilter, customCategoryFilter, productCategoryFilter, productRoleFilter, name, ownerName)) {
-            for (Map<String, Object> product : products) removeProductFingerprint(product);
+            for (Map<String, Object> product : products) {
+                if (!removeProductFingerprint(product)) break;
+            }
         } catch (IOException ex) {
             throw new IllegalStateException("Unable to finish streaming product fingerprints", ex);
         }
@@ -249,12 +249,20 @@ public class DashboardService {
         return result;
     }
 
-    private void removeProductFingerprint(Map<String, Object> product) {
+    private boolean removeProductFingerprint(Map<String, Object> product) {
         String sku = Objects.toString(product.get("sku"), "").trim();
         String domain = Objects.toString(product.get("source_domain"), "").trim();
-        if (sku.isEmpty() || domain.isEmpty()) return;
-        redisTemplate.opsForSet().remove("scraped_skus:shopify_crawl_fast:" + domain, sku);
-        redisTemplate.opsForSet().remove("scraped_skus:platform_crawl:" + domain, sku);
+        if (sku.isEmpty() || domain.isEmpty()) return true;
+        try {
+            for (String spider : List.of("shopify_crawl_fast", "platform_crawl", "bigcommerce_crawl",
+                    "magento_crawl", "wix_crawl", "ecwid_crawl", "shopline_crawl")) {
+                redisTemplate.opsForSet().remove("scraped_skus:" + spider + ":" + domain, sku);
+            }
+            return true;
+        } catch (RuntimeException ex) {
+            log.warn("Redis fingerprint cleanup unavailable; MySQL operation continues ({})", ex.getClass().getSimpleName());
+            return false;
+        }
     }
 
     private List<String> normalizeCategoryFilter(List<String> categories) {

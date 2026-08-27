@@ -14,6 +14,8 @@ from urllib.parse import unquote, urlparse
 # ========== 项目基本配置 ==========
 # 爬虫机器人名称，用于标识该项目
 BOT_NAME = "ecommerce_spider"
+PRODUCT_PLATFORM_CONFIGS = os.getenv("PRODUCT_PLATFORM_CONFIGS", "{}") or "{}"
+PRODUCT_REDIS_ENABLED = os.getenv("PRODUCT_REDIS_ENABLED", "true").lower() in {"true", "1", "yes"}
 
 # 指定爬虫模块的查找路径
 SPIDER_MODULES = ["ecommerce_spider.spiders"]
@@ -24,6 +26,13 @@ NEWSPIDER_MODULE = "ecommerce_spider.spiders"
 # ========== Scrapy Addons (v2.0+) ==========
 # 扩展插件配置，此处为空表示不启用额外 addon
 ADDONS = {}
+
+EXTENSIONS = {"ecommerce_spider.crawl_result.CrawlResultExtension": 500}
+DOWNLOADER_MIDDLEWARES = {
+    "ecommerce_spider.middlewares.ProductRequestPolicyMiddleware": 540,
+    "ecommerce_spider.middlewares.BigCommerceRequestsFallbackMiddleware": 560,
+}
+DOWNLOADER_CLIENTCONTEXTFACTORY = "ecommerce_spider.request_policy.ProductTLSContextFactory"
 
 # ========== 爬取礼仪配置 ==========
 # 是否遵守目标站点的 robots.txt 协议
@@ -118,6 +127,10 @@ def _redis_config():
 MYSQL_CONFIG = _mysql_config()
 REDIS_CONFIG = _redis_config()
 DB_BATCH_SIZE = int(os.getenv("DB_BATCH_SIZE", "250"))
+PRODUCT_DOMAIN_CURRENCIES = os.getenv("PRODUCT_DOMAIN_CURRENCIES") or "{}"
+PRODUCT_CRAWL_PROXY_URL = os.getenv("PRODUCT_CRAWL_PROXY_URL", "")
+PRODUCT_CRAWL_CA_BUNDLE = os.getenv("PRODUCT_CRAWL_CA_BUNDLE", "")
+PRODUCT_DISCOVERY_MAX_PAGES = int(os.getenv("PRODUCT_DISCOVERY_MAX_PAGES", "100"))
 TELNETCONSOLE_ENABLED = False
 
 # ========== AutoThrottle 自动限速 ==========

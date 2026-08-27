@@ -161,13 +161,39 @@ public class CrawlerService {
      */
     public Map<String, Object> triggerProductCrawl(Long siteConfigId, String domain, String type,
                                                    String category, String productRole, Long triggeredBy) {
-        if (!java.util.Set.of("shopify", "woocommerce", "bigcommerce").contains(type.toLowerCase())) {
+        return triggerProductCrawl(siteConfigId, domain, type, category, productRole, triggeredBy, Map.of());
+    }
+
+    public Map<String, Object> triggerProductCrawl(Long siteConfigId, String domain, String type,
+                                                   String category, String productRole, Long triggeredBy,
+                                                   Map<String, Object> crawlOptions) {
+        java.util.Set<String> optionKeys = java.util.Set.of(
+            "max_product_price_usd", "require_description", "require_image", "currency"
+        );
+        if (!optionKeys.containsAll(crawlOptions.keySet())) {
+            throw new IllegalArgumentException("Unsupported crawl_options keys");
+        }
+        for (String key : java.util.List.of("require_description", "require_image")) {
+            if (crawlOptions.containsKey(key) && !(crawlOptions.get(key) instanceof Boolean)) {
+                throw new IllegalArgumentException(key + " must be boolean");
+            }
+        }
+        Object maximum = crawlOptions.get("max_product_price_usd");
+        if (maximum != null && (!(maximum instanceof Number number)
+                || !Double.isFinite(number.doubleValue()) || number.doubleValue() <= 0)) {
+            throw new IllegalArgumentException("max_product_price_usd must be positive or null");
+        }
+        Object currency = crawlOptions.get("currency");
+        if (currency != null && (!(currency instanceof String code) || !code.matches("(?i)([a-z]{3})?"))) {
+            throw new IllegalArgumentException("currency must be an ISO code or empty");
+        }
+        if (type == null || !ProductEngines.SUPPORTED.contains(type.toLowerCase())) {
             return Map.of("status", "Rejected", "message", "Unsupported product crawl engine");
         }
         String taskId = publisher.createTaskId();
         saveTaskHistory(taskId, "product_crawl", "manual", String.valueOf(triggeredBy));
         try {
-            publisher.publishProductCrawl(taskId, siteConfigId, domain, type, category, productRole, triggeredBy);
+            publisher.publishProductCrawl(taskId, siteConfigId, domain, type, category, productRole, triggeredBy, crawlOptions);
         } catch (RuntimeException ex) {
             taskHistoryService.markDispatchFailed(taskId, ex.getMessage());
             throw ex;

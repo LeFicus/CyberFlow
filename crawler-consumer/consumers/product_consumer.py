@@ -4,8 +4,8 @@
 处理流程:
 1. 从 RabbitMQ 消费任务消息（包含 site_config_id、domain、type、category、product_role）
 2. 将任务状态更新为 RUNNING
-3. Shopify、BigCommerce 使用独立爬虫；WooCommerce 等平台使用通用地图爬虫
-4. 以子进程方式执行 Scrapy 命令，统计生成的商品数量
+3. 按七种受支持平台分派独立爬虫入口；WooCommerce 使用地图爬虫
+4. 以子进程方式执行 Scrapy 命令，读取 MySQL 提交后的结构化统计
 5. 将任务状态更新为 SUCCESS 或 FAILED
 6. 将执行结果发布到 task.result 交换机
 """
@@ -15,12 +15,13 @@ import codecs
 import json
 import os
 import re
-import signal
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from loguru import logger
 from consumers.base_consumer import BaseConsumer
+from consumers.product_result import ProductResultProtocol, metrics_summary
+from consumers.product_control import ActiveDeadline, pause_child, resume_child
 from db.repository import CursorRepository, TaskCancelledError
 from config import QUEUE_PRODUCT_CRAWL, EXCHANGE_TASKS
 import pika
@@ -87,69 +88,74 @@ class ProductConsumer(BaseConsumer):
 
         await self.repo.connect()
         start = time.monotonic()
+        self.crawl_metrics = {}
+        crawl_task = None
 
         try:
             await self.repo.wait_for_task_control(task_id)
             await self.repo.update_task_status(task_id, "RUNNING", progress=10, progress_message="正在准备商品采集")
 
-            supported_types = {
-                "shopify", "woocommerce", "bigcommerce", "opencart", "magento",
-                "prestashop", "shopline", "ecwid", "wix", "squarespace", "custom",
-            }
+            supported_types = {"shopify", "woocommerce", "bigcommerce", "magento", "shopline", "ecwid", "wix"}
             site_type = site_type.lower().strip()
             if site_type not in supported_types:
                 raise Exception(f"Unsupported product crawl type: {site_type}. Supported: {', '.join(sorted(supported_types))}.")
             await self.repo.update_task_progress(task_id, 20, f"正在连接 {domain}")
             site_config = await self.repo.get_site_config(site_config_id)
-            selectors = self._selector_config(site_config) if site_type != "shopify" else None
+            selectors = self._selector_config(site_config)
+            crawl_options = selectors.pop("crawl_options", {})
+            if not isinstance(crawl_options, dict) or not isinstance(payload.get("crawl_options", {}), dict):
+                raise ValueError("crawl_options must be an object")
+            crawl_options = {**crawl_options, **payload.get("crawl_options", {})}
             crawl_task = asyncio.create_task(
-                self._run_platform(domain, category, site_type, product_role, selectors, task_id)
+                self._run_platform(domain, category, site_type, product_role, selectors, task_id, crawl_options)
             )
             progress = 25
-            deadline = time.monotonic() + PRODUCT_CRAWL_TIMEOUT_SECONDS
             while not crawl_task.done():
                 await self.repo.wait_for_task_control(task_id)
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    crawl_task.cancel()
-                    await asyncio.gather(crawl_task, return_exceptions=True)
-                    raise TimeoutError(
-                        f"商品爬虫超过 {PRODUCT_CRAWL_TIMEOUT_SECONDS // 60} 分钟未完成"
-                    )
                 try:
-                    await asyncio.wait_for(asyncio.shield(crawl_task), timeout=min(3, remaining))
+                    # The subprocess controller owns the only active-time budget.
+                    await asyncio.wait_for(asyncio.shield(crawl_task), timeout=3)
                 except asyncio.TimeoutError:
-                    progress = min(94, progress + 1)
                     elapsed = int(time.monotonic() - start)
                     await self.repo.update_task_progress(
-                        task_id, progress, f"正在采集商品并写入数据库（已运行 {elapsed // 60} 分钟）"
+                        task_id, progress, f"{metrics_summary(self.crawl_metrics)}（已运行 {elapsed // 60} 分钟）"
                     )
             result = await crawl_task
             await self.repo.update_task_progress(task_id, 95, "正在汇总采集结果")
 
             duration_ms = int((time.monotonic() - start) * 1000)
             await self.repo.update_task_status(
-                task_id, "SUCCESS", rows_affected=result, duration_ms=duration_ms
+                task_id, "SUCCESS", rows_affected=result["persisted"], duration_ms=duration_ms,
+                progress_message=metrics_summary(result),
             )
-            self._publish_result(task_id, "success", result, None, duration_ms)
-            logger.success(f"✅ Product crawl done: {domain} ({result} items)")
+            self._publish_result(task_id, "success", result["persisted"], None, duration_ms, metrics=result)
+            logger.success(f"✅ Product crawl done: {domain} ({metrics_summary(result)})")
 
         except TaskCancelledError as e:
             logger.info(f"⏹️ Product crawl cancelled by operator: {task_id} ({e})")
             return
         except Exception as e:
+            if crawl_task and not crawl_task.done():
+                crawl_task.cancel()
+                await asyncio.gather(crawl_task, return_exceptions=True)
             duration_ms = int((time.monotonic() - start) * 1000)
+            metrics = dict(self.crawl_metrics)
+            metrics["failed"] = max(1, metrics.get("failed", 0))
             await self.repo.update_task_status(
-                task_id, "FAILED", error_msg=str(e), duration_ms=duration_ms
+                task_id, "FAILED", error_msg=str(e), duration_ms=duration_ms,
+                rows_affected=metrics.get("persisted", 0), progress_message=metrics_summary(metrics),
             )
-            self._publish_result(task_id, "failed", 0, None, duration_ms, str(e))
+            self._publish_result(task_id, "failed", metrics.get("persisted", 0), None, duration_ms, str(e), metrics)
             logger.error(f"❌ Product crawl failed: {e}")
             raise
         finally:
+            if crawl_task and not crawl_task.done():
+                crawl_task.cancel()
+                await asyncio.gather(crawl_task, return_exceptions=True)
             await self.repo.close()
 
     async def _run_shopify(self, domain: str, category: str, product_role: str,
-                           task_id: str | None = None) -> int:
+                           task_id: str | None = None, selectors=None, crawl_options=None) -> dict:
         """启动 Shopify 爬虫子进程。
 
         参数:
@@ -157,7 +163,7 @@ class ProductConsumer(BaseConsumer):
             category (str): 产品分类名称
 
         返回:
-            int: 成功生成的商品数量
+            dict: 数据库已提交数量及分类统计
 
         异常:
             Exception: Scrapy 子进程返回非零退出码时抛出
@@ -168,26 +174,34 @@ class ProductConsumer(BaseConsumer):
             "-a", f"category={category}",
             "-a", f"product_role={product_role}",
             "-a", "mode=prod",
+            "-a", f"crawl_options_json={json.dumps(crawl_options or {})}",
         ]
+        if selectors:
+            cmd.extend(["-a", f"config_json={json.dumps(selectors, ensure_ascii=False)}"])
         return await self._exec_scrapy(cmd, task_id)
 
     async def _run_platform(self, domain: str, category: str, site_type: str,
                             product_role: str = "main",
                             selectors: dict | None = None,
-                            task_id: str | None = None) -> int:
+                            task_id: str | None = None, crawl_options=None) -> dict:
         """Dispatch a crawl to its platform-specific spider."""
         if site_type == "shopify":
-            return await self._run_shopify(domain, category, product_role, task_id)
+            return await self._run_shopify(domain, category, product_role, task_id, selectors, crawl_options)
         if site_type == "bigcommerce":
-            return await self._run_bigcommerce(domain, category, product_role, selectors, task_id)
+            return await self._run_bigcommerce(domain, category, product_role, selectors, task_id, crawl_options)
+        engines = {"woocommerce": "platform_crawl", "magento": "magento_crawl", "wix": "wix_crawl",
+                   "ecwid": "ecwid_crawl", "shopline": "shopline_crawl"}
+        if site_type not in engines:
+            raise ValueError(f"Unsupported product engine: {site_type}")
         cmd = [
-            "scrapy", "crawl", "platform_crawl",
+            "scrapy", "crawl", engines[site_type],
             "-a", f"domain={domain}",
             "-a", f"category={category}",
             "-a", f"product_role={product_role}",
             "-a", f"platform={site_type}",
             "-a", "selector_profile=woocommerce",
             "-a", "mode=prod",
+            "-a", f"crawl_options_json={json.dumps(crawl_options or {})}",
         ]
         if selectors:
             cmd.extend(["-a", f"config_json={json.dumps(selectors, ensure_ascii=False)}"])
@@ -195,7 +209,7 @@ class ProductConsumer(BaseConsumer):
 
     async def _run_bigcommerce(self, domain: str, category: str, product_role: str,
                                selectors: dict | None = None,
-                               task_id: str | None = None) -> int:
+                               task_id: str | None = None, crawl_options=None) -> dict:
         """Run the dedicated BigCommerce sitemap and JSON-LD spider."""
         cmd = [
             "scrapy", "crawl", "bigcommerce_crawl",
@@ -203,6 +217,7 @@ class ProductConsumer(BaseConsumer):
             "-a", f"category={category}",
             "-a", f"product_role={product_role}",
             "-a", "mode=prod",
+            "-a", f"crawl_options_json={json.dumps(crawl_options or {})}",
         ]
         if selectors:
             cmd.extend(["-a", f"config_json={json.dumps(selectors, ensure_ascii=False)}"])
@@ -228,6 +243,8 @@ class ProductConsumer(BaseConsumer):
             for source, target in field_map.items()
             if template.get(source)
         }
+        if (site_config or {}).get("uses_default_template"):
+            selectors.pop("currency", None)
         extra = template.get("extra_selectors")
         if extra:
             try:
@@ -278,23 +295,23 @@ class ProductConsumer(BaseConsumer):
         """Normalize the two supported product labels before invoking Scrapy."""
         return "supplement" if str(value or "").strip().lower() == "supplement" else "main"
 
-    async def _exec_scrapy(self, cmd: list[str], task_id: str | None = None) -> int:
+    async def _exec_scrapy(self, cmd: list[str], task_id: str | None = None) -> dict:
         """执行 Scrapy，并将合并后的 stdout/stderr 完整流式写入任务日志。
 
         在 self.scrapy_project 目录下执行给定的 Scrapy 命令，
-        通过统计标准输出中 "成功生成商品" 出现的次数来估算商品数量。
+        只使用 MySQL 提交后输出的结构化统计，不从日志文字推断入库数量。
 
         参数:
             cmd (list[str]): Scrapy 命令行参数列表
             task_id (str | None): 对应任务 ID；提供时持久化完整日志
 
         返回:
-            int: 生成的商品数量（最小值 0）
+            dict: 已验证的最终爬取结果
 
         异常:
             Exception: 子进程返回非零退出码时抛出，包含日志末尾的错误信息
         """
-        command_text = " ".join(cmd)
+        command_text = " ".join("config_json=<configured>" if arg.startswith("config_json=") else arg for arg in cmd)
         logger.info(f"🚀 Running: {command_text}")
         if task_id:
             await self.repo.reset_task_log(task_id)
@@ -308,6 +325,7 @@ class ProductConsumer(BaseConsumer):
             cwd=str(self.scrapy_project),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"},
         )
 
         pending_log = []
@@ -315,8 +333,7 @@ class ProductConsumer(BaseConsumer):
         last_flush = time.monotonic()
         scan_buffer = ""
         error_tail = ""
-        batch_count = 0
-        generated_count = 0
+        protocol = ProductResultProtocol()
 
         async def flush_log():
             nonlocal pending_log, pending_size, last_flush
@@ -328,7 +345,7 @@ class ProductConsumer(BaseConsumer):
                 last_flush = time.monotonic()
 
         def collect_stats(text: str, final: bool = False):
-            nonlocal scan_buffer, error_tail, batch_count, generated_count
+            nonlocal scan_buffer, error_tail
             error_tail = (error_tail + text)[-4000:]
             scan_buffer += text
             lines = scan_buffer.splitlines(keepends=True)
@@ -337,9 +354,8 @@ class ProductConsumer(BaseConsumer):
             else:
                 scan_buffer = ""
             for line in lines:
-                batches = re.findall(r"批量入库成功：(\d+) 条记录", line)
-                batch_count += sum(int(count) for count in batches)
-                generated_count += line.count("成功生成商品")
+                protocol.consume(line)
+            self.crawl_metrics = protocol.latest
 
         async def stream_output():
             nonlocal pending_size, last_flush
@@ -371,82 +387,84 @@ class ProductConsumer(BaseConsumer):
 
         stream_task = asyncio.create_task(stream_output())
         paused = False
-        deadline = time.monotonic() + PRODUCT_CRAWL_TIMEOUT_SECONDS
-        try:
-            while not stream_task.done():
-                try:
-                    await asyncio.wait_for(asyncio.shield(stream_task), timeout=1.0)
-                except asyncio.TimeoutError:
-                    status = await self.repo.get_task_status(task_id) if task_id else "RUNNING"
-                    if status is None or status in {"CANCELLED", "DELETED"}:
-                        raise TaskCancelledError("任务已被删除或取消")
-                    if status == "PAUSED" and not paused:
-                        if proc.returncode is None:
-                            proc.send_signal(signal.SIGSTOP)
-                        paused = True
-                        continue
-                    if status != "PAUSED" and paused:
-                        if proc.returncode is None:
-                            proc.send_signal(signal.SIGCONT)
-                        paused = False
-                    if not paused and time.monotonic() >= deadline:
-                        raise asyncio.TimeoutError
-            if paused and proc.returncode is None:
-                proc.send_signal(signal.SIGCONT)
-            await proc.wait()
-        except asyncio.TimeoutError as exc:
-            logger.error(
-                f"⏱️ Scrapy timed out after {PRODUCT_CRAWL_TIMEOUT_SECONDS}s; terminating process"
-            )
-            proc.kill()
-            await proc.wait()
-            await stream_task
-            if task_id:
-                await self.repo.append_task_log(
-                    task_id,
-                    f"\n[CyberFlow] 爬虫超过 {PRODUCT_CRAWL_TIMEOUT_SECONDS} 秒，已自动终止。\n",
-                )
-            raise TimeoutError(
-                f"Scrapy 爬虫超过 {PRODUCT_CRAWL_TIMEOUT_SECONDS // 60} 分钟未完成，已自动终止"
-            ) from exc
-        except asyncio.CancelledError:
-            if proc.returncode is None:
-                proc.kill()
-            await proc.wait()
-            await asyncio.shield(stream_task)
-            if task_id:
-                await asyncio.shield(self.repo.append_task_log(
-                    task_id, "\n[CyberFlow] 任务被取消，爬虫子进程已终止。\n"
-                ))
-            raise
-        except Exception:
+        budget = ActiveDeadline(PRODUCT_CRAWL_TIMEOUT_SECONDS)
+
+        async def stop_child():
+            nonlocal paused
             if proc.returncode is None:
                 if paused:
-                    proc.send_signal(signal.SIGCONT)
-                proc.kill()
+                    resume_child(proc)
+                    paused = False
+                try:
+                    proc.terminate()
+                except ProcessLookupError:
+                    pass
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=10)
+                except asyncio.TimeoutError:
+                    if proc.returncode is None:
+                        proc.kill()
+                    await proc.wait()
+
+        try:
+            while not stream_task.done() or proc.returncode is None:
+                try:
+                    if not stream_task.done():
+                        await asyncio.wait_for(asyncio.shield(stream_task), timeout=1.0)
+                    else:
+                        await asyncio.wait_for(proc.wait(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    pass
+                if stream_task.done():
+                    await stream_task
+                status = await self.repo.get_task_status(task_id) if task_id else "RUNNING"
+                if status is None or status in {"CANCELLED", "DELETED"}:
+                    raise TaskCancelledError("任务已被删除或取消")
+                if status == "PAUSED" and not paused:
+                    pause_child(proc)
+                    budget.pause()
+                    paused = True
+                    await flush_log()
+                elif status != "PAUSED" and paused:
+                    resume_child(proc)
+                    budget.resume()
+                    paused = False
+                if budget.expired():
+                    raise asyncio.TimeoutError
             await proc.wait()
-            await asyncio.shield(stream_task)
+        except asyncio.TimeoutError as exc:
+            await stop_child()
+            await stream_task
             if task_id:
-                await asyncio.shield(self.repo.append_task_log(
-                    task_id, "\n[CyberFlow] 任务已暂停/取消或被删除，爬虫子进程已终止。\n"
-                ))
+                await self.repo.append_task_log(task_id, f"\n[CyberFlow] 有效运行超过 {PRODUCT_CRAWL_TIMEOUT_SECONDS} 秒，已终止（不含暂停时间）。\n")
+            raise TimeoutError(f"Scrapy 有效运行超过 {PRODUCT_CRAWL_TIMEOUT_SECONDS} 秒") from exc
+        except asyncio.CancelledError:
+            await asyncio.shield(stop_child())
+            await asyncio.shield(stream_task)
+            raise
+        except Exception:
+            await stop_child()
+            await asyncio.shield(stream_task)
             raise
 
-        if proc.returncode != 0:
-            error_msg = error_tail.strip() or "Unknown error"
-            raise Exception(f"Scrapy exited {proc.returncode}: {error_msg}")
+        summary = metrics_summary(protocol.latest)
+        if task_id:
+            await self.repo.append_task_log(task_id, f"\n[CyberFlow] {summary}\n")
+        try:
+            result = protocol.finish(proc.returncode)
+        except RuntimeError as exc:
+            detail = f"; {error_tail.strip()}" if proc.returncode != 0 else ""
+            raise RuntimeError(f"{exc}（{summary}）{detail}") from exc
+        logger.info(f"📦 {summary}")
+        return result
 
-        item_count = batch_count or generated_count
-        logger.info(f"📦 Scrapy produced ~{item_count} items")
-        return max(item_count, 0)
-
-    def _publish_result(self, task_id, status, rows_affected, new_cursor, duration_ms, error=None):
+    def _publish_result(self, task_id, status, rows_affected, new_cursor, duration_ms, error=None, metrics=None):
         """将任务执行结果发布到 RabbitMQ task.result 队列。
 
         参数:
             task_id (str): 任务唯一 ID
             status (str): 执行状态，"success" 或 "failed"
-            rows_affected (int): 影响的数据库行数（生成商品数）
+            rows_affected (int): MySQL 已提交的商品数（含未变化记录）
             new_cursor (dict | None): 新的游标信息（产品爬取暂不使用）
             duration_ms (int): 任务耗时（毫秒）
             error (str | None): 错误信息（失败时）
@@ -461,6 +479,7 @@ class ProductConsumer(BaseConsumer):
             "new_cursor": new_cursor,
             "duration_ms": duration_ms,
             "error": error,
+            "metrics": metrics or {},
             "finished_at": datetime.now(timezone.utc).isoformat(),
         }
         ch.basic_publish(

@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS scraped_data.ecommerce_products (
     cf_opingts      TEXT,
     custom_category VARCHAR(100),
     product_role    VARCHAR(20) NOT NULL DEFAULT 'main' COMMENT 'main-主产品 supplement-补充产品',
-    source_domain   VARCHAR(255),
+    source_domain   VARCHAR(255) NOT NULL,
     language        VARCHAR(10) DEFAULT 'en',
     dedupe_key      VARCHAR(768),
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -180,8 +180,8 @@ CREATE TABLE IF NOT EXISTS scraped_data.ecommerce_products (
     INDEX idx_product_category_created (custom_category, created_at, id),
     INDEX idx_product_role_created (product_role, created_at, id),
     INDEX idx_product_name_prefix (name(100)),
-    UNIQUE KEY uk_sku (sku),
-    UNIQUE KEY uk_product_dedupe (dedupe_key)
+    UNIQUE KEY uk_product_domain_sku (source_domain, sku),
+    INDEX idx_product_dedupe (dedupe_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT IGNORE INTO crawler_schedule_config (task_type, cron_expression, enabled) VALUES

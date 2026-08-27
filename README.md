@@ -100,7 +100,7 @@ CyberFlow/
           ▼                               ▼
 ┌──────────────────┐           ┌──────────────────┐
 │  MySQL :3306     │           │  Redis :6379     │
-│  cyberflow (管理)│           │  缓存 / 去重      │
+│  cyberflow (管理)│           │  可选观察性缓存   │
 │  scraped_data    │           └──────────────────┘
 └──────────────────┘
 ```
@@ -240,8 +240,13 @@ crawler-service/
             ├── pipelines.py    # 数据管道
             ├── settings.py     # 爬虫配置
             └── spiders/
-                ├── shopify_crawl.py   # Shopify 站点
-                ├── woo_crawl.py       # WooCommerce 站点
+                ├── shopify_crawl.py   # Shopify 商品与独立变体
+                ├── platform_crawl.py  # WooCommerce 商品地图
+                ├── bigcommerce_crawl.py # BigCommerce 页面/导航
+                ├── magento_crawl.py   # Magento GraphQL/页面
+                ├── wix_crawl.py       # Wix JSON-LD/页面
+                ├── ecwid_crawl.py     # Ecwid 公开 API/页面
+                ├── shopline_crawl.py  # Shopline Ajax/页面
                 └── exchange_rates.json
 ```
 
@@ -269,6 +274,14 @@ docker compose ps
 ```
 
 数据库迁移由一次性 `db-migrate` 服务自动执行，已执行的版本记录在 `cyberflow.schema_migrations` 中。迁移失败时，管理后台和爬虫消费者不会启动，避免线上漏更新。
+
+商品采集第一阶段改为持续批量提交，并以结构化结果判断成功或失败。任务数量表示已提交商品数，日志另列新增、更新、未变化、过滤和失败；不同站点相同 SKU 分别存储。升级前须暂停商品采集并备份商品表，运行 `20260827_fix_product_site_identity.sql` 后再启动新消费者。详细步骤和验证范围见 [商品爬取修复执行文档](docs/PRODUCT_CRAWL_REPAIR_EXECUTION.md)。
+
+第二阶段加入任务级价格/描述/图片要求、自动币种识别、BigCommerce 分类导航回退、HTTP(S) 代理及 200 验证页识别。默认不限制价格、不强制描述、要求图片；未知币种会报失败。前端、管理后端与消费者需一起发布，消费者代码修改后必须重新构建镜像。容器内从 `/app/scrapy_app` 运行 `python -m ecommerce_spider.check_runtime`，核对代码指纹和 `protection_ready=true`；本地构建和测试通过不代表服务端容器已经更新。
+
+第三阶段新增 Magento、Wix、Ecwid、Shopline 独立入口，平台列表统一为七种。Magento 使用公开 GraphQL/页面回退，Wix 使用商品 JSON-LD，Ecwid 支持公开页面与可选 public token 分页，Shopline 支持页面与同站 Ajax。无可用商品证据时明确失败，不承诺所有主题/地区版本均兼容。
+
+Shopify 改为一变体一行，采用完整商品 ID + 变体 ID；高变体商品可配置授权 Storefront token 进行游标分页，公开 JSON 疑似截断时会失败。**旧聚合商品不会自动删除，新旧记录可能共存；上线前请按执行文档备份并确认历史记录处置。** Redis 服务已可选（`PRODUCT_REDIS_ENABLED=false`），暂停会冻结超时预算并悬挂子进程。当前修订号为 `product-crawl-phase3-v1`，平台配置和部署验收详见执行文档第三阶段记录。
 
 基础设施端口：
 
@@ -324,8 +337,8 @@ python main.py
 | **菜单管理** | 树形菜单、动态路由 |
 | **操作日志** | AOP 自动记录 API 调用 |
 | **平台配置** | Admin API、Payment API、采集策略和收入参数维护 |
-| **站点配置** | Shopify 商品站点注册与手动商品采集 |
-| **选择器模板** | Shopify 默认模板标识 |
+| **站点配置** | 七种平台站点注册、手动商品采集与任务级过滤选项 |
+| **选择器模板** | 站点字段选择器、默认过滤与可选平台配置 |
 | **站点采集** | 后台配置驱动的每日增量站点采集 |
 | **订单采集** | 后台配置驱动的每日增量订单同步 |
 | **任务历史** | 任务状态、耗时、结果查看 |
@@ -369,5 +382,8 @@ python main.py
 | `ADMIN_PORT` | `8080` | 管理后台端口 |
 | `MYSQL_PORT` | `3306` | MySQL 端口 |
 | `REDIS_PORT` | `6379` | Redis 端口 |
+| `PRODUCT_REDIS_ENABLED` | `true` | 商品 Pipeline Redis 缓存开关；服务不可用时自动降级 |
+| `PRODUCT_PLATFORM_CONFIGS` | `{}` | 域名到平台配置的 JSON；真实凭据仅存本地环境文件 |
+| `PRODUCT_CRAWL_TIMEOUT_SECONDS` | `7200` | 商品任务活动运行秒数，暂停期间冻结 |
 | `RABBITMQ_PORT` | `5672` | RabbitMQ 端口 |
 | `RABBITMQ_MGMT_PORT` | `15672` | RabbitMQ 管理界面端口 |

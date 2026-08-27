@@ -2,6 +2,7 @@ package com.cyberflow.admin.crawler.siteconfig.controller;
 
 import com.cyberflow.admin.common.Result;
 import com.cyberflow.admin.crawler.service.CrawlerService;
+import com.cyberflow.admin.crawler.service.ProductEngines;
 import com.cyberflow.admin.crawler.siteconfig.entity.CrawlSiteConfig;
 import com.cyberflow.admin.crawler.siteconfig.entity.SiteTemplateMapping;
 import com.cyberflow.admin.crawler.siteconfig.service.SiteConfigService;
@@ -37,10 +38,7 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class SiteConfigController {
 
-    private static final List<String> SUPPORTED_ENGINES = List.of(
-        "shopify", "woocommerce", "bigcommerce", "opencart", "magento",
-        "prestashop", "shopline", "ecwid", "wix", "squarespace", "custom"
-    );
+    private static final java.util.Set<String> SUPPORTED_ENGINES = ProductEngines.SUPPORTED;
     private static final List<String> SUPPORTED_PRODUCT_ROLES = List.of("main", "supplement");
     private static final Pattern PROHIBITED_CATEGORY = Pattern.compile(
             "保健品|保健|食品|枪支|枪械|弹药|武器|毒品|烟酒|烟草|烟具|酒精|服装|服饰|成人",
@@ -140,13 +138,16 @@ public class SiteConfigController {
      */
     @PostMapping("/{id}/crawl")
     @PreAuthorize("hasAuthority('crawler:site:config:crawl')")
-    public Result<?> triggerCrawl(@PathVariable Long id, @RequestBody Map<String, String> body) {
+    @SuppressWarnings("unchecked")
+    public Result<?> triggerCrawl(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         CrawlSiteConfig config = siteConfigService.getById(id);
         if (config == null) return Result.fail("Site config not found");
-        Long userId = Long.valueOf(body.getOrDefault("user_id", "0"));
+        Long userId = Long.valueOf(String.valueOf(body.getOrDefault("user_id", "0")));
+        Object rawOptions = body.getOrDefault("crawl_options", Map.of());
+        if (!(rawOptions instanceof Map<?, ?>)) return Result.fail("crawl_options must be an object");
         return Result.ok(crawlerService.triggerProductCrawl(
             config.getId(), config.getDomain(), config.getType(),
-            config.getCategory(), config.getProductRole(), userId
+            config.getCategory(), config.getProductRole(), userId, (Map<String, Object>) rawOptions
         ));
     }
 

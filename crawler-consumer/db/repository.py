@@ -147,7 +147,7 @@ class CursorRepository:
                          kwargs.get("duration_ms", 0),
                          kwargs.get("error_msg", ""),
                          100 if status == "SUCCESS" else kwargs.get("progress", 0),
-                         "采集完成" if status == "SUCCESS" else kwargs.get("progress_message", "采集失败"),
+                         kwargs.get("progress_message", "采集完成" if status == "SUCCESS" else "采集失败"),
                          task_id),
                     )
 
@@ -229,6 +229,7 @@ class CursorRepository:
                     (site_config_id,),
                 )
                 templates = await cur.fetchall()
+                config["uses_default_template"] = not bool(templates)
                 # All non-Shopify engines currently share the WooCommerce
                 # selector profile. A site-specific mapping wins; otherwise
                 # use the system/default WooCommerce template when available.

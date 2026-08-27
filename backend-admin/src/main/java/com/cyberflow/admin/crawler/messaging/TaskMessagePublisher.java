@@ -152,6 +152,12 @@ public class TaskMessagePublisher {
 
     public String publishProductCrawl(String taskId, Long siteConfigId, String domain, String type,
                                       String category, String productRole, Long triggeredBy) {
+        return publishProductCrawl(taskId, siteConfigId, domain, type, category, productRole, triggeredBy, Map.of());
+    }
+
+    public String publishProductCrawl(String taskId, Long siteConfigId, String domain, String type,
+                                      String category, String productRole, Long triggeredBy,
+                                      Map<String, Object> crawlOptions) {
         Map<String, Object> message = Map.of(
             "task_id", taskId,
             "type", "product_crawl",
@@ -163,7 +169,8 @@ public class TaskMessagePublisher {
                 "domain", domain,
                 "type", type,
                 "category", category,
-                "product_role", productRole == null || productRole.isBlank() ? "main" : productRole
+                "product_role", productRole == null || productRole.isBlank() ? "main" : productRole,
+                "crawl_options", crawlOptions
             )
         );
         rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_TASKS, RabbitMQConfig.RK_PRODUCT, message);

@@ -99,8 +99,8 @@ export function updateSiteConfig(id, data) {
  * @param {number} userId - 触发用户 ID
  * @returns {Promise<Object>} 返回任务 ID 及下发状态
  */
-export function triggerSiteCrawl(id, userId) {
-  return request.post(`/admin/crawler/site-config/${id}/crawl`, { user_id: String(userId) })
+export function triggerSiteCrawl(id, userId, crawlOptions = {}) {
+  return request.post(`/admin/crawler/site-config/${id}/crawl`, { user_id: String(userId), crawl_options: crawlOptions })
 }
 
 /**

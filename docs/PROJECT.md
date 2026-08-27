@@ -2,13 +2,13 @@
 
 ## 项目概述
 
-CyberFlow 是一个**电商数据自动化采集与管理平台**，支持对 Shopify 和 WooCommerce 网站的**商品信息自动抓取**、**支付平台订单数据同步**，并提供**数据看板、RBAC 权限管理、定时/手动任务调度**等完整功能。
+CyberFlow 是一个**电商数据自动化采集与管理平台**，商品采集入口覆盖 Shopify、WooCommerce、BigCommerce、Magento、Wix、Ecwid 和 Shopline，另提供支付平台订单同步、数据看板、RBAC 权限管理和定时/手动任务调度。新增平台的页面/API、授权要求及兼容边界见 [商品爬取修复执行文档](PRODUCT_CRAWL_REPAIR_EXECUTION.md) 第三阶段记录；代码支持不等于所有目标站点均已完成实站验收。
 
 ### 核心能力
 
 | 能力 | 说明 |
 |------|------|
-| 商品采集 | 支持 Shopify API 和 WooCommerce 站点地图两种抓取方式 |
+| 商品采集 | 七个平台的专用 API/页面入口；Shopify 一变体一行；关键失败明确报错 |
 | 订单同步 | 从支付平台增量同步订单数据 |
 | 站点管理 | 自动发现和同步管理平台中的站点信息 |
 | 数据看板 | 总览统计、站点/订单/商品列表，配合 ECharts 图表 |
@@ -61,7 +61,7 @@ CyberFlow 是一个**电商数据自动化采集与管理平台**，支持对 Sh
 └──────────────────────────────┘
 ┌──────────────┐ ┌──────────────┐
 │  Redis 7     │ │  Quartz      │
-│  去重缓存    │ │  定时调度    │
+│  可选缓存    │ │  定时调度    │
 └──────────────┘ └──────────────┘
 ```
 
@@ -144,9 +144,14 @@ CyberFlow/
 │   └── app/crawler/ecommerce_spider/
 │       └── ecommerce_spider/
 │           ├── spiders/
-│           │   ├── shopify_crawl.py    # Shopify: /products.json API 批量提取
-│           │   └── woo_crawl.py        # WooCommerce: 站点地图 → XPath 提取
-│           ├── pipelines.py            # 管道: Redis 去重 + MySQL 批量写入
+│           │   ├── shopify_crawl.py    # Shopify 公共商品 JSON / Storefront 变体分页
+│           │   ├── platform_crawl.py   # WooCommerce: 站点地图与字段提取
+│           │   ├── bigcommerce_crawl.py # BigCommerce 页面、BCData 与导航回退
+│           │   ├── magento_crawl.py    # Magento GraphQL / 页面
+│           │   ├── wix_crawl.py        # Wix 商品 Sitemap / JSON-LD
+│           │   ├── ecwid_crawl.py      # Ecwid SEO 页面 / 授权公开 API
+│           │   └── shopline_crawl.py   # Shopline 页面 / Ajax
+│           ├── pipelines.py            # 持续 MySQL 提交 → 可选 Redis 观察性缓存
 │           ├── settings.py             # 1 req/domain, 1s 延迟
 │           └── exchange_rates.json     # 多币种汇率
 │
@@ -177,9 +182,12 @@ CyberFlow/
     → CrawlerService: 生成 taskId, 入库 task_history(PENDING)
     → TaskMessagePublisher: 按站点拆分, publish "crawler.product" 消息
     → ProductConsumer: 接收消息, 启动 Scrapy 子进程
-      ├── shopify: scrapy crawl shopify_crawl_fast
-      └── woo:    scrapy crawl woo_crawl (使用选择器模板配置)
-    → Scrapy Pipeline: Redis SADD 去重 → MySQL batch insert
+      ├── shopify: shopify_crawl_fast（按变体保存）
+      ├── woocommerce: platform_crawl（使用站点模板）
+      ├── bigcommerce: bigcommerce_crawl
+      └── magento / wix / ecwid / shopline: 对应独立 *_crawl
+    → Scrapy Pipeline: 校验/过滤 → 分批 MySQL Upsert + commit → 可选 Redis 缓存
+    → 结构化已提交计数 → Consumer 更新任务；暂停冻结活动 deadline
     → ProductConsumer: 统计采集数量, 更新 task_history + crawl_cursor
     → publish 结果回 crawler.task.result 队列
 ```
@@ -299,8 +307,11 @@ WooCommerce 站点的 CSS/XPath 选择器以 JSON 模板形式存储在数据库
 ### 4. 双数据库设计
 管理数据（`cyberflow`）和商品数据（`scraped_data`）分库存储，隔离业务关注点，便于独立扩容和备份。
 
-### 5. Redis + MySQL 双写管道
-Scrapy Pipeline 中使用 Redis SADD 做内存级去重，MySQL executemany 做批量写入，兼顾去重精度和写入吞吐。
+### 5. MySQL 真值与可选缓存
+商品身份为 `(source_domain, sku)`。Pipeline 在有界缓冲中持续批量提交；逐条 Upsert 的数据库返回值区分新增、更新、未变化，commit 后才发布计数。Redis 仅在提交后更新观察性指纹，关闭或断连不会阻止入库。失败任务保留已提交记录与统计，不用 Spider 生成量兜底。
+
+### 6. 变体与任务控制
+Shopify 用完整商品/变体 ID 保存独立价格、图片和已选属性；公开 JSON 疑似截断会失败，可用授权 Storefront token 完整分页。历史聚合商品不会自动迁移或删除，发布前须按执行文档确认处置。任务暂停会悬挂自有子进程并冻结剩余超时预算，取消时先恢复再终止；Linux 容器关闭与提交行为仍需部署验收。
 
 ---
 

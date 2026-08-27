@@ -24,5 +24,8 @@ COPY crawler-service/app/crawler/ecommerce_spider/ scrapy_app/
 
 # Override scrapy path for Docker
 ENV SCRAPY_PROJECT_PATH=/app/scrapy_app
+ENV PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8 PYTHONDONTWRITEBYTECODE=1
+
+RUN PYTHONPATH=/app/scrapy_app python -m ecommerce_spider.check_runtime
 
 CMD ["python", "main.py"]

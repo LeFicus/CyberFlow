@@ -27,8 +27,29 @@
       type="info"
       :closable="false"
       show-icon
-      title="Shopify 使用专用商品接口；其他商城引擎暂统一使用 WooCommerce 通用选择器采集。"
+      title="支持 Shopify、WooCommerce、BigCommerce、Magento、Wix、Ecwid、SHOPLINE。各平台独立接入；动态站点或高变体商品可能需要公开 API 授权配置。"
     />
+
+    <el-collapse class="engine-tip">
+      <el-collapse-item title="本次采集选项（应用于单个运行和批量运行，不修改站点默认配置）" name="crawl-options">
+        <el-form :model="crawlOptions" label-width="150px" size="small">
+          <el-form-item label="商品价格上限 USD">
+            <el-checkbox v-model="crawlOptions.limitPrice">启用上限</el-checkbox>
+            <el-input-number v-model="crawlOptions.maximum" :min="0.01" :precision="2" :disabled="!crawlOptions.limitPrice" style="margin-left:16px" />
+            <span class="selector-hint">默认不限制；按换算后的美元价格筛选</span>
+          </el-form-item>
+          <el-form-item label="必须有商品描述"><el-switch v-model="crawlOptions.requireDescription" /></el-form-item>
+          <el-form-item label="必须有商品图片"><el-switch v-model="crawlOptions.requireImage" /></el-form-item>
+          <el-form-item label="缺失币种时使用">
+            <el-select v-model="crawlOptions.currency" style="width:220px">
+              <el-option label="自动识别 / 站点配置" value="" />
+              <el-option v-for="code in ['AUD', 'USD', 'CAD', 'GBP', 'EUR', 'NZD']" :key="code" :label="code" :value="code" />
+            </el-select>
+            <span class="selector-hint">页面与商品数据明确的币种优先；无法识别时会报告失败</span>
+          </el-form-item>
+        </el-form>
+      </el-collapse-item>
+    </el-collapse>
 
     <el-table :data="configs" border stripe v-loading="loading" style="width:100%;" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="52" align="center" />
@@ -183,14 +204,10 @@ const ENGINES = [
   { label: 'Shopify', value: 'shopify' },
   { label: 'WooCommerce', value: 'woocommerce' },
   { label: 'BigCommerce', value: 'bigcommerce' },
-  { label: 'OpenCart', value: 'opencart' },
   { label: 'Magento / Adobe Commerce', value: 'magento' },
-  { label: 'PrestaShop', value: 'prestashop' },
   { label: 'SHOPLINE', value: 'shopline' },
   { label: 'Ecwid', value: 'ecwid' },
   { label: 'Wix Stores', value: 'wix' },
-  { label: 'Squarespace Commerce', value: 'squarespace' },
-  { label: '其他 / 自建商城', value: 'custom' },
 ]
 
 /** @type {import('vue').Ref<Array>} 站点配置列表 */
@@ -203,6 +220,16 @@ const loading = ref(false)
 /** @type {import('vue').Ref<boolean>} 保存按钮加载状态 */
 const saving = ref(false)
 const batchRunning = ref(false)
+const crawlOptions = reactive({ limitPrice: false, maximum: 130, requireDescription: false, requireImage: true, currency: '' })
+
+function taskCrawlOptions() {
+  return {
+    max_product_price_usd: crawlOptions.limitPrice ? crawlOptions.maximum : null,
+    require_description: crawlOptions.requireDescription,
+    require_image: crawlOptions.requireImage,
+    currency: crawlOptions.currency,
+  }
+}
 const selectedRows = ref([])
 /** @type {import('vue').Ref<boolean>} 配置弹窗是否可见 */
 const dialogVisible = ref(false)
@@ -400,7 +427,7 @@ async function handleSave() {
 async function handleTrigger(row) {
   try {
     await ElMessageBox.confirm(`确定立即爬取「${row.domain}」？`, '确认爬取', { type: 'info' })
-    const res = await triggerSiteCrawl(row.id, userStore.userInfo?.id || 0)
+    const res = await triggerSiteCrawl(row.id, userStore.userInfo?.id || 0, taskCrawlOptions())
     track(res.data.task_id)
     ElMessage.success('爬取任务已下发')
   } catch {
@@ -426,7 +453,7 @@ async function handleBatchTrigger() {
   batchRunning.value = true
   try {
     const results = await Promise.allSettled(
-      selectedRows.value.map(row => triggerSiteCrawl(row.id, userStore.userInfo?.id || 0))
+      selectedRows.value.map(row => triggerSiteCrawl(row.id, userStore.userInfo?.id || 0, taskCrawlOptions()))
     )
     let successCount = 0
     let lastTaskId = ''
