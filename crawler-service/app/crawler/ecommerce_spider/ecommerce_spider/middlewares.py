@@ -18,8 +18,12 @@ Scrapy 中间件模块 — 爬虫中间件和下载器中间件
 """
 
 import random
+import requests
+import urllib3
 from scrapy import signals
+from scrapy.responsetypes import responsetypes
 from itemadapter import ItemAdapter
+from twisted.internet.threads import deferToThread
 
 
 class EcommerceSpiderSpiderMiddleware:
@@ -139,7 +143,7 @@ class EcommerceSpiderDownloaderMiddleware:
 
     生命周期:
         Engine -> process_request() -> Downloader -> process_response() -> Engine
-                                                       \-> process_exception()
+                                                       -> process_exception()
     """
 
     @classmethod
@@ -219,6 +223,72 @@ class EcommerceSpiderDownloaderMiddleware:
             spider: 刚启动的 Spider 实例
         """
         spider.logger.info("Spider opened: %s" % spider.name)
+
+
+class BigCommerceRequestsFallbackMiddleware:
+    """Retry blocked BigCommerce responses with the working requests client.
+
+    A few BigCommerce/CDN configurations return 403 to Twisted's HTTP/TLS
+    fingerprint while accepting the same public URL through ``requests``.
+    The fallback runs in Twisted's thread pool so it does not block Scrapy's
+    reactor and is limited to the dedicated BigCommerce spider.
+    """
+
+    FALLBACK_STATUSES = {403, 429}
+    USER_AGENT = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36"
+    )
+
+    def process_response(self, request, response, spider):
+        if (
+            spider.name != "bigcommerce_crawl"
+            or response.status not in self.FALLBACK_STATUSES
+            or request.meta.get("requests_fallback_attempted")
+        ):
+            return response
+
+        request.meta["requests_fallback_attempted"] = True
+        spider.logger.warning(
+            "BigCommerce 请求返回 HTTP %s，使用 requests 回退 → %s",
+            response.status,
+            request.url,
+        )
+        return deferToThread(self._download, request, response, spider)
+
+    @classmethod
+    def _download(cls, request, original_response, spider):
+        try:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            result = requests.get(
+                request.url,
+                headers={"User-Agent": cls.USER_AGENT},
+                timeout=60,
+                verify=False,
+                allow_redirects=True,
+            )
+        except requests.RequestException as exc:
+            spider.logger.warning("BigCommerce requests 回退失败 → %s | %s", request.url, exc)
+            return original_response
+
+        spider.logger.info(
+            "BigCommerce requests 回退响应 → HTTP %s | %s",
+            result.status_code,
+            result.url,
+        )
+        response_class = responsetypes.from_args(
+            headers=result.headers,
+            url=result.url,
+            body=result.content,
+        )
+        return response_class(
+            url=result.url,
+            status=result.status_code,
+            headers=result.headers,
+            body=result.content,
+            request=request,
+            flags=["requests-fallback"],
+        )
 
 
 class CustomUserAgentMiddleware:

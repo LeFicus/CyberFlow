@@ -36,6 +36,11 @@ class BigCommerceCrawlSpider(PlatformCrawlSpider):
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
         },
+        "DOWNLOADER_MIDDLEWARES": {
+            # Run just before Scrapy's RetryMiddleware on the response path so
+            # a successful requests response is parsed without redundant retries.
+            "ecommerce_spider.middlewares.BigCommerceRequestsFallbackMiddleware": 560,
+        },
         # The generic spider is intentionally slow, but that setting makes a
         # normal BigCommerce catalog exceed the consumer's task timeout.
         "CONCURRENT_REQUESTS": 16,
