@@ -304,8 +304,10 @@ class SiteConsumer(BaseConsumer):
                LEFT JOIN site_info s
                  ON LOWER(CASE WHEN LEFT(TRIM(h.site_domain), 4)='www.'
                      THEN SUBSTRING(TRIM(h.site_domain), 5) ELSE TRIM(h.site_domain) END)
+                    COLLATE utf8mb4_unicode_ci
                   = LOWER(CASE WHEN LEFT(TRIM(s.site_domain), 4)='www.'
                      THEN SUBSTRING(TRIM(s.site_domain), 5) ELSE TRIM(s.site_domain) END)
+                    COLLATE utf8mb4_unicode_ci
                WHERE s.id IS NULL"""
         )
         return max(0, cur.rowcount)
@@ -317,7 +319,9 @@ class SiteConsumer(BaseConsumer):
         await cur.execute(
             """CREATE TEMPORARY TABLE tmp_active_site_domains (
                    site_domain VARCHAR(255) PRIMARY KEY
-               ) ENGINE=MEMORY"""
+               ) ENGINE=MEMORY
+                 DEFAULT CHARACTER SET utf8mb4
+                 COLLATE utf8mb4_unicode_ci"""
         )
         await cur.executemany(
             "INSERT IGNORE INTO tmp_active_site_domains (site_domain) VALUES (%s)",
@@ -329,11 +333,13 @@ class SiteConsumer(BaseConsumer):
         """Delete current-site data absent from the latest built-site snapshot."""
         normalized_history = (
             "LOWER(CASE WHEN LEFT(TRIM(h.site_domain), 4)='www.' "
-            "THEN SUBSTRING(TRIM(h.site_domain), 5) ELSE TRIM(h.site_domain) END)"
+            "THEN SUBSTRING(TRIM(h.site_domain), 5) ELSE TRIM(h.site_domain) END) "
+            "COLLATE utf8mb4_unicode_ci"
         )
         normalized_site = (
             "LOWER(CASE WHEN LEFT(TRIM(s.site_domain), 4)='www.' "
-            "THEN SUBSTRING(TRIM(s.site_domain), 5) ELSE TRIM(s.site_domain) END)"
+            "THEN SUBSTRING(TRIM(s.site_domain), 5) ELSE TRIM(s.site_domain) END) "
+            "COLLATE utf8mb4_unicode_ci"
         )
         await cur.execute(
             f"""DELETE h FROM site_indexing_history h
