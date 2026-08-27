@@ -5,7 +5,7 @@ Scrapy 数据管道 — MySQLRedisPipeline 持久化管道
 
 流程:
     1. 字段校验    — 检查 SKU 是否存在，缺失则丢弃
-    2. Redis 去重  — 基于 SKU 使用 Redis Set 集合去重（支持分布式增量爬取）
+    2. 任务内去重  — 同一轮爬取只保留一次 SKU，允许后续任务刷新已有商品
     3. 批量缓冲    — 将 Item 缓存到内存缓冲区
     4. 批量入库    — 达到阈值时使用 executemany 批量写入 MySQL（10x+ 性能提升）
     5. 异常安全    — 写入失败时回滚事务，不清空缓存（防止数据丢失）
@@ -71,6 +71,7 @@ class MySQLRedisPipeline:
         self.logger = logging.getLogger(__name__)
         self.r = None        # Redis 客户端（在 open_spider 时初始化）
         self.spider_name = ""
+        self.seen_skus = set()
         self.staging_path = None
         self.staging_file = None
 
@@ -164,13 +165,14 @@ class MySQLRedisPipeline:
             item.get('原站域名'), item.get('Name'), item.get('Images')
         )
 
-        # 2. Redis 实时去重 — 基于 SKU 值
-        # 为不同爬虫和不同域名维护独立的去重集合
+        # 2. 仅在当前任务内去重。Redis 指纹不能作为写库前置条件：
+        # 若爬虫超时或被强制终止，先写 Redis 会导致 MySQL 没有数据，
+        # 后续重试却永久跳过同一批 SKU。
         domain = item.get('原站域名')
-        redis_key = f"scraped_skus:{spider.name}:{domain}"
-        # SADD 返回 0 表示元素已存在（重复），返回 1 表示新增成功
-        if self.r.sadd(redis_key, sku) == 0:
-            raise DropItem(f"🚫 Redis 已存在 SKU: {sku}")
+        task_fingerprint = (str(domain or '').strip().lower(), str(sku).strip())
+        if task_fingerprint in self.seen_skus:
+            raise DropItem(f"🚫 当前任务中 SKU 重复: {sku}")
+        self.seen_skus.add(task_fingerprint)
 
         # 3. 暂存整个爬取任务；结束后按完整批次统计二级分类数量。
         self.staging_file.write(json.dumps(dict(item), ensure_ascii=False, default=str) + "\n")
@@ -216,6 +218,7 @@ class MySQLRedisPipeline:
         # ========== 数据格式转换 ==========
         # 将 Item 字典转换为 SQL 参数元组列表
         batch_values = []
+        persisted_items = []
         for item in self.items_buffer:
             try:
                 val = (
@@ -233,6 +236,7 @@ class MySQLRedisPipeline:
                     item.get('_dedupe_key'),
                 )
                 batch_values.append(val)
+                persisted_items.append(item)
             except Exception as e:
                 self.logger.error(f"数据转换异常 SKU {item.get('SKU')}: {e}")
 
@@ -242,18 +246,25 @@ class MySQLRedisPipeline:
             cursor = conn.cursor()
             cursor.executemany(sql, batch_values)   # 批量执行（核心性能优化点）
             conn.commit()
+            # Redis is a post-commit observability cache, not the source of
+            # truth for dedupe. A Redis outage must not invalidate committed DB data.
+            try:
+                redis_batch = self.r.pipeline(transaction=False)
+                for item in persisted_items:
+                    domain = item.get('原站域名')
+                    redis_batch.sadd(
+                        f"scraped_skus:{self.spider_name}:{domain}",
+                        item.get('SKU'),
+                    )
+                redis_batch.execute()
+            except Exception as redis_error:
+                self.logger.warning(f"Redis 商品指纹更新失败，MySQL 已成功提交: {redis_error}")
             self.logger.info(f"💾 批量入库成功：{len(batch_values)} 条记录")
             self.items_buffer = []  # 成功后才清空缓存（失败时不丢数据）
         except Exception as e:
             if conn:
                 conn.rollback()
             self.logger.error(f"❌ MySQL 批量写入失败: {e}")
-            # SADD happens before the batch flush. Remove fingerprints after
-            # rollback so a later retry can persist these same products.
-            for item in self.items_buffer:
-                domain = item.get('原站域名')
-                redis_key = f"scraped_skus:{self.spider_name}:{domain}"
-                self.r.srem(redis_key, item.get('SKU'))
             raise
         finally:
             if cursor:
@@ -277,9 +288,6 @@ class MySQLRedisPipeline:
         # 1. 按本次完整爬取批次应用二级分类的 48 条阈值，再分批写入。
         try:
             self._flush_staged_items()
-        except Exception:
-            self._remove_staged_fingerprints()
-            raise
         finally:
             self._cleanup_staging_file()
 
@@ -350,21 +358,6 @@ class MySQLRedisPipeline:
                     self._flush_to_mysql()
         if self.items_buffer:
             self._flush_to_mysql()
-
-    def _remove_staged_fingerprints(self):
-        """Remove optimistic Redis fingerprints if final persistence failed."""
-        if self.staging_file:
-            self.staging_file.close()
-            self.staging_file = None
-        if not self.staging_path or not os.path.exists(self.staging_path):
-            return
-        with open(self.staging_path, "r", encoding="utf-8") as source:
-            for line in source:
-                item = json.loads(line)
-                domain = item.get("原站域名")
-                sku = item.get("SKU")
-                if domain and sku:
-                    self.r.srem(f"scraped_skus:{self.spider_name}:{domain}", sku)
 
     def _cleanup_staging_file(self):
         if self.staging_file:
