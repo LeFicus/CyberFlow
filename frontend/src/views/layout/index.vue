@@ -128,7 +128,10 @@ const routePermissions = {
   '/dashboard/sites': 'dashboard:site:view',
   '/dashboard/orders': 'dashboard:order:view',
   '/dashboard/products': 'dashboard:product:view',
-  '/dashboard/indexing': 'dashboard:site:view',
+  '/indexing/sites': 'dashboard:site:view',
+  '/indexing/builders': 'dashboard:site:view',
+  '/indexing/servers': 'dashboard:site:view',
+  '/categories': 'category:list',
   '/crawler/site': 'crawler:site:start',
   '/crawler/collect': 'crawler:collect:start',
   '/crawler/order': 'crawler:order:view',
@@ -168,8 +171,13 @@ const fallbackMenus = [
     { id: 12, menuName: '站点列表', path: '/dashboard/sites' },
     { id: 13, menuName: '订单列表', path: '/dashboard/orders' },
     { id: 14, menuName: '商品列表', path: '/dashboard/products' },
-    { id: 16, menuName: '收录数据列表', path: '/dashboard/indexing' },
   ] },
+  { id: 6, menuName: '收录数据', icon:'DataLine', children:[
+    {id:16, menuName:'站点明细',path:'/indexing/sites'},
+    {id:68, menuName:'建站者汇总',path:'/indexing/builders'},
+    {id:69, menuName:'服务器汇总',path:'/indexing/servers'},
+  ] },
+  { id:70, menuName:'自定义分类',path:'/categories',icon:'CollectionTag',children:[] },
   { id: 2, menuName: '数据同步', icon: 'RefreshRight', children: [
     { id: 21, menuName: '站点爬虫', path: '/crawler/site' },
     { id: 22, menuName: '收录统计', path: '/crawler/collect' },
@@ -222,7 +230,7 @@ const menuTree = computed(() => {
 
   const crawlerMenu = source.find(menu => menu.id === 2 || menu.menuName === '爬虫管理')
   if (!crawlerMenu || crawlerMenu.menuName === '数据同步') {
-    return source.filter(menu => menu.children?.length || ![1, 2, 3, 4].includes(Number(menu.id)))
+    return source.filter(menu => menu.children?.length || ![1, 2, 3, 4, 6].includes(Number(menu.id)))
   }
 
   const crawlerChildren = crawlerMenu.children || []

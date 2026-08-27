@@ -44,9 +44,12 @@ public interface SiteIndexingHistoryMapper {
             "<if test='filters.userGroup != null and filters.userGroup != &quot;&quot;'> AND s.user_group=#{filters.userGroup}</if>" +
             "<if test='filters.ownerName != null'> AND FIND_IN_SET(s.admin_name, #{filters.ownerName}) &gt; 0</if>" +
             "<if test='filters.adminName != null and filters.adminName != &quot;&quot;'> AND (s.admin_name LIKE CONCAT('%', #{filters.adminName}, '%') OR s.builder_username LIKE CONCAT('%', #{filters.adminName}, '%'))</if>" +
-            "<if test='filters.builderUsername != null and filters.builderUsername != &quot;&quot;'> AND s.builder_username=#{filters.builderUsername}</if>" +
+            "<if test='filters.builderUsername != null and filters.builderUsername != &quot;&quot;'> AND COALESCE(NULLIF(TRIM(s.builder_username), ''), '未分配')=#{filters.builderUsername}</if>" +
             "<if test='filters.serverName != null and filters.serverName != &quot;&quot;'> AND (COALESCE(NULLIF(l.server_name, ''), s.server_name, '') LIKE CONCAT('%', #{filters.serverName}, '%') OR COALESCE(NULLIF(l.server_ip, ''), s.server_ip, '') LIKE CONCAT('%', #{filters.serverName}, '%'))</if>" +
             "<if test='filters.serverIp != null and filters.serverIp != &quot;&quot;'> AND COALESCE(NULLIF(l.server_ip, ''), s.server_ip, '')=#{filters.serverIp}</if>" +
+            "<if test='filters.builderNameExact != null and filters.builderNameExact != &quot;&quot;'> AND COALESCE(NULLIF(TRIM(s.admin_name), ''), '未分配')=#{filters.builderNameExact}</if>" +
+            "<if test='filters.serverNameExact != null and filters.serverNameExact != &quot;&quot;'> AND COALESCE(NULLIF(TRIM(COALESCE(NULLIF(l.server_name, ''), s.server_name)), ''), '未分配')=#{filters.serverNameExact}</if>" +
+            "<if test='filters.serverIpEmpty'> AND COALESCE(NULLIF(TRIM(COALESCE(NULLIF(l.server_ip, ''), s.server_ip)), ''), '')=''</if>" +
             "<if test='filters.domain != null and filters.domain != &quot;&quot;'> AND s.site_domain LIKE CONCAT('%', #{filters.domain}, '%')</if>" +
             "<if test='filters.themeName != null and filters.themeName != &quot;&quot;'> AND s.theme_name LIKE CONCAT('%', #{filters.themeName}, '%')</if>" +
             "<if test='filters.productCategory != null and filters.productCategory != &quot;&quot;'> AND s.product_category LIKE CONCAT('%', #{filters.productCategory}, '%')</if>" +

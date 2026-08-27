@@ -31,6 +31,7 @@ public class SiteConfigService {
 
     /** 站点-模板映射数据访问接口 */
     private final SiteTemplateMappingMapper mappingMapper;
+    private final com.cyberflow.admin.category.CustomCategoryService categories;
 
     /**
      * 查询所有站点配置，按创建时间倒序排列。
@@ -86,6 +87,7 @@ public class SiteConfigService {
      */
     @Transactional
     public CrawlSiteConfig create(CrawlSiteConfig config, List<SiteTemplateMapping> mappings) {
+        categories.validateSelection(config.getCategory(), null);
         configMapper.insert(config);
         for (SiteTemplateMapping m : mappings) {
             m.setSiteConfigId(config.getId());
@@ -107,6 +109,9 @@ public class SiteConfigService {
      */
     @Transactional
     public CrawlSiteConfig update(Long id, CrawlSiteConfig config, List<SiteTemplateMapping> mappings) {
+        CrawlSiteConfig previous = configMapper.selectById(id);
+        if (previous == null) throw new IllegalArgumentException("站点配置不存在");
+        categories.validateSelection(config.getCategory(), previous.getCategory());
         config.setId(id);
         configMapper.updateById(config);
         mappingMapper.delete(

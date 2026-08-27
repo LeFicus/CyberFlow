@@ -34,12 +34,12 @@
       <el-collapse-item title="本次采集选项（应用于单个运行和批量运行，不修改站点默认配置）" name="crawl-options">
         <el-form :model="crawlOptions" label-width="150px" size="small">
           <el-form-item label="商品价格上限 USD">
-            <el-checkbox v-model="crawlOptions.limitPrice">启用上限</el-checkbox>
+            <el-checkbox v-model="crawlOptions.limitPrice">启用调整后价格上限</el-checkbox>
             <el-input-number v-model="crawlOptions.maximum" :min="0.01" :precision="2" :disabled="!crawlOptions.limitPrice" style="margin-left:16px" />
-            <span class="selector-hint">默认不限制；按换算后的美元价格筛选</span>
+            <span class="selector-hint">先换算美元；超过 150 调整为 120–150，再按此上限筛选</span>
           </el-form-item>
           <el-form-item label="必须有商品描述"><el-switch v-model="crawlOptions.requireDescription" /></el-form-item>
-          <el-form-item label="必须有商品图片"><el-switch v-model="crawlOptions.requireImage" /></el-form-item>
+          <el-form-item label="图片质量"><span>自动排除空图和已识别的站点默认图（必选规则）</span></el-form-item>
           <el-form-item label="缺失币种时使用">
             <el-select v-model="crawlOptions.currency" style="width:220px">
               <el-option label="自动识别 / 站点配置" value="" />
@@ -130,17 +130,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="分类" required>
-          <el-tree-select
-            v-model="form.category"
-            :data="categoryTree"
-            :props="categoryTreeProps"
-            check-strictly
-            filterable
-            clearable
-            default-expand-all
-            style="width:360px;"
-            placeholder="选择商品类目"
-          />
+          <CustomCategorySelect v-model="form.category" />
         </el-form-item>
         <el-form-item label="爬取模板" required>
           <el-select
@@ -192,12 +182,7 @@ import {
 import TaskProgress from '@/components/TaskProgress.vue'
 import { useTaskProgress } from '@/composables/useTaskProgress'
 import { useUserStore } from '@/store/user'
-import {
-  PRODUCT_CATEGORIES,
-  PRODUCT_CATEGORY_TREE,
-  productCategoryLabel,
-  resolveProductCategoryPath,
-} from '@/data/productCategories'
+import CustomCategorySelect from '@/components/CustomCategorySelect.vue'
 
 /** @type {string[]} 商品分类常量列表 */
 const ENGINES = [
@@ -220,13 +205,13 @@ const loading = ref(false)
 /** @type {import('vue').Ref<boolean>} 保存按钮加载状态 */
 const saving = ref(false)
 const batchRunning = ref(false)
-const crawlOptions = reactive({ limitPrice: false, maximum: 130, requireDescription: false, requireImage: true, currency: '' })
+const crawlOptions = reactive({ limitPrice: false, maximum: 130, requireDescription: false, currency: '' })
 
 function taskCrawlOptions() {
   return {
     max_product_price_usd: crawlOptions.limitPrice ? crawlOptions.maximum : null,
     require_description: crawlOptions.requireDescription,
-    require_image: crawlOptions.requireImage,
+    require_image: true,
     currency: crawlOptions.currency,
   }
 }
@@ -243,9 +228,6 @@ const editingMappings = ref([])
 /** 当前商城引擎可用的选择器模板。 */
 const templates = ref([])
 const templateLoading = ref(false)
-/** 商品分类树，值为完整的 `一级|||二级` 路径。 */
-const categoryTree = PRODUCT_CATEGORY_TREE
-const categoryTreeProps = { value: 'value', label: 'label', children: 'children' }
 const userStore = useUserStore()
 const { task, track } = useTaskProgress()
 
@@ -254,7 +236,7 @@ const form = reactive({
   domain: '',
   type: 'shopify',
   productRole: 'main',
-  category: PRODUCT_CATEGORIES[0],
+  category: '',
   templateId: null,
 })
 
@@ -265,7 +247,7 @@ function resetForm() {
   form.domain = ''
   form.type = 'shopify'
   form.productRole = 'main'
-  form.category = PRODUCT_CATEGORIES[0]
+  form.category = ''
   form.templateId = null
   editingId.value = null
   editingMappings.value = []
@@ -352,7 +334,7 @@ async function handleEdit(row) {
       domain: data.config?.domain || row.domain,
       type: data.config?.type || row.type,
       productRole: data.config?.productRole || row.productRole || 'main',
-      category: resolveProductCategoryPath(data.config?.category || row.category),
+      category: String(data.config?.category || row.category || '').split('|||').pop(),
     })
     editingMappings.value = (data.mappings || []).map(mapping => ({
       template_id: mapping.templateId,
@@ -384,7 +366,7 @@ async function handleSave() {
   }
   saving.value = true
   try {
-    const category = productCategoryLabel(normalizeCategoryValue(form.category))
+    const category = String(normalizeCategoryValue(form.category)).split('|||').pop().trim()
     if (!form.templateId && form.type !== 'shopify') {
       ElMessage.warning('请选择商品爬取模板')
       return

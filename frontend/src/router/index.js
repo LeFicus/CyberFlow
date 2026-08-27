@@ -30,7 +30,9 @@ const routes = [
       { path: 'dashboard/sites', name: 'DashboardSites', component: () => import('@/views/dashboard/SiteList.vue'), meta: { title: '站点列表', section: '数据看板', description: '查看站点信息、关联订单与收录趋势', perm: 'dashboard:site:view' } },
       { path: 'dashboard/orders', name: 'DashboardOrders', component: () => import('@/views/dashboard/OrderList.vue'), meta: { title: '订单列表', section: '数据看板', description: '筛选并追踪多站点订单数据', perm: 'dashboard:order:view' } },
       { path: 'dashboard/products', name: 'DashboardProducts', component: () => import('@/views/dashboard/ProductList.vue'), meta: { title: '商品列表', section: '数据看板', description: '集中管理采集商品与跨平台导出', perm: 'dashboard:product:view' } },
-      { path: 'dashboard/indexing', name: 'DashboardIndexing', component: () => import('@/views/dashboard/IndexingList.vue'), meta: { title: '收录数据列表', section: '数据看板', description: '按站点、建站者和服务器查看收录快照及变化', perm: 'dashboard:site:view' } },
+      { path: 'dashboard/indexing', redirect: '/indexing/sites' },
+      ...[['sites','站点明细'],['builders','建站者汇总'],['servers','服务器汇总']].map(([path,title]) => ({ path: `indexing/${path}`, component: () => import('@/views/dashboard/IndexingList.vue'), meta: { title, section:'收录数据', description:'查看站点收录快照、变化及归属汇总', perm:'dashboard:site:view' } })),
+      { path:'categories', component: () => import('@/views/category/CategoryList.vue'), meta:{ title:'自定义分类', section:'分类维护', description:'统一维护商品筛选与数据源站点使用的分类', perm:'category:list' } },
       { path: 'crawler/site', name: 'CrawlerSite', component: () => import('@/views/crawler/SiteCrawler.vue'), meta: { title: '站点爬虫', section: '数据同步', description: '配置站点基础信息同步策略与执行计划', perm: 'crawler:site:start' } },
       { path: 'crawler/collect', name: 'CrawlerCollect', component: () => import('@/views/crawler/CollectCrawler.vue'), meta: { title: '收录统计', section: '数据同步', description: '同步站点搜索引擎收录数据', perm: 'crawler:collect:start' } },
       { path: 'crawler/order', name: 'CrawlerOrder', component: () => import('@/views/crawler/OrderCrawler.vue'), meta: { title: '订单爬虫', section: '数据同步', description: '配置订单同步来源与增量规则', perm: 'crawler:order:view' } },
@@ -52,6 +54,7 @@ const routes = [
 
 const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior: (to, from, saved) => saved || { left: 0, top: 0 },
   routes,
 })
 

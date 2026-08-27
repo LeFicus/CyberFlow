@@ -312,7 +312,7 @@ public class DashboardService {
                                                  String submittedStartDate, String submittedEndDate,
                                                  String updatedStartDate, String updatedEndDate,
                                                  Integer minIndexCount, Integer maxIndexCount,
-                                                 String changeDirection) {
+                                                 String changeDirection, String serverNameExact, boolean serverIpEmpty, String builderNameExact) {
         String normalizedDimension = dimension == null ? "site" : dimension.trim().toLowerCase(Locale.ROOT);
         if (!Set.of("site", "builder", "server").contains(normalizedDimension)) {
             throw new IllegalArgumentException("dimension must be site, builder or server");
@@ -326,6 +326,9 @@ public class DashboardService {
         filters.put("builderUsername", builderUsername);
         filters.put("serverName", serverName);
         filters.put("serverIp", serverIp);
+        filters.put("serverNameExact", serverNameExact);
+        filters.put("serverIpEmpty", serverIpEmpty);
+        filters.put("builderNameExact", builderNameExact);
         filters.put("domain", domain);
         filters.put("themeName", themeName);
         filters.put("productCategory", productCategory);

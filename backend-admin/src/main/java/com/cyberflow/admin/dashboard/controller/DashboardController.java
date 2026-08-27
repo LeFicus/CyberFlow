@@ -236,11 +236,14 @@ public class DashboardController {
             @RequestParam(required = false) String updatedEndDate,
             @RequestParam(required = false) Integer minIndexCount,
             @RequestParam(required = false) Integer maxIndexCount,
-            @RequestParam(required = false) String changeDirection) {
+            @RequestParam(required = false) String changeDirection,
+            @RequestParam(required = false) String serverNameExact,
+            @RequestParam(defaultValue = "false") boolean serverIpEmpty,
+            @RequestParam(required = false) String builderNameExact) {
         return Result.ok(dashboardService.getSiteIndexData(page, size, dimension, userGroup,
                 adminName, builderUsername, serverName, serverIp, domain, themeName, productCategory,
                 siteStartDate, siteEndDate, submittedStartDate, submittedEndDate,
-                updatedStartDate, updatedEndDate, minIndexCount, maxIndexCount, changeDirection));
+                updatedStartDate, updatedEndDate, minIndexCount, maxIndexCount, changeDirection, serverNameExact, serverIpEmpty, builderNameExact));
     }
 
     @GetMapping("/orders-by-domain")

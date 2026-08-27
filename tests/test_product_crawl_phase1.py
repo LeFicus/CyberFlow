@@ -190,7 +190,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(self.pipeline.metrics.counts["failed"], 0)
 
     def test_filters_have_reasons_and_do_not_count_as_persisted(self):
-        self.pipeline.options = CrawlOptions(max_product_price_usd=130)
+        self.pipeline.options = CrawlOptions(max_product_price_usd=119)
         item = product()
         item["Regular price"] = 999
         with self.assertRaises(DropItem):
@@ -428,7 +428,7 @@ def run_crawl_fixture(scenario):
             process.crawl(BigCommerceCrawlSpider, domain="https://shop.test")
         else:
             process.crawl(PlatformCrawlSpider, domain="https://shop.test", platform="woocommerce",
-                          crawl_options_json=json.dumps({"max_product_price_usd": 130}) if scenario == "filtered" else None)
+                          crawl_options_json=json.dumps({"max_product_price_usd": 119}) if scenario == "filtered" else None)
         process.start()
 
 

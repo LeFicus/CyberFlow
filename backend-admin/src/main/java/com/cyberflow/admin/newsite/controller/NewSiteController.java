@@ -9,6 +9,7 @@ import com.cyberflow.admin.newsite.service.NewSiteService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -65,5 +66,12 @@ public class NewSiteController {
     public Result<NewSite> updateStatus(@PathVariable Long id,
                                          @Valid @RequestBody NewSiteStatusRequest request) {
         return Result.ok(newSiteService.updateStatus(id, request.getStatus()));
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('newsite:delete')")
+    public Result<Void> delete(@PathVariable Long id) {
+        newSiteService.delete(id);
+        return Result.ok();
     }
 }

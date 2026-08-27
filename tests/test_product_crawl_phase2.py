@@ -123,15 +123,15 @@ class Phase2PipelineTests(unittest.TestCase):
         self.pipeline.close_spider(self.spider)
         self.assertEqual(self.database.rows[("shop.test", "A")][3], 100.5)
 
-    def test_optional_image_description_and_unlimited_price(self):
+    def test_legacy_optional_image_cannot_bypass_global_quality_rule(self):
         self.pipeline.options = CrawlOptions(require_image=False)
         item = phase1.product()
         item.pop("Images")
         item.pop("Description")
         item["Regular price"] = 999
-        self.pipeline.process_item(item, self.spider)
-        self.pipeline.close_spider(self.spider)
-        self.assertEqual(self.pipeline.metrics.counts["persisted"], 1)
+        with self.assertRaises(DropItem):
+            self.pipeline.process_item(item, self.spider)
+        self.assertEqual(self.pipeline.metrics.counts["persisted"], 0)
 
     def test_required_fields_have_distinct_filter_reasons(self):
         self.pipeline.options = CrawlOptions(require_description=True)
@@ -312,7 +312,7 @@ class Phase2ConsumerTests(unittest.IsolatedAsyncioTestCase):
         for scenario, outcome, persisted in (
             ("navigation", "success", 1), ("navigation-blocked", "failed", 0),
             ("verification", "failed", 0), ("unknown-currency", "failed", 0),
-            ("optional-image", "success", 1), ("required-image", "success", 0),
+            ("optional-image", "success", 0), ("required-image", "success", 0),
             ("price-filter", "success", 0), ("aud-conversion", "success", 1),
         ):
             with self.subTest(scenario=scenario):

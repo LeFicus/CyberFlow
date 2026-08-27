@@ -25,3 +25,7 @@ export function createNewSites(sites) {
 export function updateNewSiteStatus(id, status) {
   return request.put(`/admin/new-site/${id}/status`, { status })
 }
+
+export function deleteNewSite(id) {
+  return request.delete(`/admin/new-site/${id}`)
+}

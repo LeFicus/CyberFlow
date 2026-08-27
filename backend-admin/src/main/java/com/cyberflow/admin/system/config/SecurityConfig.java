@@ -97,6 +97,9 @@ public class SecurityConfig {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/admin/auth/login").permitAll()
+                // Native browser downloads cannot attach a bearer header. This endpoint
+                // requires a short-lived, single-use ticket issued to an authenticated owner.
+                .requestMatchers(HttpMethod.GET, "/admin/dashboard/product-exports/download").permitAll()
                 .requestMatchers("/admin/swagger-ui/**", "/admin/api-docs/**").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().authenticated()

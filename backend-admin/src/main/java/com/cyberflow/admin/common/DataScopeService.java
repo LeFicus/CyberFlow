@@ -21,7 +21,10 @@ public class DataScopeService {
             throw new IllegalStateException("当前用户未认证");
         }
 
-        String username = authentication.getName();
+        return forUsername(authentication.getName());
+    }
+
+    public DataScope forUsername(String username) {
         SysUser user = userMapper.selectByUsername(username);
         if (user == null) {
             throw new IllegalStateException("当前用户不存在");

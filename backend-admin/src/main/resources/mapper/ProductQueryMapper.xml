@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cyberflow.admin.dashboard.mapper.ProductQueryMapper">
+  <sql id="scope">
+    <if test="allowed != null">
+      <choose>
+        <when test="allowed.size() > 0">AND p.source_domain IN <foreach collection="allowed" item="v" open="(" close=")" separator=",">#{v}</foreach></when>
+        <otherwise>AND 1 = 0</otherwise>
+      </choose>
+    </if>
+  </sql>
+  <sql id="filters">
+    AND p.image_usable = 1
+    <include refid="scope"/>
+    <if test="f.domains.size() > 0">AND p.source_domain IN <foreach collection="f.domains" item="v" open="(" close=")" separator=",">#{v}</foreach></if>
+    <if test="f.customCategories.size() > 0">AND p.custom_category IN <foreach collection="f.customCategories" item="v" open="(" close=")" separator=",">#{v}</foreach></if>
+    <if test="f.productRoles.size() > 0">AND p.product_role IN <foreach collection="f.productRoles" item="v" open="(" close=")" separator=",">#{v}</foreach></if>
+    <if test="f.productCategories.size() > 0">AND <foreach collection="f.categoryPatterns" item="v" open="(" close=")" separator=" OR ">p.categories LIKE #{v} ESCAPE '!'</foreach></if>
+    <if test="f.name != ''">AND p.name LIKE #{f.namePattern} ESCAPE '!'</if>
+    <if test="f.sku != ''">AND p.sku LIKE #{f.skuPattern} ESCAPE '!'</if>
+    <if test="f.language != ''">AND p.language = #{f.language}</if>
+    <if test="f.minPrice != null">AND p.regular_price &gt;= #{f.minPrice}</if>
+    <if test="f.maxPrice != null">AND p.regular_price &lt;= #{f.maxPrice}</if>
+    <if test="f.startDate != null">AND p.created_at &gt;= #{f.startDate}</if>
+    <if test="f.endDate != null">AND p.created_at &lt; #{f.endExclusive}</if>
+  </sql>
+  <select id="search" resultType="map" timeout="20">
+    SELECT /*+ MAX_EXECUTION_TIME(18000) */ p.id,p.sku,p.name,p.regular_price,p.categories,p.custom_category,
+      p.product_role,p.source_domain,p.language,p.images,p.created_at
+    FROM scraped_data.ecommerce_products p WHERE p.id &lt;= #{snapshot}
+    <if test="before != null">AND p.id &lt; #{before}</if>
+    <include refid="filters"/> ORDER BY p.id DESC LIMIT #{limit}
+  </select>
+  <select id="count" resultType="long" timeout="10">
+    SELECT /*+ MAX_EXECUTION_TIME(8000) */ COUNT(*) FROM scraped_data.ecommerce_products p
+    WHERE p.id &lt;= #{snapshot} <include refid="filters"/>
+  </select>
+  <select id="exportBatch" resultType="map" timeout="30">
+    SELECT /*+ MAX_EXECUTION_TIME(25000) */ p.id,p.sku,p.name,p.description,p.regular_price,p.categories,
+      p.images,p.cf_opingts,p.custom_category,p.product_role,p.source_domain,p.language
+    FROM scraped_data.ecommerce_products p WHERE p.id &gt; #{after} AND p.id &lt;= #{snapshot}
+    <include refid="filters"/> ORDER BY p.id ASC LIMIT #{limit}
+  </select>
+  <select id="domainOptions" resultType="string" timeout="5">
+    SELECT /*+ MAX_EXECUTION_TIME(4000) */ DISTINCT p.source_domain
+    FROM scraped_data.ecommerce_products p WHERE p.source_domain LIKE #{pattern} ESCAPE '!'
+    AND p.image_usable = 1
+    <include refid="scope"/> ORDER BY p.source_domain LIMIT 30
+  </select>
+</mapper>

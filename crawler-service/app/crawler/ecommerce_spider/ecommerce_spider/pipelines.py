@@ -20,6 +20,8 @@ from ecommerce_spider.normalization import (
     normalize_category,
     normalize_name,
     product_dedupe_key,
+    usable_product_images,
+    adjusted_price_usd,
 )
 
 
@@ -30,14 +32,15 @@ class MySQLRedisPipeline:
     SQL = """
         INSERT INTO ecommerce_products
         (sku, name, description, regular_price, categories, images, cf_opingts,
-         custom_category, product_role, source_domain, language, dedupe_key)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+         custom_category, product_role, source_domain, language, dedupe_key, original_price_usd, image_usable)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
         ON DUPLICATE KEY UPDATE
             name=VALUES(name), regular_price=VALUES(regular_price),
             categories=VALUES(categories), images=VALUES(images),
             description=VALUES(description), cf_opingts=VALUES(cf_opingts),
             custom_category=VALUES(custom_category), product_role=VALUES(product_role),
-            language=VALUES(language), dedupe_key=VALUES(dedupe_key)
+            language=VALUES(language), dedupe_key=VALUES(dedupe_key),
+            original_price_usd=VALUES(original_price_usd), image_usable=1
     """
 
     def __init__(self, mysql_config, redis_config, batch_size=50, redis_enabled=True):
@@ -136,12 +139,17 @@ class MySQLRedisPipeline:
             self.metrics.currencies[str(item.get("货币")).upper()] += 1
             if item["Regular price"] <= 0:
                 self._drop("invalid_price", "商品美元价格必须大于 0")
+            item["_original_price_usd"] = item["Regular price"]
+            item["Regular price"] = adjusted_price_usd(item["Regular price"], domain, sku)
             if self.options.max_product_price_usd is not None and item["Regular price"] > self.options.max_product_price_usd:
                 self._drop("price_limit", f"商品价格超过 ${self.options.max_product_price_usd:g}")
             if self.options.require_description and not has_content(item.get("Description")):
                 self._drop("missing_description", "商品描述为空")
-            if self.options.require_image and not has_content(item.get("Images")):
-                self._drop("missing_image", "商品图片为空")
+            original_images = item.get("Images")
+            item["Images"] = usable_product_images(original_images, domain)
+            if not item["Images"]:
+                reason = "default_image" if has_content(original_images) else "missing_image"
+                self._drop(reason, "商品无可用图片（空图或站点默认图片）")
             item["语言"] = item.get("语言") or "en"
             item["产品标签"] = (
                 "supplement" if str(item.get("产品标签", "")).strip().lower() == "supplement" else "main"
@@ -183,7 +191,7 @@ class MySQLRedisPipeline:
             item["SKU"], item["Name"], item.get("Description"), item["Regular price"],
             item.get("Categories"), item.get("Images"), item.get("cf_opingts"),
             item.get("自定义分类"), item["产品标签"], item["原站域名"],
-            item["语言"], item["_dedupe_key"],
+            item["语言"], item["_dedupe_key"], item.get("_original_price_usd", item["Regular price"]),
         )
 
     def _flush_to_mysql(self):

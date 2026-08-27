@@ -95,12 +95,12 @@ public interface EcommerceProductMapper {
      * @return 商品信息列表
      */
     @Select("SELECT id, sku, name, regular_price, categories, custom_category, product_role, source_domain, language, images " +
-            "FROM scraped_data.ecommerce_products ORDER BY created_at DESC, id DESC LIMIT #{offset}, #{size}")
+            "FROM scraped_data.ecommerce_products WHERE image_usable=1 ORDER BY created_at DESC, id DESC LIMIT #{offset}, #{size}")
     List<Map<String, Object>> listProducts(int offset, int size);
 
     /** Count products matching the optional domain, category and name filters. */
     @Select("<script>SELECT COUNT(id) FROM scraped_data.ecommerce_products " +
-            "<where>" +
+            "<where> image_usable=1 " +
             "<if test='ownerName != null'> AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND FIND_IN_SET(s.admin_name, #{ownerName}) &gt; 0)</if>" +
             "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
@@ -130,7 +130,7 @@ public interface EcommerceProductMapper {
     /** List products matching the optional filters. */
     @Select("<script>SELECT id, sku, name, regular_price, categories, custom_category, product_role, source_domain, language, images " +
             "FROM scraped_data.ecommerce_products " +
-            "<where>" +
+            "<where> image_usable=1 " +
             "<if test='ownerName != null'> AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND FIND_IN_SET(s.admin_name, #{ownerName}) &gt; 0)</if>" +
             "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
@@ -177,7 +177,7 @@ public interface EcommerceProductMapper {
 
     /** Stream crawl fingerprints for all products matching the current list filters. */
     @Select("<script>SELECT sku, source_domain FROM scraped_data.ecommerce_products " +
-            "<where>" +
+            "<where> image_usable=1 " +
             "<if test='ownerName != null'> AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND FIND_IN_SET(s.admin_name, #{ownerName}) &gt; 0)</if>" +
             "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
@@ -207,7 +207,7 @@ public interface EcommerceProductMapper {
 
     /** Delete all products matching the current list filters. */
     @Delete("<script>DELETE FROM scraped_data.ecommerce_products " +
-            "<where>" +
+            "<where> image_usable=1 " +
             "<if test='ownerName != null'> AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND FIND_IN_SET(s.admin_name, #{ownerName}) &gt; 0)</if>" +
             "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
@@ -237,7 +237,7 @@ public interface EcommerceProductMapper {
     /** Returns normalized products for a small import-template export. */
     @Select("SELECT sku, name, description, regular_price, categories, images, cf_opingts, source_domain " +
             "FROM scraped_data.ecommerce_products " +
-            "WHERE (#{domain} IS NULL OR #{domain} = '' OR source_domain = #{domain}) " +
+            "WHERE image_usable=1 AND (#{domain} IS NULL OR #{domain} = '' OR source_domain = #{domain}) " +
             "AND (#{ownerName} IS NULL OR EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND FIND_IN_SET(s.admin_name, #{ownerName}) > 0)) ORDER BY id")
     List<Map<String, Object>> listProductsForExport(@Param("domain") String domain,
                                                     @Param("ownerName") String ownerName);
@@ -245,7 +245,7 @@ public interface EcommerceProductMapper {
     /** Stream normalized products so large exports never materialize the full table. */
     @Select("<script>SELECT sku, name, description, regular_price, categories, images, cf_opingts, " +
             "custom_category, product_role, source_domain, language FROM scraped_data.ecommerce_products " +
-            "<where>" +
+            "<where> image_usable=1 " +
             "<if test='ownerName != null'> AND EXISTS (SELECT 1 FROM site_info s WHERE LOWER(TRIM(LEADING 'www.' FROM s.site_domain)) = LOWER(TRIM(LEADING 'www.' FROM ecommerce_products.source_domain)) AND FIND_IN_SET(s.admin_name, #{ownerName}) &gt; 0)</if>" +
             "<if test='domainsFilter != null and domainsFilter.size() > 0'>" +
             "AND <foreach collection='domainsFilter' item='domain' separator=' OR ' open='(' close=')'>" +
@@ -275,7 +275,7 @@ public interface EcommerceProductMapper {
     /** Legacy small export method retained for callers outside the HTTP export path. */
     @Select("<script>SELECT sku, name, description, regular_price, categories, images, cf_opingts, " +
             "custom_category, source_domain, language FROM scraped_data.ecommerce_products " +
-            "<where>" +
+            "<where> image_usable=1 " +
             "<if test='domain != null and domain.trim() != \"\"'>AND source_domain = TRIM(#{domain}) </if>" +
             "<if test='customCategory != null and customCategory.trim() != \"\"'>AND custom_category = TRIM(#{customCategory}) </if>" +
             "</where>ORDER BY id</script>")

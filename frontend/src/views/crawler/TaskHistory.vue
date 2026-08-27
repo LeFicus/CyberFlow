@@ -20,9 +20,9 @@
     </el-radio-group>
 
     <!-- 任务历史表格 -->
-    <el-table :data="tableData" v-loading="loading" stripe empty-text="暂无任务记录">
-      <el-table-column prop="taskId" label="Task ID" min-width="280" />
-      <el-table-column prop="type" label="类型" width="120">
+    <el-table :data="tableData" v-loading="loading" :max-height="640" stripe empty-text="暂无任务记录">
+      <el-table-column prop="taskId" label="任务 ID" min-width="170" show-overflow-tooltip />
+      <el-table-column prop="type" label="类型" width="95">
         <template #default="{ row }">
           <el-tag v-if="row.type === 'site_crawl'" type="primary">站点爬虫</el-tag>
           <el-tag v-else-if="row.type === 'site_index'" type="success">收录统计</el-tag>
@@ -30,27 +30,27 @@
           <el-tag v-else-if="row.type === 'product_crawl'">商品爬虫</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="status" label="状态" width="100">
+      <el-table-column prop="status" label="状态" width="160">
         <template #default="{ row }">
-          <el-tag :type="statusTagType(row.status)">{{ row.status === 'PAUSED' ? '已暂停' : row.status }}</el-tag>
+          <el-tag :type="taskStatus(row).tone" :effect="row.status === 'FAILED' ? 'dark' : 'light'">{{ taskStatus(row).label }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="进度" min-width="210">
+      <el-table-column label="进度" min-width="170">
         <template #default="{ row }">
           <el-progress
             :percentage="row.status === 'SUCCESS' ? 100 : (row.progress || 0)"
             :status="row.status === 'SUCCESS' ? 'success' : row.status === 'FAILED' ? 'exception' : ''"
             :stroke-width="10"
           />
-            <span class="progress-message">{{ row.progressMessage || (row.status === 'PENDING' ? '等待执行' : row.status === 'PAUSED' ? '任务已暂停' : '正在执行') }}</span>
+            <span class="progress-message">{{ taskProgressMessage(row) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="结果" min-width="200">
+      <el-table-column label="结果" min-width="130">
         <template #default="{ row }">
-          {{ row.errorMsg || `处理 ${row.rowsAffected || 0} 条` }}
+          {{ taskResult(row) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
           <el-button
             v-if="userStore.hasPermission('crawler:task:control') && (row.status === 'PENDING' || row.status === 'RUNNING')"
@@ -92,7 +92,7 @@
     >
       <div class="log-toolbar">
         <div>
-          <el-tag :type="statusTagType(logStatus)">{{ logStatus || 'UNKNOWN' }}</el-tag>
+          <el-tag :type="statusTagType(logStatus)">{{ taskStatus({status:logStatus}).label }}</el-tag>
           <span class="log-task-id">{{ activeTaskId }}</span>
           <span v-if="logStatus === 'RUNNING'" class="live-indicator">实时刷新中</span>
         </div>
@@ -118,6 +118,7 @@
 </template>
 
 <script setup>
+import { taskStatus, taskProgressMessage, taskResult } from '@/data/taskPresentation'
 import { ref, nextTick, onMounted, onUnmounted, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getRecentTasks, getTaskSummary, getTaskCrawlLog, downloadTaskCrawlLog, pauseTask, resumeTask, deleteTask } from '@/api/crawler'
@@ -220,9 +221,7 @@ function handleSizeChange(value) {
 }
 
 function statusTagType(status) {
-  if (status === 'SUCCESS') return 'success'
-  if (status === 'PENDING' || status === 'RUNNING' || status === 'PAUSED') return 'warning'
-  return 'danger'
+  return taskStatus({status}).tone
 }
 
 function taskTypeLabel(type) {

@@ -20,16 +20,17 @@
         clearable
         placeholder="搜索域名、分类或站点标题"
         style="width: 280px"
-        @keyup.enter="fetchList"
+        @keyup.enter="handleSearch"
+        @clear="handleSearch"
       />
-      <el-select v-model="status" clearable placeholder="全部使用状态" style="width: 170px" @change="fetchList">
+      <el-select v-model="status" clearable placeholder="全部使用状态" style="width: 170px" @change="handleSearch">
         <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
       </el-select>
       <el-button @click="resetFilters">重置</el-button>
-      <el-button type="primary" plain @click="fetchList">查询</el-button>
+      <el-button type="primary" plain @click="handleSearch">查询</el-button>
     </div>
 
-    <el-table v-loading="loading" :data="rows" border stripe>
+    <el-table v-loading="loading" :data="rows" row-key="id" border stripe>
       <el-table-column prop="domain" label="新域名" min-width="190" fixed="left" />
       <el-table-column prop="customCategory" label="自定义分类" min-width="130" />
       <el-table-column label="主产品分类" min-width="180">
@@ -49,16 +50,61 @@
       </el-table-column>
       <el-table-column prop="siteTitle" label="site_title" min-width="170" />
       <el-table-column prop="tagLine" label="tag_line" min-width="230" show-overflow-tooltip />
-      <el-table-column label="站点使用状态" width="150" fixed="right">
+      <el-table-column label="站点使用状态" width="150" align="center" fixed="right">
         <template #default="{ row }">
-          <el-select
-            :model-value="row.status"
-            size="small"
-            :loading="statusUpdating === row.id"
-            @change="value => handleStatusChange(row, value)"
+          <el-dropdown
+            v-if="canUpdateStatus"
+            trigger="click"
+            :disabled="isRowBusy(row.id)"
+            @command="value => handleStatusChange(row, value)"
           >
-            <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
+            <button
+              type="button"
+              class="status-badge status-trigger"
+              :class="`status-${statusMeta(row.status).tone}`"
+              :disabled="isRowBusy(row.id)"
+              :aria-label="`${row.domain}：${statusMeta(row.status).label}，点击修改状态`"
+              :aria-busy="statusUpdating.has(row.id)"
+            >
+              <el-icon v-if="statusUpdating.has(row.id)" class="is-loading"><Loading /></el-icon>
+              <span v-else class="status-dot" aria-hidden="true" />
+              <span>{{ statusMeta(row.status).label }}</span>
+              <el-icon class="status-chevron"><ArrowDown /></el-icon>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  v-for="item in statusOptions"
+                  :key="item.value"
+                  :command="item.value"
+                  :disabled="item.value === row.status || isRowBusy(row.id)"
+                >
+                  <span class="status-menu-option" :class="`status-${item.tone}`">
+                    <span class="status-dot" aria-hidden="true" />
+                    <span>{{ item.label }}</span>
+                    <el-icon v-if="item.value === row.status"><Check /></el-icon>
+                  </span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <span v-else class="status-badge" :class="`status-${statusMeta(row.status).tone}`">
+            <span class="status-dot" aria-hidden="true" />
+            {{ statusMeta(row.status).label }}
+          </span>
+        </template>
+      </el-table-column>
+      <el-table-column v-if="canDelete" label="操作" width="96" align="center" fixed="right">
+        <template #default="{ row }">
+          <el-button
+            type="danger"
+            link
+            :icon="Delete"
+            :loading="deleting.has(row.id)"
+            :disabled="isRowBusy(row.id)"
+            :aria-label="`删除 ${row.domain}`"
+            @click="handleDelete(row)"
+          >删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -191,10 +237,12 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowDown, Check, Delete, Loading } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
 import {
   createNewSites,
+  deleteNewSite,
   getNewSiteAiConfig,
   getNewSiteOptions,
   listNewSites,
@@ -203,9 +251,9 @@ import {
 } from '@/api/newSite'
 
 const statusOptions = [
-  { value: 'pending_review', label: '待审核' },
-  { value: 'enabled', label: '启用' },
-  { value: 'disabled', label: '停用' },
+  { value: 'pending_review', label: '待审核', tone: 'pending' },
+  { value: 'enabled', label: '启用', tone: 'enabled' },
+  { value: 'disabled', label: '停用', tone: 'disabled' },
 ]
 const aiProviders = [
   { value: 'deepseek', label: 'DeepSeek' },
@@ -222,7 +270,8 @@ const keyword = ref('')
 const status = ref('')
 const loading = ref(false)
 const creating = ref(false)
-const statusUpdating = ref(null)
+const statusUpdating = reactive(new Set())
+const deleting = reactive(new Set())
 const dialogVisible = ref(false)
 const batchMode = ref(false)
 const draftRows = ref([])
@@ -238,6 +287,8 @@ const aiConfig = reactive({
 })
 const userStore = useUserStore()
 const canConfigureAi = computed(() => userStore.hasPermission('newsite:config'))
+const canUpdateStatus = computed(() => userStore.hasPermission('newsite:status'))
+const canDelete = computed(() => userStore.hasPermission('newsite:delete'))
 const productCategories = ref([])
 const sourceDomains = ref([])
 let draftKey = 0
@@ -374,21 +425,52 @@ async function submitCreate() {
   }
 }
 
+function statusMeta(value) {
+  return statusOptions.find(item => item.value === value) || { label: '未知状态', tone: 'disabled' }
+}
+
+function isRowBusy(id) {
+  return statusUpdating.has(id) || deleting.has(id)
+}
+
 async function handleStatusChange(row, value) {
-  if (value === row.status) return
-  const oldValue = row.status
-  statusUpdating.value = row.id
+  if (!canUpdateStatus.value || value === row.status || isRowBusy(row.id)) return
+  statusUpdating.add(row.id)
   try {
     const res = await updateNewSiteStatus(row.id, value)
     row.status = res.data?.status || value
+    ElMessage.success('站点状态已更新')
+    if (status.value && row.status !== status.value) await fetchList()
   } catch {
-    row.status = oldValue
+    // The request interceptor reports errors; keep the last confirmed status.
   } finally {
-    statusUpdating.value = null
+    statusUpdating.delete(row.id)
   }
 }
 
+async function handleDelete(row) {
+  if (!canDelete.value || isRowBusy(row.id)) return
+  deleting.add(row.id)
+  try {
+    await ElMessageBox.confirm(
+      `确定删除新站点「${row.domain}」吗？仅删除此生成记录，不影响源站点和已采集商品。删除后无法恢复。`,
+      '删除新站点',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消',
+        confirmButtonType: 'danger', autofocus: false, closeOnClickModal: false },
+    )
+    await deleteNewSite(row.id)
+    ElMessage.success('新站点已删除')
+    await fetchList()
+  } catch {
+    // Cancellation leaves the record intact; API errors are shown by the interceptor.
+  } finally {
+    deleting.delete(row.id)
+  }
+}
+
+let listRequestId = 0
 async function fetchList() {
+  const requestId = ++listRequestId
   loading.value = true
   try {
     const res = await listNewSites({
@@ -397,11 +479,22 @@ async function fetchList() {
       keyword: keyword.value.trim() || undefined,
       status: status.value || undefined,
     })
-    rows.value = res.data?.records || []
+    if (requestId !== listRequestId) return
     total.value = Number(res.data?.total || 0)
+    const lastPage = Math.max(1, Math.ceil(total.value / size.value))
+    if (page.value > lastPage) {
+      page.value = lastPage
+      return await fetchList()
+    }
+    rows.value = res.data?.records || []
   } finally {
-    loading.value = false
+    if (requestId === listRequestId) loading.value = false
   }
+}
+
+function handleSearch() {
+  page.value = 1
+  return fetchList()
 }
 
 async function fetchOptions() {
@@ -464,6 +557,87 @@ onMounted(async () => {
 .source-list {
   line-height: 1.6;
   white-space: normal;
+}
+
+.status-pending {
+  --status-color: var(--el-color-warning-dark-2);
+  --status-bg: var(--el-color-warning-light-9);
+  --status-border: var(--el-color-warning-light-7);
+}
+
+.status-enabled {
+  --status-color: var(--el-color-success-dark-2);
+  --status-bg: var(--el-color-success-light-9);
+  --status-border: var(--el-color-success-light-7);
+}
+
+.status-disabled {
+  --status-color: var(--el-text-color-secondary);
+  --status-bg: var(--el-fill-color-light);
+  --status-border: var(--el-border-color-light);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 94px;
+  padding: 5px 11px;
+  border: 1px solid var(--status-border);
+  border-radius: 999px;
+  background: var(--status-bg);
+  color: var(--status-color);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.status-trigger {
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.status-trigger:hover:not(:disabled) {
+  border-color: var(--status-color);
+}
+
+.status-trigger:focus-visible {
+  outline: 2px solid var(--status-color);
+  outline-offset: 2px;
+}
+
+.status-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--status-color);
+}
+
+.status-chevron {
+  margin-left: 2px;
+  font-size: 10px;
+}
+
+.status-menu-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 90px;
+}
+
+.status-menu-option .el-icon {
+  margin-left: auto;
+  color: var(--status-color);
 }
 
 .pagination {

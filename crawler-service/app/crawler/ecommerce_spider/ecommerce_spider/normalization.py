@@ -4,6 +4,7 @@ import json
 import html
 import re
 import math
+import zlib
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -127,3 +128,63 @@ def load_exchange_rates() -> dict:
     except (OSError, ValueError):
         _RATES = {"USD": 1.0}
     return _RATES
+
+
+# Match recognizable placeholder assets, not arbitrary repeated product images.
+_DEFAULT_IMAGE = re.compile(
+    r"(?:^|[/_. -])(?:productdefault|default[-_ ]?(?:product|image)|"
+    r"placeholder|woocommerce[-_]placeholder|no[-_ ]?(?:image|photo|picture)|"
+    r"image[-_ ]?(?:not[-_ ]?found|unavailable)|spacer|transparent|loading|"
+    r"logo|favicon)(?=$|[/_. -])", re.IGNORECASE
+)
+# This storefront uses the same brand logo under unique per-product URLs.
+_SITE_DEFAULT_IMAGE = {"mcquillantools.ie": re.compile(r"hitachi[_-]spares[_-]logo", re.IGNORECASE)}
+
+
+def usable_product_images(value: object, domain: str = "") -> str:
+    """Retain HTTP(S) image URLs, excluding known default assets. No network probes."""
+    if isinstance(value, (list, tuple)):
+        values = value
+    else:
+        raw = html.unescape(str(value or "")).strip()
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+                values = parsed if isinstance(parsed, list) else []
+            except (ValueError, TypeError):
+                values = []
+        else:
+            # Commas inside a CDN URL path/query are legal; only split at a URL boundary.
+            values = re.split(r"[,;]\s*(?=(?:https?:)?//)|[\r\n]+", raw)
+    host = urlparse(domain if "://" in domain else "//" + domain).netloc.lower().removeprefix("www.")
+    retained = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        url = value.strip()
+        if url.startswith("//"):
+            url = "https:" + url
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            continue
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or any(c.isspace() for c in url):
+            continue
+        path = unquote(parsed.path)
+        filename = path.rsplit("/", 1)[-1]
+        if _DEFAULT_IMAGE.search(filename) or "/placeholder/" in path.lower():
+            continue
+        site_rule = _SITE_DEFAULT_IMAGE.get(host)
+        if site_rule and site_rule.search(path):
+            continue
+        if url not in retained:
+            retained.append(url)
+    return ", ".join(retained)
+
+
+def adjusted_price_usd(price: float, domain: str, sku: str) -> float:
+    """Stable 120.00–150.00 USD mapping; repeated crawls keep the same price."""
+    if price <= 150:
+        return price
+    identity = f"{domain.strip().lower()}|{sku.strip()}".encode("utf-8")
+    return (12000 + zlib.crc32(identity) % 3001) / 100

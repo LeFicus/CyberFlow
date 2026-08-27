@@ -156,6 +156,15 @@ public class NewSiteService {
         return newSiteMapper.selectById(id);
     }
 
+    /** Only deletes the generated record; source sites and collected products are unaffected. */
+    @Transactional
+    public void delete(Long id) {
+        if (id == null || id <= 0) throw new IllegalArgumentException("新站点 ID 无效");
+        if (newSiteMapper.deleteById(id) == 0) {
+            throw new IllegalArgumentException("新站点不存在或已删除：" + id);
+        }
+    }
+
     private NewSite generateAvailableSite(String customCategory, String mainCategory,
                                           String supplementCategory, Set<String> batchDomains) {
         IllegalStateException lastError = null;

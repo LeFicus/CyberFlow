@@ -59,6 +59,29 @@ export function getProducts(params) {
   return request.get('/admin/dashboard/products', { params })
 }
 
+/** Cursor-based workspace APIs; list/count/export share one filter contract. */
+export function searchProducts(data) {
+  return request.post('/admin/dashboard/products/search', data, { timeout: 25000 })
+}
+export function countFilteredProducts(data) {
+  return request.post('/admin/dashboard/products/count', data, { timeout: 12000 })
+}
+export function getProductDomainOptions(keyword) {
+  return request.get('/admin/dashboard/products/domain-options', { params: { keyword }, timeout: 7000 })
+}
+export function createProductExport(data) {
+  return request.post('/admin/dashboard/product-exports', data)
+}
+export function listProductExports() {
+  return request.get('/admin/dashboard/product-exports')
+}
+export function cancelProductExport(id) {
+  return request.post(`/admin/dashboard/product-exports/${id}/cancel`)
+}
+export function getProductExportDownload(id) {
+  return request.post(`/admin/dashboard/product-exports/${id}/ticket`)
+}
+
 /** Delete selected products and their crawl fingerprints. */
 export function deleteProducts(ids) {
   return request.delete('/admin/dashboard/products', { data: ids })
