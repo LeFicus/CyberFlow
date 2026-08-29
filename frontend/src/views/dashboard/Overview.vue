@@ -117,29 +117,6 @@
       </article>
     </section>
 
-    <section class="bottom-grid">
-      <article class="panel chart-panel">
-        <div class="panel-heading">
-          <div><h2>站点收录趋势</h2><p>Google 收录指数的近 30 天变化</p></div>
-          <span :class="['panel-chip', indexGrowth >= 0 ? 'green' : 'red']">{{ indexGrowthLabel }}</span>
-        </div>
-        <v-chart :option="indexTrendOption" autoresize class="chart" />
-      </article>
-
-      <article class="panel action-panel">
-        <div class="panel-heading"><div><h2>快捷任务</h2><p>选择采集类型并进入对应配置</p></div></div>
-        <div class="quick-actions">
-          <button v-for="action in quickActions" :key="action.label" class="quick-action" @click="router.push(action.path)">
-            <span :class="`quick-icon ${action.tone}`"><el-icon><component :is="action.icon" /></el-icon></span>
-            <span><strong>{{ action.label }}</strong><small>{{ action.description }}</small></span>
-            <el-icon class="quick-arrow"><ArrowRight /></el-icon>
-          </button>
-        </div>
-        <div class="coverage-strip">
-          <div v-for="item in coverageItems" :key="item.label"><strong>{{ item.value }}</strong><span>{{ item.label }}</span></div>
-        </div>
-      </article>
-    </section>
   </div>
 </template>
 
@@ -154,6 +131,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { getCharts, getOverview, getRevenueSummary } from '@/api/dashboard'
+import { monthOrderComparison } from '@/utils/overviewComparison'
 
 use([CanvasRenderer, LineChart, GridComponent, LegendComponent, TooltipComponent])
 const router = useRouter()
@@ -205,61 +183,43 @@ const orderTrend = computed(() => {
     return { date: key, count: toNumber(item.count), amount: toNumber(item.amount) }
   })
 })
-const recentOrders = computed(() => orderTrend.value.slice(-7).reduce((sum, item) => sum + toNumber(item.count), 0))
-const previousOrders = computed(() => orderTrend.value.slice(-14, -7).reduce((sum, item) => sum + toNumber(item.count), 0))
-const recentAmount = computed(() => orderTrend.value.slice(-30).reduce((sum, item) => sum + toNumber(item.amount), 0))
-const orderGrowth = computed(() => previousOrders.value ? ((recentOrders.value - previousOrders.value) / previousOrders.value) * 100 : 0)
-const growthLabel = computed(() => `${orderGrowth.value >= 0 ? '+' : ''}${orderGrowth.value.toFixed(1)}%`)
-const growthCopy = computed(() => previousOrders.value
-  ? `近 7 天去重订单较此前 7 天${orderGrowth.value >= 0 ? '增长' : '下降'} ${Math.abs(orderGrowth.value).toFixed(1)}%，可结合趋势图进一步定位变化日期。`
-  : '订单趋势数据正在积累，完成更多同步任务后可查看周期变化。')
-const averageOrderValue = computed(() => toNumber(overview.value.today_orders)
-  ? toNumber(overview.value.today_amount ?? overview.value.successful_amount) / toNumber(overview.value.today_orders ?? overview.value.successful_orders)
-  : 0)
+const orderComparison = computed(() => monthOrderComparison(
+  overview.value.month_deduplicated_orders,
+  overview.value.previous_month_same_period_deduplicated_orders,
+))
+const monthOrders = computed(() => orderComparison.value.current)
+const previousMonthOrders = computed(() => orderComparison.value.previous)
+const monthOrderChange = computed(() => orderComparison.value.change)
+const monthOrderGrowth = computed(() => orderComparison.value.growth)
+const monthGrowthLabel = computed(() => monthOrderGrowth.value === null
+  ? '暂无同期基准'
+  : `${monthOrderGrowth.value >= 0 ? '+' : ''}${monthOrderGrowth.value.toFixed(1)}%`)
+const growthCopy = computed(() => previousMonthOrders.value
+  ? `本月截至今日去重订单较上月同期${monthOrderChange.value >= 0 ? '增加' : '减少'} ${formatNumber(Math.abs(monthOrderChange.value))} 笔，变化 ${monthGrowthLabel.value}。`
+  : `本月截至今日去重订单 ${formatNumber(monthOrders.value)} 笔，上月同期暂无可对比订单。`)
 
 const briefMetrics = computed(() => [
-  { label: '近 7 天去重订单', value: formatNumber(recentOrders.value), note: growthLabel.value },
-  { label: '近 30 天交易额', value: formatMoney(recentAmount.value), note: '趋势数据汇总' },
-  { label: '今日客单价', value: formatMoney(averageOrderValue.value), note: '今日成功金额 / 订单' },
+  { label: '本月同期去重订单', value: formatNumber(monthOrders.value), note: `${overview.value.month_same_period_start || '本月1日'} 至今日` },
+  { label: '上月同期去重订单', value: formatNumber(previousMonthOrders.value), note: overview.value.previous_month_same_period_end ? `截至 ${overview.value.previous_month_same_period_end.slice(5)}` : '相同天数' },
+  { label: '同期变化', value: `${monthOrderChange.value >= 0 ? '+' : ''}${formatNumber(monthOrderChange.value)}`, note: monthGrowthLabel.value },
 ])
 
 const stats = computed(() => [
   { label: '今日新增站点', value: formatNumber(overview.value.today_sites ?? overview.value.total_sites), icon: DataBoard, tone: 'blue', trend: '本日', trendTone: 'neutral', note: '今日建站' },
-  { label: '今日去重订单', value: formatNumber(overview.value.today_deduplicated_orders ?? overview.value.deduplicated_orders), icon: ShoppingCart, tone: 'violet', trend: growthLabel.value, trendTone: orderGrowth.value >= 0 ? 'up' : 'down', note: '业务订单指纹' },
+  { label: '今日去重订单', value: formatNumber(overview.value.today_deduplicated_orders ?? overview.value.deduplicated_orders), icon: ShoppingCart, tone: 'violet', trend: '本日', trendTone: 'neutral', note: '业务订单指纹' },
   { label: '今日成功订单', value: formatNumber(overview.value.today_successful_orders ?? overview.value.successful_orders), icon: Goods, tone: 'amber', trend: '本日', trendTone: 'neutral', note: '已支付订单' },
   { label: '今日成功金额', value: formatMoney(overview.value.today_successful_amount ?? overview.value.successful_amount), icon: Money, tone: 'green', trend: '本日', trendTone: 'up', note: '已支付金额' },
   { label: '本月新增站点', value: formatNumber(overview.value.month_sites), icon: DataBoard, tone: 'blue', trend: '本月', trendTone: 'neutral', note: '本月建站' },
-  { label: '本月去重订单', value: formatNumber(overview.value.month_deduplicated_orders), icon: ShoppingCart, tone: 'violet', trend: '本月', trendTone: 'neutral', note: '业务订单指纹' },
+  { label: '本月去重订单', value: formatNumber(overview.value.month_deduplicated_orders), icon: ShoppingCart, tone: 'violet', trend: monthGrowthLabel.value, trendTone: monthOrderGrowth.value === null ? 'neutral' : monthOrderGrowth.value >= 0 ? 'up' : 'down', note: `上月同期 ${formatNumber(previousMonthOrders.value)} 笔` },
   { label: '本月成功订单', value: formatNumber(overview.value.month_successful_orders ?? overview.value.month_orders), icon: Goods, tone: 'amber', trend: '本月', trendTone: 'neutral', note: '已支付订单' },
   { label: '本月成功金额', value: formatMoney(overview.value.month_successful_amount ?? overview.value.month_amount), icon: Money, tone: 'green', trend: '本月', trendTone: 'up', note: '已支付金额' },
 ])
-
-const quickActions = [
-  { label: '商品采集', description: '管理站点与选择器模板', path: '/crawler/site-config', icon: Goods, tone: 'violet' },
-  { label: '站点同步', description: '同步最新站点信息', path: '/crawler/site', icon: DataBoard, tone: 'blue' },
-  { label: '订单同步', description: '拉取最新订单数据', path: '/crawler/order', icon: ShoppingCart, tone: 'green' },
-]
 
 const adminRanking = computed(() => {
   const source = [...(charts.value.orders_by_admin || [])].sort((a, b) => toNumber(b.count) - toNumber(a.count)).slice(0, 5)
   const max = Math.max(...source.map(item => toNumber(item.count)), 1)
   return source.map(item => ({ name: item.admin_name || '未分配', count: toNumber(item.count), percent: (toNumber(item.count) / max) * 100 }))
 })
-const latestIndex = computed(() => (charts.value.index_trend || []).at(-1)?.total_index || 0)
-const indexGrowth = computed(() => {
-  const source = charts.value.index_trend || []
-  const current = toNumber(source.at(-1)?.total_index)
-  const previous = toNumber(source.at(-8)?.total_index || source[0]?.total_index)
-  return previous ? ((current - previous) / previous) * 100 : 0
-})
-const indexGrowthLabel = computed(() => `近 7 天 ${indexGrowth.value >= 0 ? '+' : ''}${indexGrowth.value.toFixed(1)}%`)
-const coverageItems = computed(() => [
-  { label: '管理员', value: formatNumber((charts.value.sites_by_admin || []).length) },
-  { label: '站点分类', value: formatNumber((charts.value.sites_by_category || []).length) },
-  { label: '结算币种', value: formatNumber((charts.value.orders_by_currency || []).length) },
-  { label: '当前收录', value: formatNumber(latestIndex.value) },
-])
-
 const orderTrendOption = computed(() => ({
   animationDuration: 650,
   grid: { left: 5, right: 8, top: 38, bottom: 4, containLabel: true },
@@ -275,18 +235,6 @@ const orderTrendOption = computed(() => ({
     { name: '成功金额', type: 'line', yAxisIndex: 1, smooth: true, symbol: 'none', data: orderTrend.value.map(item => item.amount), lineStyle: { width: 2, color: '#45bc8d' } },
   ],
 }))
-
-const indexTrendOption = computed(() => {
-  const source = charts.value.index_trend || []
-  return {
-    animationDuration: 650,
-    grid: { left: 4, right: 8, top: 16, bottom: 4, containLabel: true },
-    tooltip: { trigger: 'axis', backgroundColor: '#17243b', borderWidth: 0, textStyle: { color: '#fff' } },
-    xAxis: { type: 'category', boundaryGap: false, data: source.map(item => item.date?.slice(5)), axisLine: { lineStyle: { color: '#edf1f7' } }, axisLabel: { color: '#9aa7ba', fontSize: 10, interval: 4 } },
-    yAxis: { type: 'value', splitLine: { lineStyle: { color: '#f0f3f8' } }, axisLabel: { color: '#9aa7ba', fontSize: 10 } },
-    series: [{ name: '收录数', type: 'line', smooth: true, symbol: 'none', data: source.map(item => item.total_index), lineStyle: { width: 3, color: '#45bc8d' }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#45bc8d30' }, { offset: 1, color: '#45bc8d00' }] } } }],
-  }
-})
 
 async function loadDashboard() {
   const params = { userGroup: userGroup.value || undefined }
@@ -324,12 +272,10 @@ h1, h2, p { margin: 0; } h1 { color: var(--cf-ink); font-size: 28px; letter-spac
 .metric-card, .panel { border: 1px solid var(--cf-line); border-radius: 14px; background: #fff; box-shadow: var(--cf-shadow-sm); }
 .metric-card { padding: 18px 20px 16px; }.metric-top, .metric-foot, .panel-heading { display: flex; align-items: center; justify-content: space-between; }.metric-label { color: var(--cf-muted); font-size: 11px; }.metric-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; font-size: 16px; }.tone-blue { color: #536ff1; background: #eef1ff; }.tone-violet { color: #8a64e8; background: #f3edff; }.tone-amber { color: #d99a37; background: #fff6e3; }.tone-green { color: #36ad82; background: #eaf9f3; }
 .metric-value { margin: 14px 0 11px; color: var(--cf-ink); font-size: 25px; font-weight: 750; letter-spacing: -.04em; }.metric-foot { color: var(--cf-subtle); font-size: 10px; }.metric-trend { font-weight: 700; }.metric-trend.up { color: var(--cf-green); }.metric-trend.down { color: #df6577; }.metric-trend.neutral { color: var(--cf-blue); }
-.content-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, .7fr); gap: 15px; margin-top: 15px; }.bottom-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(340px, .9fr); gap: 15px; margin-top: 15px; }.panel { min-width: 0; padding: 21px; }.panel-heading { align-items: flex-start; }.panel-heading h2 { color: #263550; font-size: 14px; letter-spacing: -.02em; }.panel-heading p { margin-top: 5px; color: #9aa7b8; font-size: 10px; }.panel-chip { padding: 5px 9px; border-radius: 999px; font-size: 9px; font-weight: 700; }.panel-chip.blue { color: var(--cf-blue); background: #eef1ff; }.panel-chip.green { color: #36a77e; background: #eaf9f3; }.panel-chip.red { color: #d85b70; background: #fff0f2; }
+.content-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, .7fr); gap: 15px; margin-top: 15px; }.panel { min-width: 0; padding: 21px; }.panel-heading { align-items: flex-start; }.panel-heading h2 { color: #263550; font-size: 14px; letter-spacing: -.02em; }.panel-heading p { margin-top: 5px; color: #9aa7b8; font-size: 10px; }.panel-chip { padding: 5px 9px; border-radius: 999px; font-size: 9px; font-weight: 700; }.panel-chip.blue { color: var(--cf-blue); background: #eef1ff; }
 .chart { width: 100%; height: 225px; margin-top: 12px; }.chart-large { height: 270px; }
 .ranking-list { display: grid; gap: 16px; margin-top: 23px; }.ranking-row { display: flex; align-items: center; gap: 11px; }.ranking-index { color: #b2bbc9; font-size: 9px; font-weight: 750; }.ranking-main { min-width: 0; flex: 1; }.ranking-main > div:first-child { display: flex; justify-content: space-between; margin-bottom: 7px; }.ranking-main strong { overflow: hidden; color: #4a5870; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.ranking-main span { color: #8d99ab; font-size: 10px; }.ranking-track { overflow: hidden; height: 5px; border-radius: 999px; background: #f0f2f7; }.ranking-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #536ff1, #8a75f1); }.panel-link { display: flex; align-items: center; gap: 5px; margin-top: 20px; padding: 0; border: 0; color: var(--cf-blue); background: transparent; font-size: 10px; cursor: pointer; }
-.quick-actions { display: grid; gap: 8px; margin-top: 17px; }.quick-action { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 11px 12px; border: 1px solid var(--cf-line-soft); border-radius: 11px; text-align: left; background: #fbfcfe; cursor: pointer; transition: transform .18s, border .18s, box-shadow .18s; }.quick-action:hover { border-color: #cbd5ff; box-shadow: 0 7px 15px #536ff11a; transform: translateY(-1px); }.quick-icon { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 8px; font-size: 14px; }.quick-icon.blue { color: #536ff1; background: #eef1ff; }.quick-icon.violet { color: #8a64e8; background: #f3edff; }.quick-icon.green { color: #36ad82; background: #eaf9f3; }.quick-action strong, .quick-action small { display: block; }.quick-action strong { color: #32415b; font-size: 11px; }.quick-action small { margin-top: 3px; color: #a0aabd; font-size: 9px; }.quick-arrow { margin-left: auto; color: #b4becd; font-size: 11px; }
-.coverage-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin-top: 13px; overflow: hidden; border-radius: 10px; background: var(--cf-line-soft); }.coverage-strip > div { display: grid; gap: 3px; padding: 10px 6px; text-align: center; background: #f8f9fb; }.coverage-strip strong { color: #536179; font-size: 12px; }.coverage-strip span { color: #9ba6b7; font-size: 8px; }
-@media (max-width: 1120px) { .daily-brief { grid-template-columns: 1fr; }.content-grid, .bottom-grid { grid-template-columns: 1fr; }.revenue-heading { align-items: stretch; flex-direction: column; }.revenue-rules { justify-content: flex-start; } }
+@media (max-width: 1120px) { .daily-brief { grid-template-columns: 1fr; }.content-grid { grid-template-columns: 1fr; }.revenue-heading { align-items: stretch; flex-direction: column; }.revenue-rules { justify-content: flex-start; } }
 @media (max-width: 760px) { .heading-controls { flex-wrap: wrap; }.revenue-date, .revenue-month { width: 100%; }.revenue-date-control { width: 100%; }.stats-grid { grid-template-columns: repeat(2, 1fr); }.daily-brief { padding: 21px; }.brief-metrics { gap: 8px; }.brief-metric { padding: 4px 8px; }.brief-copy h2 { font-size: 16px; } }
 @media (max-width: 560px) { .page-heading { align-items: flex-start; flex-direction: column; gap: 14px; }.heading-date { display: none; }.stats-grid { gap: 9px; }.metric-card { padding: 15px; }.metric-value { font-size: 20px; }.brief-metrics { grid-template-columns: 1fr; }.brief-metric { display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 9px 0; border-top: 1px solid #ffffff12; border-left: 0; }.brief-metric strong { margin: 0; font-size: 14px; }.brief-metric small { display: none; }.panel { padding: 17px; } }
 </style>

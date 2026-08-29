@@ -15,7 +15,7 @@ class ProductDownloadControllerTest {
     @TempDir Path directory;
     @Test void downloadStreamsFileWithAttachmentHeadersAndRejectsInvalidTickets() throws Exception {
         var service = mock(ProductExportJobService.class);
-        var controller = new ProductWorkspaceController(mock(ProductQueryService.class), service);
+        var controller = new ProductWorkspaceController(mock(ProductQueryService.class), service, mock(DashboardService.class));
         var mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new GlobalExceptionHandler()).build();
         Path file = directory.resolve("example.zip"); byte[] bytes = {80,75,3,4}; Files.write(file, bytes);
         when(service.consumeTicket("valid")).thenReturn(file);

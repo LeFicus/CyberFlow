@@ -87,6 +87,11 @@ export function deleteProducts(ids) {
   return request.delete('/admin/dashboard/products', { data: ids })
 }
 
+/** Delete up to 500 newest products in the applied workspace filter and snapshot. */
+export function deleteFilteredProductBatch(data) {
+  return request.post('/admin/dashboard/products/delete-batch', data, { timeout: 30000 })
+}
+
 /** Delete all products matching the current list filters. */
 export function clearProducts(params) {
   return request.delete('/admin/dashboard/products/clear', { params })

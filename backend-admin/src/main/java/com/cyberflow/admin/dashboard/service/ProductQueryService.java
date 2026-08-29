@@ -57,6 +57,16 @@ public class ProductQueryService {
     public long count(ProductFilter filter, Long snapshot) {
         return mapper.count(filter.normalized(), allowedDomains(username()), snapshot(snapshot));
     }
+    /** Resolve a bounded, newest-first set using the exact workspace filter and snapshot contract. */
+    public List<Long> deletionCandidates(ProductFilter raw, Long snapshotId, int limit) {
+        if (limit < 1 || limit > 500) throw new IllegalArgumentException("单次最多批量删除 500 条商品");
+        long snapshot = snapshot(snapshotId);
+        return mapper.search(raw.normalized(), allowedDomains(username()), snapshot, null, limit).stream()
+                .map(row -> row.get("id"))
+                .filter(Objects::nonNull)
+                .map(value -> ((Number) value).longValue())
+                .toList();
+    }
     public List<String> domainOptions(String keyword) {
         String value = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
         if (value.length() > 255) throw new IllegalArgumentException("域名过长");

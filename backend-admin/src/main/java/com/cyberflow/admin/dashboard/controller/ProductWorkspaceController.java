@@ -4,6 +4,7 @@ import com.cyberflow.admin.common.Result;
 import com.cyberflow.admin.dashboard.model.ProductFilter;
 import com.cyberflow.admin.dashboard.service.ProductExportJobService;
 import com.cyberflow.admin.dashboard.service.ProductQueryService;
+import com.cyberflow.admin.dashboard.service.DashboardService;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,8 +21,10 @@ import java.util.*;
 public class ProductWorkspaceController {
     private final ProductQueryService queries;
     private final ProductExportJobService exports;
+    private final DashboardService dashboard;
     public record SearchRequest(ProductFilter filters, Long beforeId, Long snapshotId, Integer size) {}
     public record ExportRequest(ProductFilter filters, String format, Integer maxRows, Integer partRows, Long snapshotId) {}
+    public record DeleteBatchRequest(ProductFilter filters, Long snapshotId, Integer limit) {}
     private ProductFilter filter(ProductFilter f) { return f == null ? new ProductFilter() : f; }
 
     @PostMapping("/products/search")
@@ -38,6 +41,14 @@ public class ProductWorkspaceController {
     @GetMapping("/products/domain-options")
     @PreAuthorize("hasAuthority('dashboard:product:view')")
     public Result<?> domains(@RequestParam(required = false) String keyword) { return Result.ok(queries.domainOptions(keyword)); }
+
+    @PostMapping("/products/delete-batch")
+    @PreAuthorize("hasAuthority('dashboard:product:delete')")
+    public Result<?> deleteBatch(@RequestBody DeleteBatchRequest request) {
+        int limit = request.limit == null ? 500 : request.limit;
+        var ids = queries.deletionCandidates(filter(request.filters), request.snapshotId, limit);
+        return Result.ok(ids.isEmpty() ? Map.of("deleted_count", 0) : dashboard.deleteProducts(ids));
+    }
 
     @PostMapping("/product-exports")
     @PreAuthorize("hasAuthority('dashboard:product:view')")

@@ -62,6 +62,19 @@ class ProductWorkspaceTest {
         assertThrows(IllegalArgumentException.class, () -> queries.search(new ProductFilter(), null, null, 201));
     }
 
+    @Test void bulkDeletionCandidatesReuseWorkspaceFiltersScopeAndSnapshot() {
+        ProductQueryMapper mapper = mock(ProductQueryMapper.class);
+        var queries = spy(new ProductQueryService(mapper, mock(DataScopeService.class), mock(SysUserMapper.class)));
+        doReturn("alice").when(queries).username(); doReturn(List.of("shop.test")).when(queries).allowedDomains("alice");
+        when(mapper.maxId()).thenReturn(1_000L);
+        when(mapper.search(any(), eq(List.of("shop.test")), eq(800L), isNull(), eq(500)))
+                .thenReturn(List.of(Map.of("id", 800L), Map.of("id", 799L)));
+
+        assertEquals(List.of(800L, 799L), queries.deletionCandidates(new ProductFilter(), 800L, 500));
+        assertThrows(IllegalArgumentException.class,
+                () -> queries.deletionCandidates(new ProductFilter(), 800L, 501));
+    }
+
     @Test void scopeIsResolvedByTheBackendAndDisabledAccountsAreDenied() {
         var mapper = mock(ProductQueryMapper.class); var scopes = mock(DataScopeService.class); var users = mock(SysUserMapper.class);
         var service = new ProductQueryService(mapper, scopes, users);

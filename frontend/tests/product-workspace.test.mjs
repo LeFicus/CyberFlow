@@ -61,3 +61,12 @@ test('failed queries clear stale results and disable next page', async () => {
   state.rows.value = [{ id: 1 }]; state.hasMore.value = true
   await state.fetchPage(); assert.equal(state.rows.value.length, 0); assert.equal(state.hasMore.value, false); assert.equal(state.loading.value, false)
 })
+
+test('product list exposes a snapshot-scoped 500-row bulk delete action', async () => {
+  const view = await readFile(new URL('../src/views/dashboard/ProductList.vue', import.meta.url), 'utf8')
+  const api = await readFile(new URL('../src/api/dashboard.js', import.meta.url), 'utf8')
+  assert.match(view, /批量删除筛选结果/)
+  assert.match(view, /filters: applied\.value, snapshotId: snapshotId\.value, limit: 500/)
+  assert.match(view, /dirty\.value/)
+  assert.match(api, /products\/delete-batch/)
+})

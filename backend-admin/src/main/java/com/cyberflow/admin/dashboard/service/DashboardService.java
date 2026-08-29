@@ -66,14 +66,21 @@ public class DashboardService {
         overview.put("total_products", productMapper.countProductsByGroup(userGroup, ownerName));
 
         LocalDate businessToday = LocalDate.now(BUSINESS_ZONE);
-        String monthStart = dbDateTime(businessToday.withDayOfMonth(1));
-        String nextMonthStart = dbDateTime(businessToday.withDayOfMonth(1).plusMonths(1));
+        LocalDate monthStartDate = businessToday.withDayOfMonth(1);
+        LocalDate previousMonthStartDate = monthStartDate.minusMonths(1);
+        LocalDate previousMonthEndDate = previousMonthStartDate.plusDays(
+                Math.min(businessToday.getDayOfMonth(), previousMonthStartDate.lengthOfMonth()));
+        String monthStart = dbDateTime(monthStartDate);
         String todayStart = dbDateTime(businessToday);
         String tomorrowStart = dbDateTime(businessToday.plusDays(1));
+        String previousMonthStart = dbDateTime(previousMonthStartDate);
+        String previousMonthEnd = dbDateTime(previousMonthEndDate);
         var today = orderMapper.businessSummaryByGroup(todayStart, tomorrowStart, userGroup, ownerName);
-        var month = orderMapper.businessSummaryByGroup(monthStart, nextMonthStart, userGroup, ownerName);
+        var month = orderMapper.businessSummaryByGroup(monthStart, tomorrowStart, userGroup, ownerName);
+        var previousMonthSamePeriod = orderMapper.businessSummaryByGroup(
+                previousMonthStart, previousMonthEnd, userGroup, ownerName);
         long todaySites = siteInfoMapper.countSitesByGroupAndDateRange(userGroup, ownerName, todayStart, tomorrowStart);
-        long monthSites = siteInfoMapper.countSitesByGroupAndDateRange(userGroup, ownerName, monthStart, nextMonthStart);
+        long monthSites = siteInfoMapper.countSitesByGroupAndDateRange(userGroup, ownerName, monthStart, tomorrowStart);
         overview.put("total_sites", todaySites);
         overview.put("today_sites", todaySites);
         overview.put("month_sites", monthSites);
@@ -90,6 +97,12 @@ public class DashboardService {
         overview.put("month_orders", month.getOrDefault("successful_orders", 0L));
         overview.put("month_amount", month.getOrDefault("successful_amount", 0.0));
         overview.put("month_deduplicated_orders", month.getOrDefault("deduplicated_orders", 0L));
+        overview.put("previous_month_same_period_deduplicated_orders",
+                previousMonthSamePeriod.getOrDefault("deduplicated_orders", 0L));
+        overview.put("month_same_period_start", monthStartDate.toString());
+        overview.put("month_same_period_end", businessToday.toString());
+        overview.put("previous_month_same_period_start", previousMonthStartDate.toString());
+        overview.put("previous_month_same_period_end", previousMonthEndDate.minusDays(1).toString());
         overview.put("month_successful_orders", month.getOrDefault("successful_orders", 0L));
         overview.put("month_successful_amount", month.getOrDefault("successful_amount", 0.0));
         overview.put("site_group_summary", siteInfoMapper.summarizeByGroup(ownerName));

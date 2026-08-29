@@ -64,7 +64,7 @@
         <el-table-column prop="source_domain" label="来源域名" min-width="190" show-overflow-tooltip /><el-table-column prop="language" label="语言" width="70" />
         <el-table-column label="采集时间" width="170"><template #default="{row}">{{ dateTime(row.created_at) }}</template></el-table-column>
       </el-table>
-      <div class="table-footer"><div class="selection-actions"><template v-if="canDelete"><span>已选 {{ selectedRows.length }} 条</span><el-button type="danger" text :disabled="!selectedRows.length || loading" :loading="deleting" @click="deleteSelected">删除所选</el-button></template></div>
+      <div class="table-footer"><div class="selection-actions"><template v-if="canDelete"><span>已选 {{ selectedRows.length }} 条</span><el-button type="danger" text :disabled="!selectedRows.length || loading || bulkDeleting" :loading="deleting" @click="deleteSelected">删除所选</el-button><el-button type="danger" plain :disabled="loading || deleting || bulkDeleting || !!error || !rows.length || dirty" :loading="bulkDeleting" :title="dirty ? '请先查询，使筛选条件正式生效' : '按当前已应用筛选每次删除最多 500 条'" @click="deleteFilteredBatch">批量删除筛选结果</el-button></template></div>
         <div class="cursor-pagination"><span>第 {{ pageIndex + 1 }} 页 · 本页 {{ rows.length }} 条</span><el-select v-model="size" aria-label="每页条数" :disabled="loading" @change="refreshResults"><el-option v-for="n in [20,50,100,200]" :key="n" :label="`${n} 条 / 页`" :value="n" /></el-select><el-button :disabled="loading || pageIndex === 0" @click="previousPage">上一页</el-button><el-button :disabled="loading || !hasMore" @click="nextPage">下一页</el-button></div>
       </div>
     </el-card>
@@ -94,7 +94,7 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Download } from '@element-plus/icons-vue'
-import { getProductDomainOptions, createProductExport, listProductExports, cancelProductExport, getProductExportDownload, deleteProducts } from '@/api/dashboard'
+import { getProductDomainOptions, createProductExport, listProductExports, cancelProductExport, getProductExportDownload, deleteProducts, deleteFilteredProductBatch } from '@/api/dashboard'
 import { useProductWorkspace, emptyProductFilters, productFilterSummary } from '@/composables/useProductWorkspace'
 import { useUserStore } from '@/store/user'
 import CustomCategorySelect from '@/components/CustomCategorySelect.vue'
@@ -102,7 +102,7 @@ const userStore = useUserStore()
 const canDelete = computed(() => userStore.hasPermission('dashboard:product:delete'))
 const workspace = useProductWorkspace()
 const { draft, applied, rows, size, loading, error, snapshotId, hasMore, pageIndex, total, counting, dirty, summary } = workspace
-const tableRef = ref(), selectedRows = ref([]), deleting = ref(false), advanced = ref(false)
+const tableRef = ref(), selectedRows = ref([]), deleting = ref(false), bulkDeleting = ref(false), advanced = ref(false)
 const dateRange = computed({ get: () => draft.startDate && draft.endDate ? [draft.startDate, draft.endDate] : [], set: v => { draft.startDate = v?.[0] || null; draft.endDate = v?.[1] || null } })
 function clearSelection() { selectedRows.value = []; tableRef.value?.clearSelection() }
 async function handleSearch() { try { clearSelection(); await workspace.apply() } catch (e) { ElMessage.warning(e.message) } }
@@ -171,6 +171,20 @@ async function deleteSelected() {
   try { await ElMessageBox.confirm(`将永久删除已选择的 ${ids.length} 条商品，确定继续吗？`, '删除所选商品', { type: 'warning', confirmButtonType: 'danger', confirmButtonText: '确认删除', cancelButtonText: '取消' }) } catch { return }
   deleting.value = true
   try { const res = await deleteProducts(ids); ElMessage.success(`已删除 ${res.data.deleted_count} 条商品`); await refreshResults() } catch { /* API reports errors. */ } finally { deleting.value = false }
+}
+async function deleteFilteredBatch() {
+  if (bulkDeleting.value || loading.value || dirty.value || !rows.value.length) return
+  const scope = summary.value.join('；') || '全部商品'
+  try {
+    await ElMessageBox.confirm(`将按“${scope}”和当前列表快照永久删除最多 500 条商品。匹配超过 500 条时可分批重复操作，确定继续吗？`, '批量删除筛选结果', { type: 'warning', confirmButtonType: 'danger', confirmButtonText: '确认批量删除', cancelButtonText: '取消' })
+  } catch { return }
+  bulkDeleting.value = true
+  try {
+    const res = await deleteFilteredProductBatch({ filters: applied.value, snapshotId: snapshotId.value, limit: 500 })
+    const deleted = Number(res.data.deleted_count || 0)
+    ElMessage.success(deleted ? `已批量删除 ${number(deleted)} 条商品` : '当前筛选没有可删除的商品')
+    clearSelection(); await refreshResults()
+  } catch { /* API reports errors. */ } finally { bulkDeleting.value = false }
 }
 function number(v) { return Number(v || 0).toLocaleString('zh-CN') }
 function formatPrice(v) { return v == null || v === '' || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('en-US', { minimumFractionDigits:2, maximumFractionDigits:2 }) }
