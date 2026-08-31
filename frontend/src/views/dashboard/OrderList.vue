@@ -64,31 +64,43 @@
       </article>
     </div>
     <!-- 订单表格：每条订单可展开查看订单爬取结果中的商品详情 -->
-    <el-table :data="tableData" v-loading="loading" stripe row-key="orderKey">
+    <el-table :data="tableData" v-loading="loading" class="order-table" stripe row-key="orderKey">
       <el-table-column type="expand">
         <template #default="{ row }">
           <div class="order-products">
             <div class="expand-title">
               <span>订单商品</span>
-              <el-tag size="small" type="info">{{ row.productInfo.length }} 件</el-tag>
+              <el-tag size="small" type="info">{{ row.productInfo.length }} 项商品</el-tag>
             </div>
             <div v-if="row.productInfo.length" class="product-grid">
-              <article v-for="(product, index) in row.productInfo" :key="productKey(product, index)" class="product-card">
-                <div class="product-card-image">
+              <article v-for="(product, index) in row.productInfo" :key="product.key" class="product-card">
+                <div v-if="product.images.length" class="product-card-images">
                   <el-image
-                    v-if="productImage(product)"
-                    :src="productImage(product)"
-                    :preview-src-list="productImages(product)"
-                    fit="cover"
+                    v-for="(src, imageIndex) in product.images"
+                    :key="src"
+                    :src="src"
+                    :alt="`${product.name} · 图片 ${imageIndex + 1}`"
+                    :preview-src-list="product.images"
+                    :initial-index="imageIndex"
+                    fit="contain"
                     preview-teleported
-                  />
-                  <span v-else>暂无图片</span>
+                  >
+                    <template #error><span class="image-placeholder">图片加载失败</span></template>
+                  </el-image>
                 </div>
+                <div v-else class="product-no-image">暂无图片</div>
                 <div class="product-card-content">
-                  <strong>{{ productName(product) || `商品 ${index + 1}` }}</strong>
-                  <span v-if="productSku(product)">SKU：{{ productSku(product) }}</span>
-                  <span v-if="productQuantity(product)">数量：{{ productQuantity(product) }}</span>
-                  <span v-if="productPrice(product)">价格：{{ productPrice(product) }}</span>
+                  <div class="product-heading">
+                    <el-tag size="small" type="info">{{ index + 1 }}</el-tag>
+                    <strong>{{ product.name }}</strong>
+                  </div>
+                  <dl v-if="product.details.length" class="product-details">
+                    <div v-for="detail in product.details" :key="detail.key" class="product-detail">
+                      <dt>{{ detail.label }}</dt>
+                      <dd>{{ detail.value }}</dd>
+                    </div>
+                  </dl>
+                  <span v-else class="no-image">暂无其他商品信息</span>
                 </div>
               </article>
             </div>
@@ -97,16 +109,23 @@
         </template>
       </el-table-column>
       <el-table-column prop="id" label="订单ID" width="80" />
-      <el-table-column label="商品图片" width="86" align="center">
+      <el-table-column label="商品图片" width="190" align="center">
         <template #default="{ row }">
-          <el-image
-            v-if="row.productImage"
-            class="order-product-image"
-            :src="row.productImage"
-            :preview-src-list="row.productImages"
-            fit="cover"
-            preview-teleported
-          />
+          <div v-if="row.productImages.length" class="order-product-images">
+            <el-image
+              v-for="(src, index) in row.productImages"
+              :key="`${index}-${src}`"
+              class="order-product-image"
+              :src="src"
+              :alt="`订单商品图片 ${index + 1}`"
+              :preview-src-list="row.productImages"
+              :initial-index="index"
+              fit="contain"
+              preview-teleported
+            >
+              <template #error><span class="image-placeholder">加载失败</span></template>
+            </el-image>
+          </div>
           <span v-else class="no-image">—</span>
         </template>
       </el-table-column>
@@ -139,6 +158,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOrders, clearAllOrders } from '@/api/dashboard'
 import { useUserStore } from '@/store/user'
+import { normalizeOrder } from '@/utils/orderProducts'
 
 /** 表格 loading 状态 */
 const loading = ref(false)
@@ -246,75 +266,6 @@ async function handleClearAllOrders() {
 
 onMounted(fetchData)
 
-/** 将接口中的 product_info/productInfo 统一为可直接渲染的数组，并补充订单图片字段。 */
-function normalizeOrder(order) {
-  const productInfo = parseProductInfo(order.productInfo ?? order.product_info)
-  const productImagesList = productInfo.flatMap(productImages)
-  return {
-    ...order,
-    orderKey: `${order.user_group || ''}-${order.id}`,
-    productInfo,
-    productImages: [...new Set(productImagesList)],
-    productImage: productImagesList[0] || '',
-  }
-}
-
-function parseProductInfo(value) {
-  if (Array.isArray(value)) return value.filter(item => item && typeof item === 'object')
-  if (value && typeof value === 'object') return [value]
-  if (typeof value === 'string' && value.trim()) {
-    try {
-      return parseProductInfo(JSON.parse(value))
-    } catch {
-      return []
-    }
-  }
-  return []
-}
-
-function productKey(product, index) {
-  return product.id || product.productId || product.sku || product.SKU || index
-}
-
-function productValue(product, keys) {
-  const key = keys.find(candidate => product[candidate] !== undefined && product[candidate] !== null && product[candidate] !== '')
-  return key ? product[key] : ''
-}
-
-function productName(product) {
-  return productValue(product, ['name', 'productName', 'product_name', 'goodsName', 'title', 'product_title', 'Name'])
-}
-
-function productSku(product) {
-  return productValue(product, ['sku', 'SKU', 'productSku', 'product_sku'])
-}
-
-function productQuantity(product) {
-  return productValue(product, ['quantity', 'qty', 'count'])
-}
-
-function productPrice(product) {
-  return productValue(product, ['price', 'amount', 'unitPrice', 'unit_price'])
-}
-
-function productImages(product) {
-  const value = productValue(product, ['images', 'image', 'productImage', 'product_image', 'imageUrl', 'image_url', 'thumbnail', 'picture', 'pic', 'Images'])
-  if (Array.isArray(value)) return value.filter(Boolean).map(String)
-  if (typeof value === 'string' && value.trim()) {
-    try {
-      const parsed = JSON.parse(value)
-      if (Array.isArray(parsed)) return parsed.filter(Boolean).map(String)
-    } catch {
-      // 图片字段也可能直接是单个 URL。
-    }
-    return [value]
-  }
-  return []
-}
-
-function productImage(product) {
-  return productImages(product)[0] || ''
-}
 </script>
 <style scoped>
 .order-filter { margin-bottom: 18px; }
@@ -328,17 +279,36 @@ function productImage(product) {
 .summary-item strong { display: block; margin: 8px 0 5px; color: var(--cf-ink); font-size: 20px; letter-spacing: -.035em; }
 .summary-item small { color: var(--cf-subtle); font-size: 9px; }
 .summary-item.blue { color: var(--cf-blue); }.summary-item.green { color: var(--cf-green); }.summary-item.violet { color: var(--cf-violet); }.summary-item.amber { color: #d79a36; }
-.order-products { padding: 4px 30px 12px; }
+.order-table { container-type: inline-size; }
+.order-products { box-sizing: border-box; width: 100cqw; max-width: 100%; padding: 4px 30px 12px; }
 .expand-title { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: var(--cf-ink); font-size: 13px; font-weight: 600; }
-.product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
-.product-card { display: flex; min-height: 92px; overflow: hidden; border: 1px solid var(--cf-line-soft); border-radius: 10px; background: #fff; }
-.product-card-image { display: grid; flex: 0 0 92px; place-items: center; height: 92px; color: var(--cf-subtle); background: #f5f7fa; font-size: 11px; }
-.product-card-image :deep(.el-image) { width: 100%; height: 100%; }
-.product-card-content { display: flex; min-width: 0; flex-direction: column; gap: 5px; padding: 12px; color: var(--cf-muted); font-size: 11px; }
-.product-card-content strong { overflow: hidden; color: var(--cf-ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.order-product-image { width: 42px; height: 42px; border-radius: 6px; }
+.product-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.product-card { display: flex; align-items: flex-start; gap: 18px; padding: 16px; border: 1px solid var(--cf-line-soft); border-radius: 10px; background: #fff; }
+.product-card-images { display: grid; flex: 0 0 196px; grid-template-columns: repeat(2, 92px); gap: 10px; }
+.product-card-images :deep(.el-image) { width: 92px; height: 92px; border: 1px solid var(--cf-line-soft); border-radius: 8px; background: #f5f7fa; }
+.product-no-image { display: grid; flex: 0 0 196px; min-height: 92px; place-items: center; color: var(--cf-subtle); background: #f5f7fa; font-size: 12px; border-radius: 8px; }
+.product-card-content { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 12px; color: var(--cf-muted); font-size: 12px; }
+.product-heading { display: flex; align-items: flex-start; gap: 8px; }
+.product-heading :deep(.el-tag) { flex-shrink: 0; }
+.product-card-content strong { color: var(--cf-ink); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.product-details { display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; }
+.product-detail { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--cf-line-soft); }
+.product-detail:last-child { border-bottom: 0; }
+.product-detail dt { color: var(--cf-muted); overflow-wrap: anywhere; }
+.product-detail dd { margin: 0; color: var(--cf-ink); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.order-product-images { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 4px 0; }
+.order-product-image { flex: 0 0 46px; width: 46px; height: 46px; border: 1px solid var(--cf-line-soft); border-radius: 6px; background: #f5f7fa; }
+.image-placeholder { display: grid; width: 100%; height: 100%; place-items: center; color: var(--cf-subtle); font-size: 10px; line-height: 1.4; }
 .no-image { color: var(--cf-subtle); }
 @media (max-width: 980px) { .order-summary { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 540px) { .order-summary { gap: 8px; }.summary-item { padding: 13px; }.summary-item strong { font-size: 17px; } }
 @media (max-width: 720px) { .order-filter :deep(.el-input), .order-filter :deep(.el-select), .order-filter .date-filter :deep(.el-date-editor) { width: 100%; } }
+@media (max-width: 720px) {
+  .order-products { padding: 4px 12px 12px; }
+  .product-card { flex-direction: column; gap: 12px; padding: 12px; }
+  .product-card-images { display: flex; flex: auto; flex-wrap: wrap; }
+  .product-no-image { flex: auto; width: 92px; }
+  .product-card-content { width: 100%; }
+  .product-detail { grid-template-columns: 90px minmax(0, 1fr); gap: 8px; }
+}
 </style>
