@@ -2,7 +2,7 @@
   <div class="index-workspace">
     <div class="index-summary"><div v-for="item in metrics" :key="item.label"><span>{{ item.label }}</span><strong>{{ number(summary[item.key]) }}</strong></div></div>
     <el-card shadow="never">
-      <div class="heading"><div><h2>{{ title }}</h2><p>{{ dimension==='site' ? '每个站点一条最新快照，独立查看收录与变化' : '按归属汇总收录，点击“查看站点”展开明细' }}</p></div><el-button :loading="loading" @click="load">刷新</el-button></div>
+      <div class="heading"><div><h2>{{ title }}</h2><p>{{ dimension==='site' ? '每个站点一条最新快照，独立查看收录与变化' : '按归属汇总收录，点击“查看站点”展开明细' }}</p></div><div class="heading-actions"><el-button :loading="loading" @click="load">刷新</el-button><el-button type="primary" :icon="Download" :loading="exporting" :disabled="loading || !total" @click="exportData">导出</el-button></div></div>
       <el-alert v-if="drilled" :title="`当前范围：${route.query.label || '指定分组'}`" type="info" show-icon :closable="false" class="scope-alert"><template #default><el-button link type="primary" @click="clearScope">查看全部站点</el-button></template></el-alert>
       <el-form label-position="top" @submit.prevent="search">
         <div class="filter-grid">
@@ -47,7 +47,8 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getSiteIndexes } from '@/api/dashboard'
+import { Download } from '@element-plus/icons-vue'
+import { exportSiteIndexes, getSiteIndexes } from '@/api/dashboard'
 import { useUserStore } from '@/store/user'
 const route=useRoute(), router=useRouter(), user=useUserStore()
 const isAdmin=computed(() => user.userInfo?.roles?.includes('ROLE_ADMIN'))
@@ -55,7 +56,7 @@ const dimension=computed(() => route.path.endsWith('/builders') ? 'builder' : ro
 const title=computed(() => ({site:'站点明细',builder:'建站者汇总',server:'服务器汇总'}[dimension.value]))
 const drilled=computed(() => !!(route.query.builderUsername || route.query.serverIp || route.query.serverNameExact))
 const defaults=() => ({domain:'',adminName:'',serverName:'',userGroup:'',themeName:'',productCategory:'',siteDateRange:[],submittedDateRange:[],updatedDateRange:[],minIndexCount:null,maxIndexCount:null,changeDirection:''})
-const filters=reactive(defaults()), rows=ref([]), summary=ref({}), page=ref(1), size=ref(20), total=ref(0), loading=ref(false), advanced=ref(false)
+const filters=reactive(defaults()), rows=ref([]), summary=ref({}), page=ref(1), size=ref(20), total=ref(0), loading=ref(false), exporting=ref(false), advanced=ref(false), appliedParams=ref(null)
 const metrics=[{label:'站点数',key:'site_count'},{label:'收录总数',key:'index_count'},{label:'商品总数',key:'product_count'},{label:'平均收录',key:'average_index_count'},{label:'收录变化',key:'index_change'}]
 const number=v => Number(v || 0).toLocaleString('zh-CN'), signed=v => Number(v)>0 ? `+${number(v)}` : number(v)
 const date=v => v ? String(v).replace('T',' ').slice(0,16) : '—'
@@ -67,10 +68,25 @@ function params() {
   return p
 }
 async function load() {
-  const request=++sequence; loading.value=true
-  try { const res=await getSiteIndexes(params()); if (request!==sequence) return; rows.value=res.data?.list || []; summary.value=res.data?.summary || {}; total.value=Number(res.data?.total || 0) }
-  catch { if (request===sequence) { rows.value=[]; total.value=0; summary.value={} } }
+  const request=++sequence, query=params(); loading.value=true
+  try { const res=await getSiteIndexes(query); if (request!==sequence) return; rows.value=res.data?.list || []; summary.value=res.data?.summary || {}; total.value=Number(res.data?.total || 0); appliedParams.value=query }
+  catch { if (request===sequence) { rows.value=[]; total.value=0; summary.value={}; appliedParams.value=null } }
   finally { if (request===sequence) loading.value=false }
+}
+async function exportData() {
+  if (filters.minIndexCount!=null && filters.maxIndexCount!=null && filters.minIndexCount>filters.maxIndexCount) return ElMessage.warning('最小收录数不能大于最大收录数')
+  exporting.value=true
+  try {
+    const exportParams={...(appliedParams.value || params())}; delete exportParams.page; delete exportParams.size
+    const res=await exportSiteIndexes(exportParams)
+    const disposition=res.headers?.['content-disposition'] || ''
+    const encodedName=disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+    const fileName=encodedName ? decodeURIComponent(encodedName) : `${title.value}-${new Date().toISOString().slice(0,10)}.xlsx`
+    const url=URL.createObjectURL(res.data), link=document.createElement('a')
+    link.href=url; link.download=fileName; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000)
+    ElMessage.success('导出完成')
+  } catch { /* API interceptor reports the error. */ }
+  finally { exporting.value=false }
 }
 function search() { if (filters.minIndexCount!=null && filters.maxIndexCount!=null && filters.minIndexCount>filters.maxIndexCount) return ElMessage.warning('最小收录数不能大于最大收录数'); page.value=1; load() }
 function reset() { Object.assign(filters,defaults()); search() }
@@ -83,5 +99,5 @@ function drill(row) {
 watch(() => route.fullPath, () => { Object.assign(filters,defaults()); for (const key of Object.keys(defaults())) if (route.query[key] && !key.endsWith('Range')) filters[key]=key.includes('IndexCount') ? Number(route.query[key]) : String(route.query[key]); for (const [key,prefix] of [['siteDateRange','site'],['submittedDateRange','submitted'],['updatedDateRange','updated']]) if (route.query[`${prefix}StartDate`]) filters[key]=[route.query[`${prefix}StartDate`],route.query[`${prefix}EndDate`]]; page.value=1; load() }, {immediate:true})
 </script>
 <style scoped>
-.index-workspace { display:grid; grid-template-columns:minmax(0,1fr); gap:20px; }.index-summary { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px; }.index-summary>div { background:var(--el-bg-color); border:1px solid var(--el-border-color-light); border-radius:12px; padding:20px; }.index-summary span { color:var(--el-text-color-secondary); font-size:13px; }.index-summary strong { display:block; font-size:25px; margin-top:10px; }.heading { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:20px; }.heading h2 { margin:0 0 8px; }.heading p { margin:0; color:var(--el-text-color-secondary); font-size:13px; }.filter-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0 16px; }.filter-grid :deep(.el-date-editor),.filter-grid :deep(.el-input-number) { width:100%; min-width:0; }.table-card { min-width:0; }.stack { display:flex; flex-direction:column; gap:5px; }.stack small { color:var(--el-text-color-secondary); }.scope-alert { margin-bottom:18px; }.el-pagination { justify-content:flex-end; margin-top:20px; flex-wrap:wrap; }@media(max-width:1000px) { .filter-grid {grid-template-columns:repeat(2,minmax(0,1fr));}.index-summary {grid-template-columns:repeat(3,minmax(0,1fr));} }@media(max-width:650px) { .filter-grid {grid-template-columns:1fr;}.index-summary {grid-template-columns:repeat(2,minmax(0,1fr));} }
+.index-workspace { display:grid; grid-template-columns:minmax(0,1fr); gap:20px; }.index-summary { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px; }.index-summary>div { background:var(--el-bg-color); border:1px solid var(--el-border-color-light); border-radius:12px; padding:20px; }.index-summary span { color:var(--el-text-color-secondary); font-size:13px; }.index-summary strong { display:block; font-size:25px; margin-top:10px; }.heading { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:20px; }.heading-actions { display:flex; flex-shrink:0; }.heading h2 { margin:0 0 8px; }.heading p { margin:0; color:var(--el-text-color-secondary); font-size:13px; }.filter-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0 16px; }.filter-grid :deep(.el-date-editor),.filter-grid :deep(.el-input-number) { width:100%; min-width:0; }.table-card { min-width:0; }.stack { display:flex; flex-direction:column; gap:5px; }.stack small { color:var(--el-text-color-secondary); }.scope-alert { margin-bottom:18px; }.el-pagination { justify-content:flex-end; margin-top:20px; flex-wrap:wrap; }@media(max-width:1000px) { .filter-grid {grid-template-columns:repeat(2,minmax(0,1fr));}.index-summary {grid-template-columns:repeat(3,minmax(0,1fr));} }@media(max-width:650px) { .filter-grid {grid-template-columns:1fr;}.index-summary {grid-template-columns:repeat(2,minmax(0,1fr));}.heading {align-items:flex-start;}.heading-actions {flex-direction:column;gap:8px;}.heading-actions .el-button {margin-left:0;} }
 </style>

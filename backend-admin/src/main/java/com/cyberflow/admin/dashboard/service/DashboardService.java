@@ -326,12 +326,55 @@ public class DashboardService {
                                                  String updatedStartDate, String updatedEndDate,
                                                  Integer minIndexCount, Integer maxIndexCount,
                                                  String changeDirection, String serverNameExact, boolean serverIpEmpty, String builderNameExact) {
-        String normalizedDimension = dimension == null ? "site" : dimension.trim().toLowerCase(Locale.ROOT);
-        if (!Set.of("site", "builder", "server").contains(normalizedDimension)) {
-            throw new IllegalArgumentException("dimension must be site, builder or server");
-        }
+        String normalizedDimension = normalizeSiteIndexDimension(dimension);
         int safePage = Math.max(1, page);
         int safeSize = Math.min(200, Math.max(1, size));
+        Map<String, Object> filters = siteIndexFilters(rawUserGroup, adminName, builderUsername,
+                serverName, serverIp, domain, themeName, productCategory, siteStartDate, siteEndDate,
+                submittedStartDate, submittedEndDate, updatedStartDate, updatedEndDate,
+                minIndexCount, maxIndexCount, changeDirection, serverNameExact, serverIpEmpty, builderNameExact);
+
+        long total;
+        List<Map<String, Object>> list;
+        if ("site".equals(normalizedDimension)) {
+            total = indexingMapper.countLatestSites(filters);
+            list = indexingMapper.listLatestSites(filters, (safePage - 1) * safeSize, safeSize);
+        } else {
+            List<Map<String, Object>> grouped = "builder".equals(normalizedDimension)
+                    ? indexingMapper.summarizeByBuilder(filters)
+                    : indexingMapper.summarizeByServer(filters);
+            total = grouped.size();
+            int from = Math.min((safePage - 1) * safeSize, grouped.size());
+            int to = Math.min(from + safeSize, grouped.size());
+            list = grouped.subList(from, to);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("dimension", normalizedDimension);
+        result.put("total", total);
+        result.put("list", list);
+        result.put("summary", indexingMapper.summarizeLatestSites(filters));
+        return result;
+    }
+
+    String normalizeSiteIndexDimension(String dimension) {
+        String normalized = dimension == null ? "site" : dimension.trim().toLowerCase(Locale.ROOT);
+        if (!Set.of("site", "builder", "server").contains(normalized)) {
+            throw new IllegalArgumentException("dimension must be site, builder or server");
+        }
+        return normalized;
+    }
+
+    Map<String, Object> siteIndexFilters(String rawUserGroup, String adminName,
+                                         String builderUsername, String serverName,
+                                         String serverIp, String domain, String themeName,
+                                         String productCategory, String siteStartDate,
+                                         String siteEndDate, String submittedStartDate,
+                                         String submittedEndDate, String updatedStartDate,
+                                         String updatedEndDate, Integer minIndexCount,
+                                         Integer maxIndexCount, String changeDirection,
+                                         String serverNameExact, boolean serverIpEmpty,
+                                         String builderNameExact) {
         Map<String, Object> filters = new LinkedHashMap<>();
         filters.put("userGroup", normalizeUserGroup(rawUserGroup));
         filters.put("ownerName", ownerName());
@@ -356,28 +399,7 @@ public class DashboardService {
         String normalizedChange = changeDirection == null ? null : changeDirection.trim().toLowerCase(Locale.ROOT);
         filters.put("changeDirection", normalizedChange != null
                 && Set.of("up", "down", "flat").contains(normalizedChange) ? normalizedChange : null);
-
-        long total;
-        List<Map<String, Object>> list;
-        if ("site".equals(normalizedDimension)) {
-            total = indexingMapper.countLatestSites(filters);
-            list = indexingMapper.listLatestSites(filters, (safePage - 1) * safeSize, safeSize);
-        } else {
-            List<Map<String, Object>> grouped = "builder".equals(normalizedDimension)
-                    ? indexingMapper.summarizeByBuilder(filters)
-                    : indexingMapper.summarizeByServer(filters);
-            total = grouped.size();
-            int from = Math.min((safePage - 1) * safeSize, grouped.size());
-            int to = Math.min(from + safeSize, grouped.size());
-            list = grouped.subList(from, to);
-        }
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("dimension", normalizedDimension);
-        result.put("total", total);
-        result.put("list", list);
-        result.put("summary", indexingMapper.summarizeLatestSites(filters));
-        return result;
+        return filters;
     }
 
     public Map<String, Object> getOrdersByDomain(int page, int size, String domain, String startDate, String endDate) {

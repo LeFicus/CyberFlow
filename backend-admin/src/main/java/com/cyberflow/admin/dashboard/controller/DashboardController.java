@@ -4,6 +4,7 @@ import com.cyberflow.admin.common.Result;
 import com.cyberflow.admin.dashboard.service.DashboardService;
 import com.cyberflow.admin.dashboard.service.ProductExportService;
 import com.cyberflow.admin.dashboard.service.RevenueSummaryService;
+import com.cyberflow.admin.dashboard.service.SiteIndexExportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -42,6 +43,7 @@ public class DashboardController {
     private final DashboardService dashboardService;
     private final ProductExportService productExportService;
     private final RevenueSummaryService revenueSummaryService;
+    private final SiteIndexExportService siteIndexExportService;
 
     /**
      * 获取系统总览数据。
@@ -244,6 +246,49 @@ public class DashboardController {
                 adminName, builderUsername, serverName, serverIp, domain, themeName, productCategory,
                 siteStartDate, siteEndDate, submittedStartDate, submittedEndDate,
                 updatedStartDate, updatedEndDate, minIndexCount, maxIndexCount, changeDirection, serverNameExact, serverIpEmpty, builderNameExact));
+    }
+
+    /** Export every latest-indexing row matching the same filters used by the list. */
+    @GetMapping(value = "/site-indexes/export",
+            produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    @PreAuthorize("hasAuthority('dashboard:site:view')")
+    public void exportSiteIndexes(
+            @RequestParam(defaultValue = "site") String dimension,
+            @RequestParam(required = false) String userGroup,
+            @RequestParam(required = false) String adminName,
+            @RequestParam(required = false) String builderUsername,
+            @RequestParam(required = false) String serverName,
+            @RequestParam(required = false) String serverIp,
+            @RequestParam(required = false) String domain,
+            @RequestParam(required = false) String themeName,
+            @RequestParam(required = false) String productCategory,
+            @RequestParam(required = false) String siteStartDate,
+            @RequestParam(required = false) String siteEndDate,
+            @RequestParam(required = false) String submittedStartDate,
+            @RequestParam(required = false) String submittedEndDate,
+            @RequestParam(required = false) String updatedStartDate,
+            @RequestParam(required = false) String updatedEndDate,
+            @RequestParam(required = false) Integer minIndexCount,
+            @RequestParam(required = false) Integer maxIndexCount,
+            @RequestParam(required = false) String changeDirection,
+            @RequestParam(required = false) String serverNameExact,
+            @RequestParam(defaultValue = "false") boolean serverIpEmpty,
+            @RequestParam(required = false) String builderNameExact,
+            HttpServletResponse response) throws IOException {
+        String label = switch (dimension == null ? "site" : dimension.trim().toLowerCase()) {
+            case "builder" -> "建站者汇总";
+            case "server" -> "服务器汇总";
+            default -> "站点明细";
+        };
+        String fileName = label + "-" + java.time.LocalDate.now() + ".xlsx";
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" +
+                URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20"));
+        siteIndexExportService.writeExcel(dimension, new SiteIndexExportService.Filter(
+                userGroup, adminName, builderUsername, serverName, serverIp, domain, themeName,
+                productCategory, siteStartDate, siteEndDate, submittedStartDate, submittedEndDate,
+                updatedStartDate, updatedEndDate, minIndexCount, maxIndexCount, changeDirection,
+                serverNameExact, serverIpEmpty, builderNameExact), response.getOutputStream());
     }
 
     @GetMapping("/orders-by-domain")

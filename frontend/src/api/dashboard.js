@@ -121,6 +121,11 @@ export function getSiteIndexes(params) {
   return request.get('/admin/dashboard/site-indexes', { params })
 }
 
+/** 导出当前筛选范围内的全部收录数据。 */
+export function exportSiteIndexes(params) {
+  return request.get('/admin/dashboard/site-indexes/export', { params, responseType: 'blob', timeout: 120000 })
+}
+
 /**
  * 根据域名查询关联订单列表
  * @param {Object} params - 查询参数 { domain, page, size, startDate, endDate }

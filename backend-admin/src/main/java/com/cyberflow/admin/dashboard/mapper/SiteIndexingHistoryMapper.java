@@ -1,8 +1,10 @@
 package com.cyberflow.admin.dashboard.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.cursor.Cursor;
 
 import java.util.List;
 import java.util.Map;
@@ -83,6 +85,20 @@ public interface SiteIndexingHistoryMapper {
     List<Map<String, Object>> listLatestSites(@Param("filters") Map<String, Object> filters,
                                                @Param("offset") int offset,
                                                @Param("size") int size);
+
+    /** Stream every matching site row for a filtered Excel export. */
+    @Select({"<script>", LATEST_INDEX_CTE,
+            "SELECT s.site_domain, s.builder_username, s.admin_name, s.user_group, s.theme_name, s.product_category, s.domain_applied_at, s.created_at,",
+            "COALESCE(NULLIF(l.server_name, ''), s.server_name) AS server_name,",
+            "COALESCE(NULLIF(l.server_ip, ''), s.server_ip) AS server_ip,",
+            "COALESCE(l.last_submitted_at, s.last_submitted_at) AS last_submitted_at,",
+            "COALESCE(l.product_count, 0) AS product_count, COALESCE(l.index_count, 0) AS index_count,",
+            "l.recorded_at AS index_updated_at, " + INDEX_CHANGE + " AS index_change",
+            INDEX_JOINS, INDEX_FILTERS,
+            "ORDER BY l.recorded_at IS NULL, l.recorded_at DESC, s.created_at DESC",
+            "</script>"})
+    @Options(fetchSize = 500)
+    Cursor<Map<String, Object>> streamLatestSites(@Param("filters") Map<String, Object> filters);
 
     @Select({"<script>", LATEST_INDEX_CTE,
             "SELECT COALESCE(NULLIF(TRIM(s.builder_username), ''), '未分配') AS builder_username,",
