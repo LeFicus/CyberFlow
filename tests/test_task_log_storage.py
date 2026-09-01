@@ -86,5 +86,17 @@ class TaskLogStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("SET crawl_log=NULL", cursor.executed[1][0])
 
 
+class TaskLogMigrationTests(unittest.TestCase):
+    def test_log_table_inherits_database_collation_for_foreign_key_compatibility(self):
+        migration = (
+            ROOT / "script" / "migrations" / "20260901_split_task_crawl_logs.sql"
+        ).read_text(encoding="utf-8")
+        create_table = migration.split(";", 1)[0]
+
+        self.assertIn("FOREIGN KEY (task_id) REFERENCES task_history(task_id)", create_table)
+        self.assertNotIn("COLLATE=", create_table.upper())
+        self.assertNotIn("COLLATE ", create_table.upper())
+
+
 if __name__ == "__main__":
     unittest.main()

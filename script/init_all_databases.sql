@@ -206,7 +206,7 @@ CREATE TABLE IF NOT EXISTS task_crawl_log (
     INDEX idx_task_crawl_log_task_id_id (task_id, id),
     CONSTRAINT fk_task_crawl_log_task
         FOREIGN KEY (task_id) REFERENCES task_history(task_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='追加式爬虫日志分块';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='追加式爬虫日志分块';
 
 -- ------------------------------------------------------------
 -- 增量游标表 — 记录各爬虫任务的处理进度
