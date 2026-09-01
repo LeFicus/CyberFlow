@@ -130,6 +130,7 @@ MySQL :3306
 │   ├── new_site                                  # AI 生成的新站点
 │   ├── site_template_mapping                    # 站点-模板映射
 │   ├── task_history                             # 任务历史
+│   ├── task_crawl_log                           # 追加式爬虫日志分块
 │   └── crawl_cursor                             # 采集游标 (断点续爬)
 │
 └── scraped_data (爬取数据)

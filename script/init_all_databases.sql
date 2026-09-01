@@ -186,7 +186,7 @@ CREATE TABLE IF NOT EXISTS task_history (
     cursor_after    VARCHAR(255),
     rows_affected   INT DEFAULT 0,
     error_msg       TEXT,
-    crawl_log       LONGTEXT COMMENT '完整爬虫 stdout/stderr 日志',
+    crawl_log       LONGTEXT COMMENT '兼容旧版本；新日志写入 task_crawl_log',
     duration_ms     BIGINT,
     started_at      DATETIME,
     finished_at     DATETIME,
@@ -195,6 +195,18 @@ CREATE TABLE IF NOT EXISTS task_history (
     INDEX idx_status (status),
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 爬虫日志分块表 — 只追加新块，避免反复 CONCAT/重写 task_history LONGTEXT
+CREATE TABLE IF NOT EXISTS task_crawl_log (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id         VARCHAR(64) NOT NULL,
+    content         MEDIUMTEXT NOT NULL,
+    content_length  INT UNSIGNED NOT NULL COMMENT 'Unicode 字符数量，用于增量读取偏移量',
+    created_at      DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    INDEX idx_task_crawl_log_task_id_id (task_id, id),
+    CONSTRAINT fk_task_crawl_log_task
+        FOREIGN KEY (task_id) REFERENCES task_history(task_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='追加式爬虫日志分块';
 
 -- ------------------------------------------------------------
 -- 增量游标表 — 记录各爬虫任务的处理进度

@@ -57,7 +57,7 @@ public class TaskHistory {
     /** 任务失败时的错误信息，成功时为 null */
     private String errorMsg;
 
-    /** 爬虫子进程产生的完整 stdout/stderr 合并日志 */
+    /** 旧版日志字段；新日志以不可变分块写入 task_crawl_log。 */
     private String crawlLog;
 
     /** 任务执行耗时，单位毫秒 */

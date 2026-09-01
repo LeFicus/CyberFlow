@@ -1,13 +1,16 @@
 package com.cyberflow.admin.crawler.task.service;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cyberflow.admin.crawler.task.entity.TaskHistory;
 import com.cyberflow.admin.crawler.task.mapper.TaskHistoryMapper;
 import lombok.RequiredArgsConstructor;
+import org.apache.ibatis.cursor.Cursor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.io.Writer;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,19 +44,64 @@ public class TaskHistoryService {
         return taskHistoryMapper.selectOne(wrapper);
     }
 
-    /** Read the large log body only for an explicit full-file download. */
-    public TaskHistory getByTaskIdWithLog(String taskId) {
-        return taskHistoryMapper.selectOne(
-                new LambdaQueryWrapper<TaskHistory>().eq(TaskHistory::getTaskId, taskId)
-        );
-    }
-
-    public Map<String, Object> getLogChunk(String taskId, int offset, int limit) {
-        return taskHistoryMapper.selectLogChunk(taskId, offset, limit);
+    public Map<String, Object> getLogChunk(String taskId, long offset, int limit) {
+        Map<String, Object> metadata = taskHistoryMapper.selectLogMetadata(taskId);
+        return metadata == null ? null : buildLogChunk(taskId, Math.max(0, offset), limit, metadata);
     }
 
     public Map<String, Object> getLogTail(String taskId, int tailLength) {
-        return taskHistoryMapper.selectLogTail(taskId, tailLength);
+        Map<String, Object> metadata = taskHistoryMapper.selectLogMetadata(taskId);
+        if (metadata == null) return null;
+        long totalLength = number(metadata.get("totalLength"));
+        return buildLogChunk(taskId, Math.max(0, totalLength - tailLength), tailLength, metadata);
+    }
+
+    /** Stream an entire append-only log directly to the HTTP response writer. */
+    @Transactional(readOnly = true)
+    public void writeLog(String taskId, Writer writer) throws IOException {
+        try (Cursor<Map<String, Object>> segments = taskHistoryMapper.streamLogSegments(taskId)) {
+            for (Map<String, Object> segment : segments) {
+                Object content = segment.get("content");
+                if (content != null) writer.write(String.valueOf(content));
+            }
+        }
+    }
+
+    private Map<String, Object> buildLogChunk(String taskId, long offset, int limit,
+                                               Map<String, Object> metadata) {
+        long totalLength = number(metadata.get("totalLength"));
+        long safeOffset = Math.min(Math.max(0, offset), totalLength);
+        long endOffset = safeOffset + Math.min(totalLength - safeOffset, Math.max(1, limit));
+        StringBuilder chunk = new StringBuilder(Math.max(0, limit));
+        if (safeOffset < endOffset) {
+            for (Map<String, Object> segment : taskHistoryMapper.selectLogSegments(taskId, safeOffset, endOffset)) {
+                String content = segment.get("content") == null ? "" : String.valueOf(segment.get("content"));
+                long segmentStart = number(segment.get("startOffset"));
+                int codePoints = content.codePointCount(0, content.length());
+                int from = (int) Math.max(0, safeOffset - segmentStart);
+                int to = (int) Math.min(codePoints, endOffset - segmentStart);
+                if (from < to) {
+                    int fromIndex = content.offsetByCodePoints(0, from);
+                    int toIndex = content.offsetByCodePoints(0, to);
+                    chunk.append(content, fromIndex, toIndex);
+                }
+            }
+        }
+        long nextOffset = Math.min(totalLength,
+                safeOffset + chunk.codePointCount(0, chunk.length()));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("taskId", metadata.get("taskId"));
+        result.put("status", metadata.get("status"));
+        result.put("chunk", chunk.toString());
+        result.put("nextOffset", nextOffset);
+        result.put("totalLength", totalLength);
+        result.put("truncated", safeOffset > 0);
+        result.put("hasMore", nextOffset < totalLength);
+        return result;
+    }
+
+    private static long number(Object value) {
+        return value instanceof Number number ? number.longValue() : 0L;
     }
 
     /**

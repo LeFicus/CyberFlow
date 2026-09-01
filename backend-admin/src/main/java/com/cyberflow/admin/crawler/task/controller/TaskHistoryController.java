@@ -10,7 +10,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -102,7 +101,7 @@ public class TaskHistoryController {
     @GetMapping("/tasks/{taskId}/log")
     @PreAuthorize("hasAuthority('crawler:history:view')")
     public Result<?> taskLog(@PathVariable String taskId,
-                             @RequestParam(defaultValue = "0") int offset,
+                             @RequestParam(defaultValue = "0") long offset,
                              @RequestParam(defaultValue = "65536") int limit,
                              @RequestParam(required = false) Integer tail) {
         int safeLimit = Math.max(1, Math.min(limit, 65536));
@@ -112,25 +111,14 @@ public class TaskHistoryController {
         if (row == null) {
             return Result.fail("Task not found");
         }
-        String chunk = row.get("chunk") == null ? "" : String.valueOf(row.get("chunk"));
-        int totalLength = ((Number) row.getOrDefault("totalLength", 0)).intValue();
-        int startOffset = tail == null ? Math.max(0, offset) : Math.max(0, totalLength - chunk.length());
-        Map<String, Object> result = new HashMap<>();
-        result.put("taskId", row.get("taskId"));
-        result.put("status", row.get("status"));
-        result.put("chunk", chunk);
-        result.put("nextOffset", Math.min(totalLength, startOffset + chunk.length()));
-        result.put("totalLength", totalLength);
-        result.put("truncated", startOffset > 0);
-        result.put("hasMore", startOffset + chunk.length() < totalLength);
-        return Result.ok(result);
+        return Result.ok(row);
     }
 
     /** Download the complete log without inserting it into the live viewer DOM. */
     @GetMapping("/tasks/{taskId}/log/download")
     @PreAuthorize("hasAuthority('crawler:history:view')")
     public void downloadTaskLog(@PathVariable String taskId, HttpServletResponse response) throws IOException {
-        var task = taskHistoryService.getByTaskIdWithLog(taskId);
+        var task = taskHistoryService.getByTaskId(taskId);
         if (task == null) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND, "Task not found");
             return;
@@ -147,6 +135,6 @@ public class TaskHistoryController {
         response.setContentType("text/plain; charset=UTF-8");
         response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" +
                 URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20"));
-        response.getWriter().write(task.getCrawlLog() == null ? "" : task.getCrawlLog());
+        taskHistoryService.writeLog(taskId, response.getWriter());
     }
 }

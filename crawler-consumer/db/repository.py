@@ -11,6 +11,8 @@ import asyncio
 from loguru import logger
 from config import DATABASE_URL, SCRAPED_DB_URL
 
+TASK_LOG_CHUNK_CHARS = 32768
+
 
 class TaskCancelledError(RuntimeError):
     """Raised when an operator has cancelled or removed a task."""
@@ -183,21 +185,31 @@ class CursorRepository:
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "UPDATE task_history SET crawl_log='' WHERE task_id=%s",
+                    "DELETE FROM task_crawl_log WHERE task_id=%s",
+                    (task_id,),
+                )
+                # The legacy LONGTEXT remains nullable for rollback compatibility,
+                # but new code never appends to it.
+                await cur.execute(
+                    "UPDATE task_history SET crawl_log=NULL WHERE task_id=%s",
                     (task_id,),
                 )
 
     async def append_task_log(self, task_id: str, content: str):
-        """Append crawler output without truncating the existing task log."""
+        """Insert bounded immutable chunks instead of rewriting a growing LONGTEXT."""
         if not content:
             return
+        chunks = [content[index:index + TASK_LOG_CHUNK_CHARS]
+                  for index in range(0, len(content), TASK_LOG_CHUNK_CHARS)]
         async with self.pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    """UPDATE task_history
-                       SET crawl_log=CONCAT(COALESCE(crawl_log, ''), %s)
-                       WHERE task_id=%s""",
-                    (content, task_id),
+                # INSERT ... SELECT quietly writes zero rows if an operator deleted
+                # the task between the consumer's status check and this flush.
+                await cur.executemany(
+                    """INSERT INTO task_crawl_log (task_id, content, content_length, created_at)
+                       SELECT task_id, %s, %s, NOW(3)
+                       FROM task_history WHERE task_id=%s""",
+                    [(chunk, len(chunk), task_id) for chunk in chunks],
                 )
 
     async def get_site_config(self, site_config_id: int) -> dict | None:
