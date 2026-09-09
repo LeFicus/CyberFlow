@@ -128,6 +128,7 @@ MySQL :3306
 │   ├── selector_template                        # 选择器模板
 │   ├── crawl_site_config                        # 站点配置
 │   ├── new_site                                  # AI 生成的新站点
+│   ├── new_site_asset                            # Logo / Banner / Icon 素材元数据
 │   ├── site_template_mapping                    # 站点-模板映射
 │   ├── task_history                             # 任务历史
 │   ├── task_crawl_log                           # 追加式爬虫日志分块
@@ -373,6 +374,7 @@ python main.py
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 新站点生成使用的 DeepSeek 模型 |
 | `RDAP_URL` | `https://rdap.org/domain/{domain}` | 域名注册状态查询地址；404 视为可候选购买 |
 | `SITE_GENERATION_MAX_ATTEMPTS` | `5` | 单个站点候选域名生成与校验的最大次数 |
+| `SITE_ASSET_DIRECTORY` | `.data/site-assets` | 新站点品牌素材文件目录；Docker 部署使用持久化卷 `/app/site-assets` |
 | `ADMIN_API_BASE_URL` | — | Admin API 地址，后台配置优先 |
 | `ADMIN_API_USERNAME` | — | Admin API 账号，后台配置优先 |
 | `ADMIN_API_PASSWORD` | — | Admin API 密码，后台配置优先 |

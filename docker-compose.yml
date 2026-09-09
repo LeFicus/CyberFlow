@@ -88,8 +88,10 @@ services:
       RDAP_URL: ${RDAP_URL:-https://rdap.org/domain/{domain}}
       SITE_GENERATION_MAX_ATTEMPTS: ${SITE_GENERATION_MAX_ATTEMPTS:-5}
       CYBERFLOW_PRODUCT_EXPORT_DIRECTORY: /app/product-exports
+      SITE_ASSET_DIRECTORY: /app/site-assets
     volumes:
       - product_exports:/app/product-exports
+      - site_assets:/app/site-assets
     depends_on:
       db-migrate:
         condition: service_completed_successfully
@@ -137,6 +139,7 @@ services:
 
 volumes:
   product_exports:
+  site_assets:
   rabbitmq_data:
   mysql_data:
   redis_data:

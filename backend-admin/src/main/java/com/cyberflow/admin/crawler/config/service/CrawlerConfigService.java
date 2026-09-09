@@ -67,6 +67,13 @@ public class CrawlerConfigService {
             Return only one valid JSON object with exactly these string fields: site_title | tag_line | domain. Do not return Markdown | explanations | multiple examples or extra fields.
             """;
 
+    public static final String DEFAULT_IMAGE_STYLE_PROMPT = """
+            Create a cohesive premium ecommerce visual identity for a real US storefront.
+            Use a clean contemporary commercial style with confident composition and restrained colors.
+            Keep all artwork original and avoid trademarks | copyrighted characters | watermarks | mockup frames | URLs and readable text.
+            Product imagery should feel trustworthy and conversion-oriented rather than surreal.
+            """;
+
     private final CrawlerRuntimeConfigMapper runtimeConfigMapper;
     private final CrawlerScheduleConfigMapper scheduleConfigMapper;
     private final ObjectMapper objectMapper;
@@ -187,6 +194,36 @@ public class CrawlerConfigService {
         }
         updateRuntimeConfig(Map.of("aiGeneration", sanitized));
         return getAiGenerationConfig(true);
+    }
+
+    /** Image API settings are separate from the chat-completion settings above. */
+    public Map<String, Object> getImageGenerationConfig(boolean masked) {
+        Map<String, Object> cfg = getRuntimeConfig(masked);
+        Map<String, Object> image = group(cfg, "imageGeneration");
+        if (image.get("stylePrompt") == null || String.valueOf(image.get("stylePrompt")).isBlank()) {
+            image.put("stylePrompt", DEFAULT_IMAGE_STYLE_PROMPT);
+        }
+        return image;
+    }
+
+    @Transactional
+    public Map<String, Object> updateImageGenerationConfig(Map<String, Object> body) {
+        Set<String> allowed = Set.of("provider", "baseUrl", "apiKey", "model", "quality", "stylePrompt");
+        Map<String, Object> sanitized = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : body.entrySet()) {
+            if (!allowed.contains(entry.getKey())) continue;
+            sanitized.put(entry.getKey(), entry.getValue() == null ? "" : String.valueOf(entry.getValue()).trim());
+        }
+        String baseUrl = String.valueOf(sanitized.getOrDefault("baseUrl", ""));
+        if (!baseUrl.isBlank() && !(baseUrl.startsWith("http://") || baseUrl.startsWith("https://"))) {
+            throw new IllegalArgumentException("图像 AI Base URL 必须以 http:// 或 https:// 开头");
+        }
+        String quality = String.valueOf(sanitized.getOrDefault("quality", "medium"));
+        if (!Set.of("low", "medium", "high", "auto").contains(quality)) {
+            throw new IllegalArgumentException("图像质量仅支持 low、medium、high 或 auto");
+        }
+        updateRuntimeConfig(Map.of("imageGeneration", sanitized));
+        return getImageGenerationConfig(true);
     }
 
     public List<CrawlerScheduleConfig> listSchedules() {
@@ -327,6 +364,14 @@ public class CrawlerConfigService {
             "model", "deepseek-v4-flash",
             "prompt", DEFAULT_AI_PROMPT,
             "maxAttempts", 5
+        )));
+        root.put("imageGeneration", new LinkedHashMap<>(Map.of(
+            "provider", "openai",
+            "baseUrl", "https://api.openai.com/v1",
+            "apiKey", "",
+            "model", "gpt-image-2",
+            "quality", "medium",
+            "stylePrompt", DEFAULT_IMAGE_STYLE_PROMPT
         )));
         root.put("orderStrategy", new LinkedHashMap<>(Map.of(
             "filterCardNumberExclude", new ArrayList<>(List.of("400000******0000", "411111******1111", "411111111111")),

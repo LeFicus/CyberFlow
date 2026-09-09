@@ -10,10 +10,11 @@ const source = await readFile(new URL('../src/views/newsite/NewSiteList.vue', im
 const { descriptor } = parse(source)
 const { content } = compileScript(descriptor, { id: 'new-site-list-test' })
 
-async function setup(overrides = {}, permissions = ['newsite:list', 'newsite:status', 'newsite:delete']) {
+async function setup(overrides = {}, permissions = ['newsite:list', 'newsite:status', 'newsite:delete', 'newsite:asset']) {
   const calls = { deleted: [], updated: [], listed: [], confirmations: [] }
   const api = {
-    createNewSites() {}, getNewSiteAiConfig() {}, getNewSiteOptions() {}, updateNewSiteAiConfig() {},
+    createNewSites() {}, getNewSiteAiConfig() {}, getNewSiteImageAiConfig() {}, getNewSiteOptions() {},
+    updateNewSiteAiConfig() {}, updateNewSiteImageAiConfig() {},
     async deleteNewSite(id) { calls.deleted.push(id) },
     async updateNewSiteStatus(id, status) { calls.updated.push([id, status]); return { data: { status } } },
     async listNewSites(params) { calls.listed.push(params); return { data: { records: [], total: 0 } } },
@@ -28,9 +29,10 @@ async function setup(overrides = {}, permissions = ['newsite:list', 'newsite:sta
         if (overrides.confirm) return overrides.confirm(...args)
       } },
     },
-    '@element-plus/icons-vue': { ArrowDown: {}, Check: {}, Delete: {}, Loading: {} },
+    '@element-plus/icons-vue': { ArrowDown: {}, Check: {}, Delete: {}, Loading: {}, Picture: {} },
     '@/store/user': { useUserStore: () => ({ hasPermission: perm => permissions.includes(perm) }) },
     '@/api/newSite': api,
+    './NewSiteAssetsDialog.vue': { default: {} },
   }
   const script = new SourceTextModule(content)
   await script.link(specifier => {
@@ -76,7 +78,17 @@ test('read-only users cannot delete or change status', async () => {
   await state.handleStatusChange({ id: 42, status: 'pending_review' }, 'enabled')
   assert.equal(state.canDelete.value, false)
   assert.equal(state.canUpdateStatus.value, false)
+  assert.equal(state.canManageAssets.value, false)
   assert.equal(calls.deleted.length + calls.updated.length + calls.confirmations.length, 0)
+})
+
+test('brand asset action opens the selected site and respects management permission', async () => {
+  const { state } = await setup()
+  const site = { id: 42, domain: 'example.test' }
+  state.openAssets(site)
+  assert.deepEqual(state.activeAssetSite.value, site)
+  assert.equal(state.assetsDialogVisible.value, true)
+  assert.equal(state.canManageAssets.value, true)
 })
 
 test('status options retain their labels and distinct visual tones', async () => {

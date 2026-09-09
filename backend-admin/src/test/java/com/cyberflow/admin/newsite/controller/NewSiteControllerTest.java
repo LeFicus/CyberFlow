@@ -2,6 +2,7 @@ package com.cyberflow.admin.newsite.controller;
 
 import com.cyberflow.admin.common.GlobalExceptionHandler;
 import com.cyberflow.admin.newsite.service.NewSiteService;
+import com.cyberflow.admin.newsite.service.NewSiteAssetService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,16 +30,21 @@ class NewSiteControllerTest {
     @EnableMethodSecurity
     static class Config {
         @Bean NewSiteService service() { return mock(NewSiteService.class); }
-        @Bean NewSiteController controller(NewSiteService service) { return new NewSiteController(service); }
+        @Bean NewSiteAssetService assetService() { return mock(NewSiteAssetService.class); }
+        @Bean NewSiteController controller(NewSiteService service, NewSiteAssetService assetService) {
+            return new NewSiteController(service, assetService);
+        }
     }
 
     @Autowired private NewSiteController controller;
     @Autowired private NewSiteService service;
+    @Autowired private NewSiteAssetService assetService;
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         reset(service);
+        reset(assetService);
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
     }
@@ -57,7 +63,9 @@ class NewSiteControllerTest {
         authenticate("newsite:delete");
         mvc.perform(delete("/admin/new-site/42"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(200));
+        verify(assetService).assertNoActiveGeneration(42L);
         verify(service).delete(42L);
+        verify(assetService).deleteSiteFiles(42L);
     }
 
     @Test
@@ -65,14 +73,14 @@ class NewSiteControllerTest {
         authenticate("newsite:list");
         mvc.perform(delete("/admin/new-site/42"))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value(403));
-        verifyNoInteractions(service);
+        verifyNoInteractions(service, assetService);
     }
 
     @Test
     void statusPermissionDoesNotAllowDeletion() throws Exception {
         authenticate("newsite:status");
         mvc.perform(delete("/admin/new-site/42")).andExpect(status().isForbidden());
-        verifyNoInteractions(service);
+        verifyNoInteractions(service, assetService);
     }
 
     @Test

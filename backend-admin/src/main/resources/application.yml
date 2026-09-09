@@ -58,6 +58,8 @@ springdoc:
     path: /admin/swagger-ui.html
 
 cyberflow:
+  site-assets:
+    directory: ${SITE_ASSET_DIRECTORY:.data/site-assets}
   site-generation:
     # Keep the key in the deployment environment; never commit it to the repository.
     deepseek-api-key: ${DEEPSEEK_API_KEY:}

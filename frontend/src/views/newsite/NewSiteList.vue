@@ -7,7 +7,8 @@
           <span class="toolbar-hint">AI 生成站点标题、标语与可注册域名</span>
         </div>
         <div class="toolbar-actions">
-          <el-button v-if="canConfigureAi" @click="openAiConfig">AI 配置</el-button>
+          <el-button v-if="canConfigureAi" @click="openAiConfig">文案 AI 配置</el-button>
+          <el-button v-if="canConfigureAi" @click="openImageAiConfig">图像 AI 配置</el-button>
           <el-button type="primary" @click="openCreate(false)">创建新站点</el-button>
           <el-button type="success" plain @click="openCreate(true)">批量创建</el-button>
         </div>
@@ -94,9 +95,11 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column v-if="canDelete" label="操作" width="96" align="center" fixed="right">
+      <el-table-column label="操作" width="178" align="center" fixed="right">
         <template #default="{ row }">
+          <el-button type="primary" link :icon="Picture" @click="openAssets(row)">品牌素材</el-button>
           <el-button
+            v-if="canDelete"
             type="danger"
             link
             :icon="Delete"
@@ -232,21 +235,72 @@
         <el-button type="primary" :loading="aiSaving" @click="saveAiConfig">保存配置</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="imageAiDialogVisible" title="图像 AI 配置" width="650px" :close-on-click-modal="false">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="使用兼容 POST /images/generations 的图像服务。图像生成与文案生成使用独立模型和 API Key。"
+        class="ai-tip"
+      />
+      <el-form :model="imageAiConfig" label-width="125px" class="ai-form">
+        <el-form-item label="供应商">
+          <el-select v-model="imageAiConfig.provider" style="width: 100%">
+            <el-option label="OpenAI" value="openai" />
+            <el-option label="其他兼容供应商" value="custom" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Base URL" required>
+          <el-input v-model="imageAiConfig.baseUrl" placeholder="https://api.openai.com/v1" />
+        </el-form-item>
+        <el-form-item label="API Key" required>
+          <el-input v-model="imageAiConfig.apiKey" type="password" show-password placeholder="输入新 Key；****** 表示保持原 Key" />
+        </el-form-item>
+        <el-form-item label="图像模型" required>
+          <el-input v-model="imageAiConfig.model" placeholder="例如 gpt-image-2" />
+        </el-form-item>
+        <el-form-item label="生成质量">
+          <el-select v-model="imageAiConfig.quality" style="width: 100%">
+            <el-option label="低（更快）" value="low" />
+            <el-option label="中（推荐）" value="medium" />
+            <el-option label="高" value="high" />
+            <el-option label="自动" value="auto" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="统一视觉提示词">
+          <el-input v-model="imageAiConfig.stylePrompt" type="textarea" :rows="6" placeholder="定义所有站点素材共用的视觉风格和限制" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="imageAiDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="imageAiSaving" @click="saveImageAiConfig">保存配置</el-button>
+      </template>
+    </el-dialog>
+
+    <NewSiteAssetsDialog
+      v-model="assetsDialogVisible"
+      :site="activeAssetSite"
+      :can-manage="canManageAssets"
+    />
   </el-card>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Check, Delete, Loading } from '@element-plus/icons-vue'
+import { ArrowDown, Check, Delete, Loading, Picture } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
+import NewSiteAssetsDialog from './NewSiteAssetsDialog.vue'
 import {
   createNewSites,
   deleteNewSite,
   getNewSiteAiConfig,
+  getNewSiteImageAiConfig,
   getNewSiteOptions,
   listNewSites,
   updateNewSiteAiConfig,
+  updateNewSiteImageAiConfig,
   updateNewSiteStatus,
 } from '@/api/newSite'
 
@@ -285,8 +339,21 @@ const aiConfig = reactive({
   prompt: '',
   maxAttempts: 5,
 })
+const imageAiDialogVisible = ref(false)
+const imageAiSaving = ref(false)
+const imageAiConfig = reactive({
+  provider: 'openai',
+  baseUrl: 'https://api.openai.com/v1',
+  apiKey: '',
+  model: 'gpt-image-2',
+  quality: 'medium',
+  stylePrompt: '',
+})
+const assetsDialogVisible = ref(false)
+const activeAssetSite = ref(null)
 const userStore = useUserStore()
 const canConfigureAi = computed(() => userStore.hasPermission('newsite:config'))
+const canManageAssets = computed(() => userStore.hasPermission('newsite:asset'))
 const canUpdateStatus = computed(() => userStore.hasPermission('newsite:status'))
 const canDelete = computed(() => userStore.hasPermission('newsite:delete'))
 const productCategories = ref([])
@@ -338,6 +405,40 @@ async function saveAiConfig() {
   } finally {
     aiSaving.value = false
   }
+}
+
+async function openImageAiConfig() {
+  const res = await getNewSiteImageAiConfig()
+  Object.assign(imageAiConfig, res.data || {})
+  imageAiDialogVisible.value = true
+}
+
+async function saveImageAiConfig() {
+  if (!imageAiConfig.baseUrl.trim() || !imageAiConfig.apiKey.trim() || !imageAiConfig.model.trim()) {
+    ElMessage.warning('请填写图像 AI Base URL、API Key 和模型名称')
+    return
+  }
+  imageAiSaving.value = true
+  try {
+    const res = await updateNewSiteImageAiConfig({
+      provider: imageAiConfig.provider,
+      baseUrl: imageAiConfig.baseUrl.trim(),
+      apiKey: imageAiConfig.apiKey.trim(),
+      model: imageAiConfig.model.trim(),
+      quality: imageAiConfig.quality,
+      stylePrompt: imageAiConfig.stylePrompt.trim(),
+    })
+    Object.assign(imageAiConfig, res.data || {})
+    ElMessage.success('图像 AI 配置已保存')
+    imageAiDialogVisible.value = false
+  } finally {
+    imageAiSaving.value = false
+  }
+}
+
+function openAssets(row) {
+  activeAssetSite.value = row
+  assetsDialogVisible.value = true
 }
 
 function addRow() {
@@ -453,7 +554,7 @@ async function handleDelete(row) {
   deleting.add(row.id)
   try {
     await ElMessageBox.confirm(
-      `确定删除新站点「${row.domain}」吗？仅删除此生成记录，不影响源站点和已采集商品。删除后无法恢复。`,
+      `确定删除新站点「${row.domain}」吗？将同时删除该站点的品牌素材，不影响源站点和已采集商品。删除后无法恢复。`,
       '删除新站点',
       { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消',
         confirmButtonType: 'danger', autofocus: false, closeOnClickModal: false },
