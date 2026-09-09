@@ -25,22 +25,24 @@ public interface OrderMapper {
             "LOWER(CASE WHEN LEFT(TRIM(product_host), 4) = 'www.' " +
             "THEN SUBSTRING(TRIM(product_host), 5) ELSE TRIM(product_host) END)";
 
-    /**
-     * Business deduplication fingerprint: order day + source platform/site +
-     * payment card + order site + recipient email. Incomplete historical rows
-     * fall back to their physical order identity so missing values never cause
-     * unrelated orders to collapse into one.
-     */
-    String DEDUPLICATED_ORDER_KEY_SQL =
+    /** Email-only fallback for historical rows that have not been re-crawled yet. */
+    String LEGACY_DEDUPLICATED_ORDER_KEY_SQL =
             "CASE WHEN create_time IS NOT NULL " +
             "AND LENGTH(TRIM(COALESCE(user_group, ''))) > 0 " +
-            "AND LENGTH(TRIM(COALESCE(card_number, ''))) > 0 " +
             "AND LENGTH(TRIM(COALESCE(product_host, ''))) > 0 " +
             "AND LENGTH(TRIM(COALESCE(shipping_email, ''))) > 0 " +
             "THEN CONCAT(DATE_FORMAT(create_time, '%Y-%m-%d'), CHAR(31), " +
-            "UPPER(TRIM(user_group)), CHAR(31), TRIM(card_number), CHAR(31), " +
+            "UPPER(TRIM(user_group)), CHAR(31), " +
             NORMALIZED_PRODUCT_HOST_SQL + ", CHAR(31), LOWER(TRIM(shipping_email))) " +
             "ELSE CONCAT('ORDER_ID', CHAR(31), COALESCE(user_group, ''), CHAR(31), CAST(id AS CHAR)) END";
+
+    /**
+     * The consumer assigns one key to the transitive group of orders sharing a
+     * normalized recipient email OR shipping address on the same day/site.
+     * Payment card data is deliberately excluded from this identity.
+     */
+    String DEDUPLICATED_ORDER_KEY_SQL =
+            "COALESCE(NULLIF(TRIM(dedupe_key), ''), " + LEGACY_DEDUPLICATED_ORDER_KEY_SQL + ")";
 
     /** Delete every order across both user groups. This endpoint is admin-only. */
     @Delete("DELETE FROM orders")
@@ -109,6 +111,7 @@ public interface OrderMapper {
 
     /** Overview metrics use the shared business deduplication fingerprint. */
     @Select("SELECT COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS deduplicated_orders, " +
+            "COUNT(DISTINCT CASE WHEN is_valid = 0 THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_deduplicated_orders, " +
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' " +
             "THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount " +
@@ -117,6 +120,7 @@ public interface OrderMapper {
 
     @Select({"<script>",
             "SELECT COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS deduplicated_orders, " +
+            "COUNT(DISTINCT CASE WHEN is_valid = 0 THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_deduplicated_orders, " +
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' " +
             "THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount " +

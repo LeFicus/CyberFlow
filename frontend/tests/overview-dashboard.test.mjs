@@ -27,8 +27,15 @@ test('a zero previous period is reported without a misleading percentage', () =>
   })
 })
 
-test('overview removes indexing trend and quick tasks', async () => {
+test('overview shows today, yesterday and monthly forecasts with card-free deduplication', async () => {
   const overview = await readFile(new URL('../src/views/dashboard/Overview.vue', import.meta.url), 'utf8')
   assert.doesNotMatch(overview, /站点收录趋势|快捷任务/)
-  assert.match(overview, /上月同期去重订单/)
+  assert.match(overview, /今日去重订单/)
+  assert.match(overview, /今日有效去重/)
+  assert.match(overview, /昨日去重订单/)
+  assert.match(overview, /昨日有效去重/)
+  assert.match(overview, /本月去重订单预测/)
+  assert.match(overview, /本月成交金额预测/)
+  assert.match(overview, /收货邮箱或地址相同即合并/)
+  assert.doesNotMatch(overview, /来源、支付卡、订单站点/)
 })

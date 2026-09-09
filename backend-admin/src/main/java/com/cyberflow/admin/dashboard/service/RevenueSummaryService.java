@@ -56,6 +56,7 @@ public class RevenueSummaryService {
             person.groups.add(account.group);
             person.accounts.add(account.adminName);
             person.totalOrders += account.totalOrders;
+            person.validOrders += account.validOrders;
             person.successfulOrders += account.successfulOrders;
             person.siteCount += account.siteCount;
             person.originalAmount = person.originalAmount.add(account.originalAmount);
@@ -99,6 +100,7 @@ public class RevenueSummaryService {
             item.put("total_orders", person.totalOrders);
             item.put("successful_orders", person.successfulOrders);
             item.put("deduplicated_orders", person.totalOrders);
+            item.put("valid_deduplicated_orders", person.validOrders);
             item.put("original_amount", money(person.originalAmount));
             item.put("synced_amount", money(person.syncedAmount));
             item.put("successful_amount", money(successAmount));
@@ -107,8 +109,7 @@ public class RevenueSummaryService {
             item.put("commission_rmb", person.commissionEligible ? money(commission(successAmount, config)) : null);
             personal.add(item);
         }
-        personal.sort(Comparator.comparing((Map<String, Object> row) -> text(row, "user_group"))
-                .thenComparing(row -> number(row.get("deduplicated_orders")), Comparator.reverseOrder()));
+        sortByDeduplicatedOrders(personal);
 
         // Personal data remains owner-scoped, but a non-admin needs the
         // aggregate for their whole group in order to see a meaningful leader
@@ -149,6 +150,7 @@ public class RevenueSummaryService {
                 item.put("member_count", members.stream().map(a -> realName(a.adminName, mergeMap)).distinct().count());
                 item.put("site_count", sites);
                 item.put("deduplicated_orders", orders);
+                item.put("valid_deduplicated_orders", number(groupTotals.get("valid_orders")).longValue());
                 item.put("original_amount", money(originalAmount));
                 item.put("leader_personal_amount", money(leaderPersonalAmount));
                 item.put("commission_base_amount", money(commissionBaseAmount));
@@ -165,6 +167,7 @@ public class RevenueSummaryService {
         for (Map<String, Object> row : revenueMapper.revenueOrdersByDomain(effectiveStart, effectiveEnd, ownerName, teacherSuffixes)) {
             DomainOrderStats stats = domainOrders.computeIfAbsent(domain(text(row, "product_host")), ignored -> new DomainOrderStats());
             stats.totalOrders += number(row.get("total_orders")).longValue();
+            stats.validOrders += number(row.get("valid_orders")).longValue();
             stats.successfulOrders += number(row.get("successful_orders")).longValue();
             stats.successfulAmount = stats.successfulAmount.add(number(row.get("successful_amount")));
         }
@@ -179,6 +182,7 @@ public class RevenueSummaryService {
             DomainOrderStats order = domainOrders.get(domain(text(site, "site_domain")));
             if (order != null && order.totalOrders > 0) {
                 stats.totalOrders += order.totalOrders;
+                stats.validOrders += order.validOrders;
                 stats.successfulOrders += order.successfulOrders;
                 stats.successfulAmount = stats.successfulAmount.add(order.successfulAmount);
                 stats.orderedSiteCount++;
@@ -194,6 +198,7 @@ public class RevenueSummaryService {
             item.put("site_count", stats.siteCount);
             item.put("total_orders", stats.totalOrders);
             item.put("deduplicated_orders", stats.totalOrders);
+            item.put("valid_deduplicated_orders", stats.validOrders);
             item.put("ordered_site_count", stats.orderedSiteCount);
             item.put("successful_orders", stats.successfulOrders);
             item.put("successful_amount", money(stats.successfulAmount));
@@ -203,6 +208,7 @@ public class RevenueSummaryService {
             item.put("conversion_rate", percent(stats.totalOrders, stats.siteCount));
             monthly.add(item);
         }
+        sortByDeduplicatedOrders(monthly);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("user_group", userGroup == null ? "ALL" : userGroup);
@@ -222,6 +228,13 @@ public class RevenueSummaryService {
         return result;
     }
 
+    static void sortByDeduplicatedOrders(List<Map<String, Object>> rows) {
+        rows.sort(Comparator
+                .comparing((Map<String, Object> row) -> number(row.get("deduplicated_orders")), Comparator.reverseOrder())
+                .thenComparing(row -> text(row, "user_group"))
+                .thenComparing(row -> text(row, "real_name")));
+    }
+
     private Map<String, AccountStats> loadAccounts(String userGroup, String ownerName,
                                                     List<String> teacherSuffixes,
                                                     String startDate, String endDate,
@@ -231,6 +244,7 @@ public class RevenueSummaryService {
             AccountStats stats = accounts.computeIfAbsent(text(row, "admin_name"), AccountStats::new);
             stats.group = text(row, "user_group");
             stats.totalOrders = number(row.get("total_orders")).longValue();
+            stats.validOrders = number(row.get("valid_orders")).longValue();
             stats.successfulOrders = number(row.get("successful_orders")).longValue();
             stats.originalAmount = number(row.get("original_amount"));
         }
@@ -387,6 +401,7 @@ public class RevenueSummaryService {
         final String adminName;
         String group = "";
         long totalOrders;
+        long validOrders;
         long successfulOrders;
         long siteCount;
         BigDecimal originalAmount = BigDecimal.ZERO;
@@ -398,6 +413,7 @@ public class RevenueSummaryService {
         final Set<String> groups = new TreeSet<>();
         final Set<String> accounts = new TreeSet<>();
         long totalOrders;
+        long validOrders;
         long successfulOrders;
         long siteCount;
         BigDecimal originalAmount = BigDecimal.ZERO;
@@ -412,6 +428,7 @@ public class RevenueSummaryService {
         final String adminName;
         long siteCount;
         long totalOrders;
+        long validOrders;
         long orderedSiteCount;
         long successfulOrders;
         BigDecimal successfulAmount = BigDecimal.ZERO;
@@ -424,6 +441,7 @@ public class RevenueSummaryService {
 
     private static final class DomainOrderStats {
         long totalOrders;
+        long validOrders;
         long successfulOrders;
         BigDecimal successfulAmount = BigDecimal.ZERO;
     }

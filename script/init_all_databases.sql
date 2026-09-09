@@ -421,6 +421,9 @@ CREATE TABLE IF NOT EXISTS orders (
     card_number           VARCHAR(100) COMMENT '支付卡号（可能为掩码）',
     customer_ip_country   VARCHAR(100) COMMENT '客户IP国家',
     shipping_email        VARCHAR(255) COMMENT '收货邮箱',
+    shipping_address      JSON COMMENT '支付平台原始收货地址',
+    is_valid              TINYINT COMMENT '支付平台有效标记；0 为有效',
+    dedupe_key             CHAR(64) COMMENT '邮箱或收货地址关联后的去重键',
     admin_name            VARCHAR(100) COMMENT '店铺管理员',
     user_group            VARCHAR(1) NOT NULL COMMENT '订单所属负责人用户组/来源平台: A/B',
     theme_name            VARCHAR(100) COMMENT '主题',
@@ -429,7 +432,8 @@ CREATE TABLE IF NOT EXISTS orders (
     PRIMARY KEY (user_group, id),
     INDEX idx_create_time (create_time),
     INDEX idx_product_host (product_host),
-    INDEX idx_order_user_group (user_group)
+    INDEX idx_order_user_group (user_group),
+    INDEX idx_order_dedupe_key (dedupe_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单信息';
 
 -- ------------------------------------------------------------

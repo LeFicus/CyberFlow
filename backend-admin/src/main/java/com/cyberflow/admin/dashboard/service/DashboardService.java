@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -71,32 +73,43 @@ public class DashboardService {
         LocalDate previousMonthEndDate = previousMonthStartDate.plusDays(
                 Math.min(businessToday.getDayOfMonth(), previousMonthStartDate.lengthOfMonth()));
         String monthStart = dbDateTime(monthStartDate);
+        String yesterdayStart = dbDateTime(businessToday.minusDays(1));
         String todayStart = dbDateTime(businessToday);
         String tomorrowStart = dbDateTime(businessToday.plusDays(1));
         String previousMonthStart = dbDateTime(previousMonthStartDate);
         String previousMonthEnd = dbDateTime(previousMonthEndDate);
         var today = orderMapper.businessSummaryByGroup(todayStart, tomorrowStart, userGroup, ownerName);
+        var yesterday = orderMapper.businessSummaryByGroup(yesterdayStart, todayStart, userGroup, ownerName);
         var month = orderMapper.businessSummaryByGroup(monthStart, tomorrowStart, userGroup, ownerName);
         var previousMonthSamePeriod = orderMapper.businessSummaryByGroup(
                 previousMonthStart, previousMonthEnd, userGroup, ownerName);
         long todaySites = siteInfoMapper.countSitesByGroupAndDateRange(userGroup, ownerName, todayStart, tomorrowStart);
+        long yesterdaySites = siteInfoMapper.countSitesByGroupAndDateRange(userGroup, ownerName, yesterdayStart, todayStart);
         long monthSites = siteInfoMapper.countSitesByGroupAndDateRange(userGroup, ownerName, monthStart, tomorrowStart);
         overview.put("total_sites", todaySites);
         overview.put("today_sites", todaySites);
         overview.put("month_sites", monthSites);
         overview.put("deduplicated_orders", today.getOrDefault("deduplicated_orders", 0L));
+        overview.put("valid_deduplicated_orders", today.getOrDefault("valid_deduplicated_orders", 0L));
         overview.put("successful_orders", today.getOrDefault("successful_orders", 0L));
         overview.put("successful_amount", today.getOrDefault("successful_amount", 0.0));
         overview.put("total_orders", today.getOrDefault("deduplicated_orders", 0L));
         overview.put("period", "TODAY");
         overview.put("today_orders", today.getOrDefault("successful_orders", 0L));
         overview.put("today_deduplicated_orders", today.getOrDefault("deduplicated_orders", 0L));
+        overview.put("today_valid_deduplicated_orders", today.getOrDefault("valid_deduplicated_orders", 0L));
         overview.put("today_successful_orders", today.getOrDefault("successful_orders", 0L));
         overview.put("today_successful_amount", today.getOrDefault("successful_amount", 0.0));
         overview.put("today_amount", today.getOrDefault("successful_amount", 0.0));
+        overview.put("yesterday_sites", yesterdaySites);
+        overview.put("yesterday_deduplicated_orders", yesterday.getOrDefault("deduplicated_orders", 0L));
+        overview.put("yesterday_valid_deduplicated_orders", yesterday.getOrDefault("valid_deduplicated_orders", 0L));
+        overview.put("yesterday_successful_orders", yesterday.getOrDefault("successful_orders", 0L));
+        overview.put("yesterday_successful_amount", yesterday.getOrDefault("successful_amount", 0.0));
         overview.put("month_orders", month.getOrDefault("successful_orders", 0L));
         overview.put("month_amount", month.getOrDefault("successful_amount", 0.0));
         overview.put("month_deduplicated_orders", month.getOrDefault("deduplicated_orders", 0L));
+        overview.put("month_valid_deduplicated_orders", month.getOrDefault("valid_deduplicated_orders", 0L));
         overview.put("previous_month_same_period_deduplicated_orders",
                 previousMonthSamePeriod.getOrDefault("deduplicated_orders", 0L));
         overview.put("month_same_period_start", monthStartDate.toString());
@@ -105,10 +118,37 @@ public class DashboardService {
         overview.put("previous_month_same_period_end", previousMonthEndDate.minusDays(1).toString());
         overview.put("month_successful_orders", month.getOrDefault("successful_orders", 0L));
         overview.put("month_successful_amount", month.getOrDefault("successful_amount", 0.0));
+        int elapsedDays = businessToday.getDayOfMonth();
+        int daysInMonth = businessToday.lengthOfMonth();
+        overview.put("month_forecast_deduplicated_orders", forecastCount(
+                month.get("deduplicated_orders"), elapsedDays, daysInMonth));
+        overview.put("month_forecast_successful_amount", forecastAmount(
+                month.get("successful_amount"), elapsedDays, daysInMonth));
+        overview.put("month_forecast_elapsed_days", elapsedDays);
+        overview.put("month_forecast_days_in_month", daysInMonth);
         overview.put("site_group_summary", siteInfoMapper.summarizeByGroup(ownerName));
         overview.put("order_group_summary", orderMapper.summarizeByGroup(ownerName));
 
         return overview;
+    }
+
+    private static long forecastCount(Object current, int elapsedDays, int daysInMonth) {
+        return decimal(current).multiply(BigDecimal.valueOf(daysInMonth))
+                .divide(BigDecimal.valueOf(elapsedDays), 0, RoundingMode.HALF_UP).longValue();
+    }
+
+    private static BigDecimal forecastAmount(Object current, int elapsedDays, int daysInMonth) {
+        return decimal(current).multiply(BigDecimal.valueOf(daysInMonth))
+                .divide(BigDecimal.valueOf(elapsedDays), 2, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal decimal(Object value) {
+        if (value == null) return BigDecimal.ZERO;
+        try {
+            return new BigDecimal(String.valueOf(value));
+        } catch (NumberFormatException ignored) {
+            return BigDecimal.ZERO;
+        }
     }
 
     /**

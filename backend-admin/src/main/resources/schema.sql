@@ -160,6 +160,9 @@ CREATE TABLE IF NOT EXISTS orders (
     card_number         VARCHAR(100),
     customer_ip_country VARCHAR(100),
     shipping_email      VARCHAR(255),
+    shipping_address    JSON,
+    is_valid            TINYINT,
+    dedupe_key           CHAR(64),
     admin_name          VARCHAR(100),
     user_group          VARCHAR(1) NOT NULL,
     theme_name          VARCHAR(100),
@@ -168,7 +171,8 @@ CREATE TABLE IF NOT EXISTS orders (
     PRIMARY KEY (user_group, id),
     INDEX idx_create_time (create_time),
     INDEX idx_product_host (product_host),
-    INDEX idx_order_user_group (user_group)
+    INDEX idx_order_user_group (user_group),
+    INDEX idx_order_dedupe_key (dedupe_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS site_indexing_history (

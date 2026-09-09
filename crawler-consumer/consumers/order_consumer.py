@@ -24,6 +24,12 @@ from config import VERIFY_SSL
 import pika
 import json
 
+from consumers.order_identity import (
+    build_dedupe_keys,
+    parse_shipping_address,
+    shipping_address_json,
+)
+
 
 class OrderConsumer(BaseConsumer):
     """订单数据爬取消费者 —— 继承自 BaseConsumer。
@@ -156,18 +162,18 @@ class OrderConsumer(BaseConsumer):
         logger.info(f"💾 Saving {len(records)} order records")
         saved_count = 0
         site_matched = 0
+        affected_days: set[tuple[str, str]] = set()
         async with self.repo.pool.acquire() as conn:
             async with conn.cursor() as cur:
                 for r in records:
                     # 根据订单的 product_host 查询站点上下文信息
                     product_host = self._normalize_domain(r.get("product_host"))
                     admin_name = ""
-                    site_user_group = None
                     theme_name = ""
                     product_category = ""
                     if product_host:
                         await cur.execute(
-                            """SELECT admin_name, user_group, theme_name, product_category
+                            """SELECT admin_name, theme_name, product_category
                                FROM site_info
                                WHERE LOWER(CASE WHEN LEFT(site_domain, 4) = 'www.'
                                    THEN SUBSTRING(site_domain, 5) ELSE site_domain END)=%s
@@ -176,30 +182,45 @@ class OrderConsumer(BaseConsumer):
                         )
                         site_row = await cur.fetchone()
                         if site_row:
-                            admin_name, site_user_group, theme_name, product_category = site_row
+                            admin_name, theme_name, product_category = site_row
                             site_matched += 1
 
-                    effective_user_group = str(site_user_group or user_group).strip().upper()
-                    if effective_user_group not in {"A", "B"}:
-                        effective_user_group = user_group
+                    # A/B is the payment API source selected for this crawl.
+                    # A site's management group must not move an A-source order
+                    # into the B-source request result (or vice versa).
+                    effective_user_group = user_group
                     product_info = self._product_info_json(r.get("productInfo", r.get("product_info")))
-
-                    # A/B 平台可能返回相同订单号；站点归属是订单分组的权威来源。
-                    # 若历史记录曾按账号组写入，在插入新归属前先迁移旧行，避免同一订单出现两组。
-                    if effective_user_group != user_group:
-                        await cur.execute(
-                            "DELETE FROM orders WHERE id=%s AND user_group=%s",
-                            (r.get("id"), user_group),
-                        )
+                    raw_shipping_address = r.get("shippingAddress", r.get("shipping_address"))
+                    shipping_address = shipping_address_json(raw_shipping_address)
+                    address = parse_shipping_address(raw_shipping_address)
+                    shipping_email = r.get("shipping_email") or address.get("email")
+                    customer_country = (
+                        r.get("customer_ip_country")
+                        or r.get("billing_address_country")
+                        or address.get("country")
+                    )
+                    order_day = self._order_day(r.get("create_time"))
+                    if order_day:
+                        affected_days.add((effective_user_group, order_day))
 
                     await cur.execute(
                         """INSERT INTO orders (id, amount, currency, create_time, product_host,
                            pay_status_text, card_number, customer_ip_country, shipping_email,
-                           admin_name, user_group, theme_name, product_category, product_info)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           shipping_address, is_valid, admin_name, user_group, theme_name,
+                           product_category, product_info)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                            ON DUPLICATE KEY UPDATE
-                           amount=VALUES(amount), pay_status_text=VALUES(pay_status_text),
+                           amount=VALUES(amount), currency=VALUES(currency),
+                           create_time=VALUES(create_time), product_host=VALUES(product_host),
+                           pay_status_text=VALUES(pay_status_text),
                            card_number=VALUES(card_number),
+                           customer_ip_country=VALUES(customer_ip_country),
+                           shipping_email=VALUES(shipping_email),
+                           shipping_address=CASE
+                               WHEN JSON_LENGTH(VALUES(shipping_address)) > 0 THEN VALUES(shipping_address)
+                               ELSE shipping_address
+                           END,
+                           is_valid=COALESCE(VALUES(is_valid), is_valid),
                            admin_name=VALUES(admin_name), user_group=VALUES(user_group),
                            theme_name=VALUES(theme_name), product_category=VALUES(product_category),
                            product_info=CASE
@@ -210,13 +231,38 @@ class OrderConsumer(BaseConsumer):
                          r.get("create_time"), product_host,
                          r.get("pay_status_text"),
                          r.get("cardNumber") or r.get("card_no") or r.get("card_number"),
-                         r.get("timeZone"),
-                         r.get("shipping_email"), admin_name, effective_user_group, theme_name,
-                         product_category, product_info),
+                         customer_country, shipping_email, shipping_address,
+                         self._optional_int(r.get("is_valid")), admin_name, effective_user_group,
+                         theme_name, product_category, product_info),
                     )
                     saved_count += 1
+                for group, order_day in sorted(affected_days):
+                    await self._refresh_dedupe_keys(cur, group, order_day)
         logger.info(f"💾 Order save complete: saved={saved_count}, site_matched={site_matched}")
         return saved_count
+
+    async def _refresh_dedupe_keys(self, cur, user_group: str, order_day: str) -> None:
+        """Rebuild transitive email-or-address identities for one business day."""
+        await cur.execute(
+            """SELECT id, user_group, create_time, product_host, shipping_email, shipping_address
+               FROM orders
+               WHERE user_group=%s AND create_time >= %s
+                 AND create_time < DATE_ADD(%s, INTERVAL 1 DAY)""",
+            (user_group, order_day, order_day),
+        )
+        columns = [column[0] for column in cur.description]
+        rows = [dict(zip(columns, row)) for row in await cur.fetchall()]
+        keys = build_dedupe_keys(rows)
+        if not keys:
+            return
+        await cur.executemany(
+            "UPDATE orders SET dedupe_key=%s WHERE user_group=%s AND id=%s",
+            [(key, group, order_id) for (group, order_id), key in keys.items()],
+        )
+        logger.info(
+            f"🔗 Refreshed order identities: group={user_group}, day={order_day}, "
+            f"rows={len(rows)}, deduplicated={len(set(keys.values()))}"
+        )
 
     @staticmethod
     def _normalize_domain(value) -> str:
@@ -240,6 +286,22 @@ class OrderConsumer(BaseConsumer):
         if not isinstance(value, list):
             value = []
         return json.dumps(value, ensure_ascii=False)
+
+    @staticmethod
+    def _order_day(value) -> str:
+        if isinstance(value, datetime):
+            return value.date().isoformat()
+        text = str(value or "").strip()
+        return text[:10] if len(text) >= 10 else ""
+
+    @staticmethod
+    def _optional_int(value):
+        if value is None or value == "":
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
     def _publish_result(self, task_id, status, rows_affected, new_cursor, duration_ms, error=None):
         """将任务执行结果发布到 RabbitMQ task.result 队列。
