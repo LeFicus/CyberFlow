@@ -295,14 +295,14 @@ VALUES
     (65, 63, '修改站点状态', 2, 'newsite:status', NULL, NULL, NULL, 2, 1),
     (66, 63, '配置 AI 服务', 2, 'newsite:config', NULL, NULL, NULL, 3, 1),
     (67, 63, '删除新站点', 2, 'newsite:delete', NULL, NULL, NULL, 4, 1),
-    (68, 63, '管理品牌素材', 2, 'newsite:asset', NULL, NULL, NULL, 5, 1)
+    (72, 63, '管理品牌素材', 2, 'newsite:asset', NULL, NULL, NULL, 5, 1)
 ON DUPLICATE KEY UPDATE
     parent_id=VALUES(parent_id), menu_name=VALUES(menu_name), menu_type=VALUES(menu_type),
     perms=VALUES(perms), path=VALUES(path), component=VALUES(component), icon=VALUES(icon),
     sort_order=VALUES(sort_order), status=VALUES(status);
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES
-    (1, 63), (1, 64), (1, 65), (1, 66), (1, 67), (1, 68),
-    (2, 63), (2, 64), (2, 65), (2, 66), (2, 67), (2, 68);
+    (1, 63), (1, 64), (1, 65), (1, 66), (1, 67), (1, 72),
+    (2, 63), (2, 64), (2, 65), (2, 66), (2, 67), (2, 72);
 
 -- Editable shared catalog. Seed exactly once: deleted categories must not reappear at startup.
 CREATE TABLE IF NOT EXISTS custom_category (

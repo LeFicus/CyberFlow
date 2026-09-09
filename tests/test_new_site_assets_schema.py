@@ -15,11 +15,21 @@ class NewSiteAssetSchemaTests(unittest.TestCase):
         self.assertIn("storage_key", migration)
         self.assertNotIn("LONGBLOB", migration.upper())
         self.assertIn("newsite:asset", migration)
+        self.assertIn("(72, 63, '管理品牌素材'", migration)
+
+        repair = (ROOT / "script" / "migrations" / "20260909_fix_new_site_asset_permission.sql").read_text("utf-8")
+        self.assertIn("newsite:asset", repair)
+        self.assertIn("(72, 63, '管理品牌素材'", repair)
 
     def test_container_mounts_a_persistent_asset_volume(self):
         compose = (ROOT / "docker-compose.yml").read_text("utf-8")
         self.assertIn("SITE_ASSET_DIRECTORY: /app/site-assets", compose)
         self.assertIn("site_assets:/app/site-assets", compose)
+
+    def test_fresh_schema_keeps_indexing_and_asset_menu_ids_distinct(self):
+        schema = (ROOT / "script" / "init_all_databases.sql").read_text("utf-8")
+        self.assertIn("(68,6,'建站者汇总'", schema)
+        self.assertIn("(72, 63, '管理品牌素材'", schema)
 
 
 if __name__ == "__main__":
