@@ -17,7 +17,7 @@ public interface RevenueMapper {
             "COUNT(DISTINCT CASE WHEN is_valid = 0 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders,",
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS original_amount",
-            "FROM orders WHERE user_group IN ('A', 'B')",
+            "FROM orders WHERE TRIM(COALESCE(user_group, '')) &lt;&gt; ''",
             "AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
             "<if test='startDate != null and startDate != &quot;&quot;'> AND create_time &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>",
             "<if test='endDate != null and endDate != &quot;&quot;'> AND create_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>",
@@ -30,9 +30,10 @@ public interface RevenueMapper {
             "SELECT admin_name, user_group, COUNT(DISTINCT " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + ") AS total_orders,",
             "COUNT(DISTINCT CASE WHEN is_valid = 0 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders,",
-            "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS original_amount",
+            "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS original_amount,",
+            "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' AND site_tag = 1 THEN amount ELSE 0 END), 0) AS batch_site_amount",
             "FROM orders WHERE TRIM(COALESCE(admin_name, '')) &lt;&gt; ''",
-            "AND user_group IN ('A', 'B') AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
+            "AND TRIM(COALESCE(user_group, '')) &lt;&gt; '' AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
             "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) &gt; 0 " +
             "<if test='teacherSuffixes != null and !teacherSuffixes.isEmpty()'> OR " +
             "<foreach collection='teacherSuffixes' item='suffix' separator=' OR '>admin_name LIKE CONCAT('%', #{suffix})</foreach>" +
@@ -46,9 +47,9 @@ public interface RevenueMapper {
                                                @Param("startDate") String startDate,
                                                @Param("endDate") String endDate);
 
-    @Select({"<script>", "SELECT admin_name, user_group, COUNT(*) AS site_count",
+    @Select({"<script>", "SELECT admin_name, user_group, COUNT(*) AS site_count, SUM(site_tag = 1) AS batch_site_count",
             "FROM site_info WHERE TRIM(COALESCE(admin_name, '')) &lt;&gt; ''",
-            "AND user_group IN ('A', 'B') AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
+            "AND TRIM(COALESCE(user_group, '')) &lt;&gt; '' AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
             "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) &gt; 0 " +
             "<if test='teacherSuffixes != null and !teacherSuffixes.isEmpty()'> OR " +
             "<foreach collection='teacherSuffixes' item='suffix' separator=' OR '>admin_name LIKE CONCAT('%', #{suffix})</foreach>" +
@@ -62,7 +63,7 @@ public interface RevenueMapper {
 
     @Select({"<script>", "SELECT site_domain, admin_name, user_group, DATE_FORMAT(COALESCE(domain_applied_at, created_at), '%Y-%m') AS site_month",
             "FROM site_info WHERE TRIM(COALESCE(admin_name, '')) &lt;&gt; ''",
-            "AND user_group IN ('A', 'B') AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
+            "AND TRIM(COALESCE(user_group, '')) &lt;&gt; '' AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
             "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) &gt; 0 " +
             "<if test='teacherSuffixes != null and !teacherSuffixes.isEmpty()'> OR " +
             "<foreach collection='teacherSuffixes' item='suffix' separator=' OR '>admin_name LIKE CONCAT('%', #{suffix})</foreach>" +

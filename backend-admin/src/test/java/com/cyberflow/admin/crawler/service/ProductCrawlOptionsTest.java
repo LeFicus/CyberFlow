@@ -5,6 +5,7 @@ import com.cyberflow.admin.crawler.config.service.CrawlerConfigService;
 import com.cyberflow.admin.crawler.messaging.TaskMessagePublisher;
 import com.cyberflow.admin.crawler.task.mapper.CrawlCursorMapper;
 import com.cyberflow.admin.crawler.task.service.TaskHistoryService;
+import com.cyberflow.admin.dashboard.mapper.SiteInfoMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -32,7 +33,7 @@ class ProductCrawlOptionsTest {
     private final TaskMessagePublisher publisher = mock(TaskMessagePublisher.class);
     private final TaskHistoryService history = mock(TaskHistoryService.class);
     private final CrawlerService service = new CrawlerService(publisher, history,
-        mock(CrawlerConfigService.class), mock(CrawlCursorMapper.class));
+        mock(CrawlerConfigService.class), mock(CrawlCursorMapper.class), mock(SiteInfoMapper.class));
 
     @Test
     void preservesExplicitNullAndFalseUntilDispatch() {

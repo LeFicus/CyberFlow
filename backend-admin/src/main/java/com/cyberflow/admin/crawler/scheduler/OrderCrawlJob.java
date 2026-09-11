@@ -7,10 +7,12 @@ import com.cyberflow.admin.crawler.task.entity.CrawlCursor;
 import com.cyberflow.admin.crawler.task.entity.TaskHistory;
 import com.cyberflow.admin.crawler.task.mapper.CrawlCursorMapper;
 import com.cyberflow.admin.crawler.task.service.TaskHistoryService;
+import com.cyberflow.admin.dashboard.mapper.SiteInfoMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
+import org.quartz.DisallowConcurrentExecution;
 import org.springframework.stereotype.Component;
 
 /**
@@ -26,6 +28,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@DisallowConcurrentExecution
 public class OrderCrawlJob implements Job {
 
     /** 任务消息发布器 */
@@ -39,6 +42,9 @@ public class OrderCrawlJob implements Job {
 
     /** 爬虫运行配置服务 */
     private final CrawlerConfigService crawlerConfigService;
+
+    /** Supplies the current site groups instead of a fixed A/B/C/D list. */
+    private final SiteInfoMapper siteInfoMapper;
 
     /**
      * Quartz 调度器触发的执行方法。
@@ -57,7 +63,12 @@ public class OrderCrawlJob implements Job {
             return;
         }
 
-        for (String userGroup : java.util.List.of("A", "B")) {
+        for (java.util.Map<String, Object> row : siteInfoMapper.listDistinctGroups()) {
+            String userGroup = String.valueOf(row.get("user_group"));
+            if (taskHistoryService.hasActiveTask("order_crawl", "group-" + userGroup)) {
+                log.info("Order crawl already active; skipping duplicate schedule dispatch for group={}", userGroup);
+                continue;
+            }
             CrawlCursor cursor = cursorMapper.selectOne(
                 new LambdaQueryWrapper<CrawlCursor>().eq(CrawlCursor::getCursorKey, "order_crawler_" + userGroup)
             );

@@ -143,8 +143,11 @@ class AsyncSiteCrawler:
                         site_map[domain] = {
                             "theme_name": item.get("theme_name", ""),
                             "product_category": item.get("product_category", ""),
+                            "cat_names": item.get("cat_names") or [],
+                            "site_tag": self._site_tag(item.get("site_tag")),
                             "builder_username": admin_info.get("username") or "",
                             "admin_name": item.get("admin_name") or admin_info.get("realname") or "",
+                            "user_group": item.get("user_group") or item.get("site_group") or "",
                             "server_name": server_info.get("server_name") or item.get("site_fwq_name") or item.get("fwq_name") or "",
                             "server_ip": server_info.get("server_ip") or "",
                             # site/list.adddate is the actual site build time.
@@ -224,6 +227,12 @@ class AsyncSiteCrawler:
                         record["server_name"] = record.get("server_name") or site_map[domain].get("server_name")
                         record["server_ip"] = site_map[domain].get("server_ip") or ""
                         record["created_at"] = site_map[domain].get("created_at") or applied_at
+                        record["cat_names"] = site_map[domain].get("cat_names") or []
+                        record["site_tag"] = site_map[domain].get("site_tag", 0)
+                        record["user_group"] = (
+                            site_map[domain].get("user_group")
+                            or self._user_group(record.get("admin_name"))
+                        )
                     results.append(record)
                 if not self._has_next_page(data, len(items), page):
                     break
@@ -234,13 +243,20 @@ class AsyncSiteCrawler:
 
     @staticmethod
     def _user_group(admin_name: str) -> str | None:
-        """Apply the report convention: A-* => A, B-* => B."""
-        normalized = str(admin_name or "").strip().upper()
-        if normalized.startswith("A-"):
-            return "A"
-        if normalized.startswith("B-"):
-            return "B"
-        return None
+        """Derive an initial group for new sites without assuming A/B/C/D."""
+        normalized = str(admin_name or "").strip()
+        if "-" not in normalized:
+            return None
+        prefix = normalized.split("-", 1)[0].strip()
+        return prefix if prefix and len(prefix) <= 32 and prefix.replace("_", "").isalnum() else None
+
+    @staticmethod
+    def _site_tag(value) -> int:
+        try:
+            tag = int(value)
+        except (TypeError, ValueError):
+            return 0
+        return tag if tag in {0, 1, 2} else 0
 
     async def run(self, since: str | None = None) -> tuple[list[dict], str | None]:
         """执行完整的站点爬取流程。

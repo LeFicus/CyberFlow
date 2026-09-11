@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
+import org.quartz.DisallowConcurrentExecution;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -28,6 +29,7 @@ import java.time.LocalDateTime;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@DisallowConcurrentExecution
 public class SiteCrawlJob implements Job {
 
     /** 任务消息发布器 */
@@ -56,6 +58,10 @@ public class SiteCrawlJob implements Job {
         log.info("Quartz triggered: site crawl job");
         if (!crawlerConfigService.isScheduleEnabled("site_crawl")) {
             log.info("Site crawl schedule is disabled");
+            return;
+        }
+        if (taskHistoryService.hasActiveTask("site_crawl", null)) {
+            log.info("Site crawl already has an active task; skipping duplicate schedule dispatch");
             return;
         }
 

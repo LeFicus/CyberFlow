@@ -132,6 +132,15 @@ public class DashboardService {
         return overview;
     }
 
+    /** Groups are sourced from current site master data; no group names are hard-coded. */
+    public List<Map<String, Object>> getSiteGroups() {
+        String ownerName = ownerName();
+        return siteInfoMapper.summarizeByGroup(ownerName).stream()
+                .filter(row -> row.get("user_group") != null)
+                .filter(row -> !"未分组".equals(String.valueOf(row.get("user_group"))))
+                .toList();
+    }
+
     private static long forecastCount(Object current, int elapsedDays, int daysInMonth) {
         return decimal(current).multiply(BigDecimal.valueOf(daysInMonth))
                 .divide(BigDecimal.valueOf(elapsedDays), 0, RoundingMode.HALF_UP).longValue();
@@ -522,9 +531,9 @@ public class DashboardService {
 
     private static String normalizeUserGroup(String value) {
         if (value == null || value.isBlank() || "ALL".equalsIgnoreCase(value)) return null;
-        String normalized = value.trim().toUpperCase(Locale.ROOT);
-        if (!Set.of("A", "B").contains(normalized)) {
-            throw new IllegalArgumentException("userGroup must be A, B or empty");
+        String normalized = value.trim();
+        if (normalized.length() > 32 || !normalized.matches("[\\p{L}\\p{N}_-]+")) {
+            throw new IllegalArgumentException("userGroup must be an existing site group or empty");
         }
         return normalized;
     }

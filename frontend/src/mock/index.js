@@ -45,6 +45,8 @@ Mock.mock(/\/admin\/auth\/userinfo/, 'get', authData.userinfo)
 // ========== Dashboard 仪表盘模块 ==========
 /** 拦截 GET /admin/dashboard/overview - 概览统计数据 */
 Mock.mock(/\/admin\/dashboard\/overview/, 'get', dashboardData.overview)
+/** 拦截 GET /admin/dashboard/site-groups - 当前数据库站点分组 */
+Mock.mock(/\/admin\/dashboard\/site-groups/, 'get', dashboardData.siteGroups)
 /** 拦截 GET /admin/dashboard/charts - 趋势图表数据 */
 Mock.mock(/\/admin\/dashboard\/charts/, 'get', dashboardData.charts)
 /** 拦截 GET /admin/dashboard/sites - 站点分页列表 */
@@ -81,6 +83,10 @@ Mock.mock(/\/admin\/crawler\/config\/schedules$/, 'get', crawlerData.scheduleLis
 Mock.mock(/\/admin\/crawler\/config\/schedules\/[^/]+$/, 'put', crawlerData.scheduleUpdate)
 /** Mock POST /admin/crawler/config/schedules/:taskType/trigger - 立即触发计划任务 */
 Mock.mock(/\/admin\/crawler\/config\/schedules\/[^/]+\/trigger$/, 'post', crawlerData.scheduleTrigger)
+/** Data-sync console and task-history views. */
+Mock.mock(/\/admin\/crawler\/task-history\/overview$/, 'get', crawlerData.taskOverview)
+Mock.mock(/\/admin\/crawler\/task-history\/summary$/, 'get', crawlerData.taskSummary)
+Mock.mock(/\/admin\/crawler\/task-history\/tasks(\?|$)/, 'get', (options) => crawlerData.taskHistory(paramParser(options.url)))
 
 // ========== Selector Template 选择器模板 ==========
 /** 拦截 GET /admin/selector/template - 模板列表（支持 platform 参数过滤） */

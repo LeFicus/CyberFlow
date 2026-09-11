@@ -36,6 +36,7 @@ const crawlerConfig = {
     exchangeRate: 6.73,
     rateFactor: 0.42,
     leaderCommissionRate: 0.02,
+    batchSiteCommissionRate: 0.02,
     commissionTiers: [
       { threshold: 30000, rate: 0.03 },
       { threshold: 80000, rate: 0.05 },
@@ -147,9 +148,61 @@ export default {
     if (!schedule) return { code: 404, msg: 'not found', data: null }
     schedule.lastTriggeredAt = new Date().toISOString()
     if (taskType === 'order_crawl') {
-      return { code: 200, msg: 'success', data: { A: { task_id: uuid() }, B: { task_id: uuid() }, status: 'Both group tasks dispatched' } }
+      return { code: 200, msg: 'success', data: { A: { task_id: uuid() }, B: { task_id: uuid() }, status: 'Current site-group tasks dispatched' } }
     }
     return { code: 200, msg: 'success', data: { task_id: uuid(), status: 'Task dispatched' } }
+  },
+
+  taskHistory: (params = {}) => {
+    const normalized = taskStore.map((item, index) => ({
+      id: index + 1,
+      taskId: item.taskId || item.task_id,
+      type: item.type === 'site' ? 'site_crawl' : item.type === 'order' ? 'order_crawl' : item.type,
+      status: item.status || item.state || 'SUCCESS',
+      triggerType: 'manual',
+      rowsAffected: item.rowsAffected || 0,
+      durationMs: item.durationMs || 1200,
+      createdAt: item.createdAt || new Date(item.created_at || Date.now()).toISOString(),
+    }))
+    const filtered = normalized.filter(item =>
+      (!params.type || params.type === 'all' || item.type === params.type) &&
+      (!params.status || item.status === params.status) &&
+      (!params.keyword || item.taskId.includes(params.keyword)))
+    const page = Math.max(1, Number(params.page || 1))
+    const size = Math.max(10, Number(params.size || 20))
+    return { code: 200, msg: 'success', data: { records: filtered.slice((page - 1) * size, page * size), total: filtered.length } }
+  },
+
+  taskSummary: () => {
+    const counts = { all: taskStore.length, site_crawl: 0, site_index: 0, order_crawl: 0, product_crawl: 0 }
+    taskStore.forEach(item => {
+      const type = item.type === 'site' ? 'site_crawl' : item.type === 'order' ? 'order_crawl' : item.type
+      if (type in counts) counts[type] += 1
+    })
+    return { code: 200, msg: 'success', data: counts }
+  },
+
+  taskOverview: () => {
+    const records = taskStore.map((item, index) => ({
+      id: index + 1,
+      taskId: item.taskId || item.task_id,
+      type: item.type === 'site' ? 'site_crawl' : item.type === 'order' ? 'order_crawl' : item.type,
+      status: item.status || item.state || 'SUCCESS',
+      rowsAffected: item.rowsAffected || 0,
+      durationMs: item.durationMs || 1200,
+      createdAt: item.createdAt || new Date(item.created_at || Date.now()).toISOString(),
+    }))
+    const latestTasks = Object.values(records.reduce((latest, item) => {
+      if (!latest[item.type]) latest[item.type] = item
+      return latest
+    }, {}))
+    const active = records.filter(item => ['PENDING', 'RUNNING'].includes(item.status)).length
+    const failedToday = records.filter(item => item.status === 'FAILED').length
+    const successToday = records.filter(item => item.status === 'SUCCESS').length
+    return {
+      code: 200, msg: 'success',
+      data: { total: records.length, active, failedToday, successToday, latestSuccessAt: latestTasks[0]?.createdAt || null, activeByType: {}, latestTasks },
+    }
   },
 
   // ==================== 选择器模板 CRUD ====================

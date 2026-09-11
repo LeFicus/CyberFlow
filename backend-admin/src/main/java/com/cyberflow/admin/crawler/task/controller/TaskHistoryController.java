@@ -65,14 +65,26 @@ public class TaskHistoryController {
     @PreAuthorize("hasAnyAuthority('crawler:history:view', 'crawler:task:control')")
     public Result<?> tasks(@RequestParam(defaultValue = "1") int page,
                            @RequestParam(defaultValue = "20") int size,
-                           @RequestParam(required = false) String type) {
-        return Result.ok(taskHistoryService.list(page, size, type));
+                           @RequestParam(required = false) String type,
+                           @RequestParam(required = false) String status,
+                           @RequestParam(required = false) String keyword) {
+        int safePage = Math.max(1, page);
+        int safeSize = Math.max(10, Math.min(size, 100));
+        String safeKeyword = keyword == null ? null : keyword.substring(0, Math.min(keyword.length(), 64));
+        return Result.ok(taskHistoryService.list(safePage, safeSize, type, status, safeKeyword));
     }
 
     @GetMapping("/summary")
     @PreAuthorize("hasAuthority('crawler:history:view')")
     public Result<?> summary() {
         return Result.ok(taskHistoryService.summary());
+    }
+
+    /** Lightweight status snapshot for the data-sync console. */
+    @GetMapping("/overview")
+    @PreAuthorize("hasAnyAuthority('crawler:history:view', 'crawler:schedule:view', 'crawler:schedule:trigger', 'crawler:order:view')")
+    public Result<?> overview() {
+        return Result.ok(taskHistoryService.overview());
     }
 
     /** Pause a pending/running task; consumers suspend cooperatively. */

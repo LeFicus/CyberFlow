@@ -193,7 +193,9 @@ CREATE TABLE IF NOT EXISTS task_history (
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_type (type),
     INDEX idx_status (status),
-    INDEX idx_created_at (created_at)
+    INDEX idx_created_at (created_at),
+    INDEX idx_task_type_status_created (type, status, created_at),
+    INDEX idx_task_status_finished (status, finished_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 爬虫日志分块表 — 只追加新块，避免反复 CONCAT/重写 task_history LONGTEXT
@@ -387,13 +389,15 @@ CREATE TABLE IF NOT EXISTS site_info (
     id               BIGINT AUTO_INCREMENT PRIMARY KEY,
     username         VARCHAR(100) COMMENT '电商平台用户名',
     builder_username VARCHAR(100) COMMENT '建站者账号',
-    site_domain      VARCHAR(255) NOT NULL UNIQUE COMMENT '站点域名',
+    site_domain      VARCHAR(255) NOT NULL COMMENT '站点域名',
     server_name      VARCHAR(255) COMMENT '站点所在服务器',
     server_ip        VARCHAR(45) COMMENT '站点服务器 IP',
     admin_name       VARCHAR(100) COMMENT '管理员名称',
-    user_group       VARCHAR(1) COMMENT '负责人用户组: A/B',
+    user_group       VARCHAR(32) COMMENT '负责人用户组（来自站点数据）',
     theme_name       VARCHAR(100) COMMENT '主题名称',
     product_category VARCHAR(100) COMMENT '商品分类',
+    cat_names        JSON COMMENT 'site/site 返回的商品分类数组',
+    site_tag         TINYINT NOT NULL DEFAULT 0 COMMENT '0单独建站 1批量建站 2复制站',
     last_submitted_at DATETIME COMMENT '最近提交收录时间',
     domain_applied_at DATETIME COMMENT '域名申请时间，用于站点月份归属',
     created_at       DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'site/list 建站时间',
@@ -425,9 +429,10 @@ CREATE TABLE IF NOT EXISTS orders (
     is_valid              TINYINT COMMENT '支付平台有效标记；0 为有效',
     dedupe_key             CHAR(64) COMMENT '邮箱或收货地址关联后的去重键',
     admin_name            VARCHAR(100) COMMENT '店铺管理员',
-    user_group            VARCHAR(1) NOT NULL COMMENT '订单所属负责人用户组/来源平台: A/B',
+    user_group            VARCHAR(32) NOT NULL COMMENT '订单所属站点分组',
     theme_name            VARCHAR(100) COMMENT '主题',
     product_category      VARCHAR(100) COMMENT '商品分类',
+    site_tag              TINYINT NOT NULL DEFAULT 0 COMMENT '订单所属站点标签',
     product_info          JSON COMMENT '订单爬取结果中的商品详情数组',
     PRIMARY KEY (user_group, id),
     INDEX idx_create_time (create_time),
@@ -467,7 +472,7 @@ CREATE TABLE IF NOT EXISTS site_indexing_history (
 INSERT INTO sys_role (id, role_name, role_code, description) VALUES
 (1, '超级管理员', 'ROLE_ADMIN', '拥有所有权限'),
 (2, '运营人员', 'ROLE_OPERATOR', '可查看数据看板、触发爬虫'),
-(3, '普通用户', 'ROLE_USER', '仅可查看经营数据和执行 A/B 订单爬取')
+(3, '普通用户', 'ROLE_USER', '仅可查看经营数据和执行所属站点分组订单爬取')
 ON DUPLICATE KEY UPDATE
     role_name=VALUES(role_name),
     role_code=VALUES(role_code),

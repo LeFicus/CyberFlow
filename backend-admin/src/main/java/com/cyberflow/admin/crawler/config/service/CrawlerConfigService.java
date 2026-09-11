@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.CronScheduleBuilder;
+import org.quartz.CronExpression;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
 import org.quartz.Trigger;
@@ -121,11 +122,38 @@ public class CrawlerConfigService {
     /** Dedicated write path for commission and income parameters. */
     @Transactional
     public Map<String, Object> updateRevenueConfig(Map<String, Object> body) {
+        Set<String> allowed = Set.of(
+            "exchangeRate", "rateFactor", "leaderCommissionRate", "batchSiteCommissionRate",
+            "commissionTiers", "leaderConfig", "teacherMap", "userMergeMap"
+        );
         for (Map.Entry<String, Object> entry : body.entrySet()) {
+            if (!allowed.contains(entry.getKey())) continue;
             if (MASK.equals(entry.getValue())) continue;
+            validateRevenueValue(entry.getKey(), entry.getValue());
             upsertRuntime("revenue", entry.getKey(), entry.getValue(), false);
         }
         return getRevenueConfig();
+    }
+
+    private static void validateRevenueValue(String key, Object value) {
+        if (Set.of("exchangeRate", "rateFactor", "leaderCommissionRate", "batchSiteCommissionRate").contains(key)) {
+            final double number;
+            try {
+                number = Double.parseDouble(String.valueOf(value));
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException(key + " 必须是数字");
+            }
+            boolean valid = Double.isFinite(number)
+                    && ("exchangeRate".equals(key) ? number > 0 : number >= 0 && number <= 1);
+            if (!valid) {
+                throw new IllegalArgumentException("汇率必须大于 0，各提成比例必须在 0 到 1 之间");
+            }
+        } else if ("commissionTiers".equals(key) && !(value instanceof List<?>)) {
+            throw new IllegalArgumentException("提成阶梯必须是数组");
+        } else if (Set.of("leaderConfig", "teacherMap", "userMergeMap").contains(key)
+                && (!(value instanceof Map<?, ?>))) {
+            throw new IllegalArgumentException(key + " 必须是对象");
+        }
     }
 
     public Map<String, Object> getAdminPlatform() {
@@ -135,7 +163,16 @@ public class CrawlerConfigService {
 
     public Map<String, Object> getPaymentPlatform(String userGroup) {
         Map<String, Object> cfg = getRuntimeConfig(false);
-        return group(cfg, "A".equalsIgnoreCase(userGroup) ? "paymentApiA" : "paymentApiB");
+        String group = normalizeUserGroup(userGroup);
+        return group(cfg, "paymentApi" + group);
+    }
+
+    public static String normalizeUserGroup(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (normalized.isEmpty() || normalized.length() > 32 || !normalized.matches("[\\p{L}\\p{N}_-]+")) {
+            throw new IllegalArgumentException("userGroup must be an existing site group");
+        }
+        return normalized;
     }
 
     public Map<String, Object> getSiteStrategy() {
@@ -252,7 +289,11 @@ public class CrawlerConfigService {
             scheduleConfigMapper.insert(config);
         }
         if (body.containsKey("cronExpression")) {
-            config.setCronExpression(String.valueOf(body.get("cronExpression")));
+            String expression = String.valueOf(body.get("cronExpression")).trim();
+            if (!CronExpression.isValidExpression(expression)) {
+                throw new IllegalArgumentException("Cron 表达式无效，请使用 Quartz 六段或七段格式");
+            }
+            config.setCronExpression(expression);
         }
         if (body.containsKey("enabled")) {
             config.setEnabled(Boolean.TRUE.equals(body.get("enabled")) || "1".equals(String.valueOf(body.get("enabled"))) ? 1 : 0);
@@ -382,10 +423,8 @@ public class CrawlerConfigService {
             "exchangeRate", 6.73,
             "rateFactor", 0.42,
             "leaderCommissionRate", 0.02,
-            "leaderConfig", new LinkedHashMap<>(Map.of(
-                "A", "A-黄伟",
-                "B", "B-李榕"
-            )),
+            "batchSiteCommissionRate", 0.02,
+            "leaderConfig", new LinkedHashMap<>(),
             "teacherMap", new LinkedHashMap<>(Map.of(
                 "A-贺国君", "-hgj",
                 "A-黄伟", "-hw",

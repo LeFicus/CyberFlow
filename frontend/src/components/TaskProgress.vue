@@ -1,7 +1,7 @@
 <template>
   <el-card v-if="task" class="task-progress" shadow="never">
     <div class="task-title">
-      <span>任务状态：<el-tag :type="tagType">{{ task.state }}</el-tag></span>
+      <span>任务状态：<el-tag :type="statusMeta.tone">{{ statusMeta.label }}</el-tag></span>
       <span class="task-id">{{ task.task_id }}</span>
     </div>
     <el-progress :percentage="percentage" :status="progressStatus" :stroke-width="12" />
@@ -13,11 +13,12 @@
 
 <script setup>
 import { computed } from 'vue'
+import { taskStatus } from '@/data/taskPresentation'
 
 const props = defineProps({ task: { type: Object, default: null } })
 const percentage = computed(() => props.task?.state === 'SUCCESS' ? 100 : Math.max(0, Math.min(100, props.task?.progress || 0)))
 const progressStatus = computed(() => props.task?.state === 'SUCCESS' ? 'success' : props.task?.state === 'FAILED' ? 'exception' : '')
-const tagType = computed(() => props.task?.state === 'SUCCESS' ? 'success' : props.task?.state === 'FAILED' ? 'danger' : 'warning')
+const statusMeta = computed(() => taskStatus({ status: props.task?.state }))
 const defaultMessage = computed(() => props.task?.state === 'PENDING' ? '任务已下发，等待执行' : '正在执行')
 </script>
 

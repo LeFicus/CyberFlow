@@ -37,6 +37,7 @@ const sites = Array.from({ length: 53 }, (_, i) => ({
   username: 'admin',
   site_domain: domains[i % domains.length] + (i > 5 ? `/${i}` : ''),
   admin_name: adminNames[i % adminNames.length],
+  user_group: i % 2 === 0 ? 'A' : 'B',
   theme_name: themeNames[i % themeNames.length],
   product_category: categories[i % categories.length],
   created_at: datetime(random(1, 90)),
@@ -53,6 +54,7 @@ const orders = Array.from({ length: 127 }, (_, i) => ({
   customer_ip_country: ['US', 'CN', 'UK', 'DE', 'FR'][i % 5],
   shipping_email: `user${i}@example.com`,
   admin_name: adminNames[i % adminNames.length],
+  user_group: i % 2 === 0 ? 'A' : 'B',
   theme_name: themeNames[i % themeNames.length],
   product_category: categories[i % categories.length],
   productInfo: [{
@@ -141,6 +143,14 @@ function getOrdersByDomain(domain, params = {}) {
 }
 
 export default {
+  siteGroups: () => ({
+    code: 200,
+    msg: 'success',
+    data: ['A', 'B'].map(group => ({
+      user_group: group,
+      site_count: sites.filter(site => site.user_group === group).length,
+    })),
+  }),
   /**
    * 概览统计数据
    * @returns {Object} { code, msg, data: { total_sites, total_orders, total_products, today_orders, today_amount } }
@@ -174,6 +184,7 @@ export default {
     const size = parseInt(params.size) || 10
     const start = (page - 1) * size
     let matched = sites
+    if (params.userGroup) matched = matched.filter(item => item.user_group === params.userGroup)
     if (params.adminName) matched = matched.filter(item => item.admin_name?.includes(params.adminName))
     if (params.domain) matched = matched.filter(item => item.site_domain?.toLowerCase().includes(params.domain.toLowerCase()))
     if (params.startDate) matched = matched.filter(item => item.created_at?.slice(0, 10) >= params.startDate)
@@ -191,6 +202,7 @@ export default {
     const size = parseInt(params.size) || 10
     const start = (page - 1) * size
     let matched = orders
+    if (params.userGroup) matched = matched.filter(item => item.user_group === params.userGroup)
     if (params.orderId) matched = matched.filter(item => String(item.id).includes(params.orderId))
     if (params.adminName) matched = matched.filter(item => item.admin_name?.includes(params.adminName))
     if (params.domain) matched = matched.filter(item => item.product_host?.toLowerCase().includes(params.domain.toLowerCase()))

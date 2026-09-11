@@ -70,9 +70,9 @@ class OrderConsumer(BaseConsumer):
         """
         task_id = message["task_id"]
         payload = message["payload"]
-        user_group = str(payload.get("user_group") or payload.get("userGroup") or "").strip().upper()
-        if user_group not in {"A", "B"}:
-            raise ValueError("Order crawl task requires user_group A or B")
+        user_group = str(payload.get("user_group") or payload.get("userGroup") or "").strip()
+        if not user_group or len(user_group) > 32 or not user_group.replace("_", "").replace("-", "").isalnum():
+            raise ValueError("Order crawl task requires an existing site group")
         # 提取增量游标——上次爬取的最大订单 ID，默认为 "0"
         since_order_id = payload.get("cursor", {}).get("max_order_id", "0")
 
@@ -171,9 +171,11 @@ class OrderConsumer(BaseConsumer):
                     admin_name = ""
                     theme_name = ""
                     product_category = ""
+                    site_tag = 0
+                    site_user_group = ""
                     if product_host:
                         await cur.execute(
-                            """SELECT admin_name, theme_name, product_category
+                            """SELECT admin_name, user_group, theme_name, product_category, site_tag
                                FROM site_info
                                WHERE LOWER(CASE WHEN LEFT(site_domain, 4) = 'www.'
                                    THEN SUBSTRING(site_domain, 5) ELSE site_domain END)=%s
@@ -182,13 +184,13 @@ class OrderConsumer(BaseConsumer):
                         )
                         site_row = await cur.fetchone()
                         if site_row:
-                            admin_name, theme_name, product_category = site_row
+                            admin_name, site_user_group, theme_name, product_category, site_tag = site_row
                             site_matched += 1
 
-                    # A/B is the payment API source selected for this crawl.
-                    # A site's management group must not move an A-source order
-                    # into the B-source request result (or vice versa).
-                    effective_user_group = user_group
+                    # The site master table is the source of truth for group display.
+                    # The task group is only a fallback for an order whose site has not
+                    # yet been mirrored locally.
+                    effective_user_group = site_user_group or user_group
                     product_info = self._product_info_json(r.get("productInfo", r.get("product_info")))
                     raw_shipping_address = r.get("shippingAddress", r.get("shipping_address"))
                     shipping_address = shipping_address_json(raw_shipping_address)
@@ -207,8 +209,8 @@ class OrderConsumer(BaseConsumer):
                         """INSERT INTO orders (id, amount, currency, create_time, product_host,
                            pay_status_text, card_number, customer_ip_country, shipping_email,
                            shipping_address, is_valid, admin_name, user_group, theme_name,
-                           product_category, product_info)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           product_category, site_tag, product_info)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                            ON DUPLICATE KEY UPDATE
                            amount=VALUES(amount), currency=VALUES(currency),
                            create_time=VALUES(create_time), product_host=VALUES(product_host),
@@ -223,6 +225,7 @@ class OrderConsumer(BaseConsumer):
                            is_valid=COALESCE(VALUES(is_valid), is_valid),
                            admin_name=VALUES(admin_name), user_group=VALUES(user_group),
                            theme_name=VALUES(theme_name), product_category=VALUES(product_category),
+                           site_tag=VALUES(site_tag),
                            product_info=CASE
                                WHEN JSON_LENGTH(VALUES(product_info)) > 0 THEN VALUES(product_info)
                                ELSE product_info
@@ -233,7 +236,7 @@ class OrderConsumer(BaseConsumer):
                          r.get("cardNumber") or r.get("card_no") or r.get("card_number"),
                          customer_country, shipping_email, shipping_address,
                          self._optional_int(r.get("is_valid")), admin_name, effective_user_group,
-                         theme_name, product_category, product_info),
+                         theme_name, product_category, site_tag, product_info),
                     )
                     saved_count += 1
                 for group, order_day in sorted(affected_days):

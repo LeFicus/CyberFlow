@@ -4,7 +4,12 @@
       <template #header>
         <div class="card-header">
           <span>站点采集</span>
-          <el-button type="primary" :loading="triggering" @click="handleTrigger">立即采集</el-button>
+          <div class="header-actions">
+            <el-tag v-if="configDirty" type="warning">有未保存修改</el-tag>
+            <el-button type="primary" :loading="triggering" :disabled="taskActive" @click="handleTrigger">
+            {{ taskActive ? '采集中' : '立即采集' }}
+            </el-button>
+          </div>
         </div>
       </template>
 
@@ -38,7 +43,7 @@
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" :loading="saving" @click="handleSave">保存配置</el-button>
+          <el-button type="primary" :loading="saving" :disabled="!configDirty" @click="handleSave">保存配置</el-button>
         </el-form-item>
       </el-form>
 
@@ -48,7 +53,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import TaskProgress from '@/components/TaskProgress.vue'
 import { useTaskProgress } from '@/composables/useTaskProgress'
@@ -60,7 +65,9 @@ import {
 
 const saving = ref(false)
 const triggering = ref(false)
+const savedSnapshot = ref('')
 const { task, track } = useTaskProgress()
+const taskActive = computed(() => ['PENDING', 'RUNNING', 'PAUSED'].includes(task.value?.state))
 
 const form = reactive({
   adminApi: { baseUrl: '', username: '', password: '', verifySsl: true },
@@ -71,14 +78,24 @@ const form = reactive({
     pageSize: 100,
   },
 })
+const configDirty = computed(() => savedSnapshot.value !== JSON.stringify(form))
 
 async function loadConfig() {
   const configRes = await getCrawlerConfig()
   Object.assign(form.adminApi, configRes.data?.adminApi || {})
   Object.assign(form.siteStrategy, configRes.data?.siteStrategy || {})
+  savedSnapshot.value = JSON.stringify(form)
 }
 
 async function handleSave() {
+  if (!form.adminApi.baseUrl || !/^https?:\/\//i.test(form.adminApi.baseUrl.trim())) {
+    ElMessage.error('Base URL 必须以 http:// 或 https:// 开头')
+    return
+  }
+  if (Number(form.siteStrategy.pageSize) < 20 || Number(form.siteStrategy.pageSize) > 500) {
+    ElMessage.error('分页大小必须在 20 到 500 之间')
+    return
+  }
   saving.value = true
   try {
     await updateCrawlerConfig({
@@ -93,6 +110,7 @@ async function handleSave() {
 }
 
 async function handleTrigger() {
+  if (taskActive.value) return
   triggering.value = true
   try {
     const res = await triggerSiteCrawler()
@@ -116,6 +134,7 @@ onMounted(loadConfig)
   align-items: center;
   justify-content: space-between;
 }
+.header-actions { display: flex; align-items: center; gap: 10px; }
 
 .config-form {
   max-width: 640px;

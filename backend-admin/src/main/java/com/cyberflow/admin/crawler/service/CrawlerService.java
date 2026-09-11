@@ -7,6 +7,7 @@ import com.cyberflow.admin.crawler.task.entity.CrawlCursor;
 import com.cyberflow.admin.crawler.task.entity.TaskHistory;
 import com.cyberflow.admin.crawler.task.mapper.CrawlCursorMapper;
 import com.cyberflow.admin.crawler.task.service.TaskHistoryService;
+import com.cyberflow.admin.dashboard.mapper.SiteInfoMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,9 @@ public class CrawlerService {
     /** 爬取光标映射器 */
     private final CrawlCursorMapper cursorMapper;
 
+    /** Current database site groups are the only valid order-crawl groups. */
+    private final SiteInfoMapper siteInfoMapper;
+
     /**
      * 触发站点爬取任务。
      * <p>
@@ -52,6 +56,7 @@ public class CrawlerService {
      * @return 包含 task_id 和状态信息的 Map
      */
     public Map<String, Object> triggerSiteCrawler() {
+        rejectDuplicate("site_crawl", null);
         String lastUpdatedAt = cursorValue("site_crawler", LocalDateTime.now().minusDays(1).toString());
         String taskId = publisher.createTaskId();
         saveTaskHistory(taskId, "site_crawl", "manual", null);
@@ -77,6 +82,7 @@ public class CrawlerService {
      * @return 包含 task_id 和状态信息的 Map
      */
     public Map<String, Object> triggerSiteIndexCrawler() {
+        rejectDuplicate("site_index", null);
         String lastRecordedAt = cursorValue("site_index_crawler", LocalDateTime.now().minusDays(1).toString());
         String taskId = publisher.createTaskId();
         saveTaskHistory(taskId, "site_index", "manual", null);
@@ -103,6 +109,10 @@ public class CrawlerService {
      */
     public Map<String, Object> triggerOrderCrawler(String rawUserGroup) {
         String userGroup = normalizeUserGroup(rawUserGroup);
+        if (siteInfoMapper.countByUserGroup(userGroup) == 0) {
+            throw new IllegalArgumentException("Site group does not exist: " + userGroup);
+        }
+        rejectDuplicate("order_crawl", "group-" + userGroup);
         String maxOrderId = cursorValue(
             "order_crawler_" + userGroup,
             String.valueOf(crawlerConfigService.getOrderStrategy().getOrDefault("initialOrderId", "0"))
@@ -120,9 +130,13 @@ public class CrawlerService {
     }
 
     public Map<String, Object> triggerAllOrderCrawlers() {
-        Map<String, Object> groupA = triggerOrderCrawler("A");
-        Map<String, Object> groupB = triggerOrderCrawler("B");
-        return Map.of("A", groupA, "B", groupB, "status", "Both group tasks dispatched");
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        for (Map<String, Object> row : siteInfoMapper.listDistinctGroups()) {
+            String group = String.valueOf(row.get("user_group"));
+            result.put(group, triggerOrderCrawler(group));
+        }
+        result.put("status", "All current site-group tasks dispatched");
+        return result;
     }
 
     /**
@@ -227,10 +241,12 @@ public class CrawlerService {
     }
 
     private static String normalizeUserGroup(String value) {
-        String normalized = value == null ? "" : value.trim().toUpperCase();
-        if (!java.util.Set.of("A", "B").contains(normalized)) {
-            throw new IllegalArgumentException("userGroup must be A or B");
+        return CrawlerConfigService.normalizeUserGroup(value);
+    }
+
+    private void rejectDuplicate(String type, String triggeredBy) {
+        if (taskHistoryService.hasActiveTask(type, triggeredBy)) {
+            throw new IllegalArgumentException("同一数据范围已有任务在执行或暂停，请等待任务结束后再试");
         }
-        return normalized;
     }
 }

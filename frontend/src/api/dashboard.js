@@ -14,6 +14,11 @@ export function getOverview(params) {
   return request.get('/admin/dashboard/overview', { params })
 }
 
+/** 获取当前数据库 site_info 中实际存在的站点分组。 */
+export function getSiteGroups() {
+  return request.get('/admin/dashboard/site-groups')
+}
+
 /**
  * 获取图表趋势数据
  * @returns {Promise<Object>} 返回 order_trend, index_trend 等图表数据
@@ -45,7 +50,7 @@ export function getOrders(params) {
   return request.get('/admin/dashboard/orders', { params })
 }
 
-/** 管理员清空全部订单（包含 A/B 两个用户组）。 */
+/** 管理员清空全部订单（包含当前数据库中的全部站点分组）。 */
 export function clearAllOrders() {
   return request.delete('/admin/dashboard/orders/clear')
 }

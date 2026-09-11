@@ -111,7 +111,7 @@ public class TaskHistoryService {
      * @param pageSize 每页大小
      * @return 分页结果对象，包含 records、total、current 等字段
      */
-    public Page<TaskHistory> list(int pageNum, int pageSize, String type) {
+    public Page<TaskHistory> list(int pageNum, int pageSize, String type, String status, String keyword) {
         Page<TaskHistory> page = new Page<>(pageNum, pageSize);
         QueryWrapper<TaskHistory> wrapper = new QueryWrapper<>();
         // 日志可能很大，列表接口不读取正文；按 taskId 查看时再单独获取。
@@ -119,8 +119,53 @@ public class TaskHistoryService {
         if (type != null && !type.isBlank() && !"all".equalsIgnoreCase(type)) {
             wrapper.eq("type", type.trim());
         }
+        if (status != null && !status.isBlank() && !"all".equalsIgnoreCase(status)) {
+            wrapper.eq("status", status.trim().toUpperCase());
+        }
+        if (keyword != null && !keyword.isBlank()) {
+            wrapper.like("task_id", keyword.trim());
+        }
         wrapper.orderByDesc("created_at");
         return taskHistoryMapper.selectPage(page, wrapper);
+    }
+
+    /**
+     * Build the lightweight operational snapshot used by both the schedule page
+     * and task history. It deliberately excludes log bodies and avoids loading a
+     * page of historical rows merely to discover the current state.
+     */
+    public Map<String, Object> overview() {
+        Map<String, Object> counts = taskHistoryMapper.selectOverviewCounts();
+        Map<String, Long> activeByType = new LinkedHashMap<>();
+        for (Map<String, Object> row : taskHistoryMapper.selectActiveCountsByType()) {
+            activeByType.put(String.valueOf(value(row, "type")), number(value(row, "activeCount", "activecount")));
+        }
+        Map<String, Long> activeByScope = new LinkedHashMap<>();
+        for (Map<String, Object> row : taskHistoryMapper.selectActiveOrderCountsByScope()) {
+            Object scope = value(row, "scope");
+            if (scope != null && !String.valueOf(scope).isBlank()) {
+                activeByScope.put(String.valueOf(scope), number(value(row, "activeCount", "activecount")));
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("total", number(value(counts, "total")));
+        result.put("active", number(value(counts, "activeCount", "activecount")));
+        result.put("successToday", number(value(counts, "successToday", "successtoday")));
+        result.put("failedToday", number(value(counts, "failedToday", "failedtoday")));
+        result.put("latestSuccessAt", taskHistoryMapper.selectLatestSuccessAt());
+        result.put("activeByType", activeByType);
+        result.put("activeByScope", activeByScope);
+        result.put("latestTasks", taskHistoryMapper.selectLatestTasksByType());
+        return result;
+    }
+
+    private static Object value(Map<String, Object> row, String... keys) {
+        if (row == null) return null;
+        for (String key : keys) {
+            if (row.containsKey(key)) return row.get(key);
+        }
+        return null;
     }
 
     /** Return independent totals for each crawler type for the task-history tabs. */
@@ -146,6 +191,17 @@ public class TaskHistoryService {
      */
     public void save(TaskHistory taskHistory) {
         taskHistoryMapper.insert(taskHistory);
+    }
+
+    /** Check for unfinished work before dispatching the same synchronization scope again. */
+    public boolean hasActiveTask(String type, String triggeredBy) {
+        QueryWrapper<TaskHistory> wrapper = new QueryWrapper<TaskHistory>()
+                .eq("type", type)
+                .in("status", List.of("PENDING", "RUNNING", "PAUSED"));
+        if (triggeredBy != null && !triggeredBy.isBlank()) {
+            wrapper.eq("triggered_by", triggeredBy);
+        }
+        return taskHistoryMapper.selectCount(wrapper) > 0;
     }
 
     /** Mark a task that could not be handed to RabbitMQ as failed. */

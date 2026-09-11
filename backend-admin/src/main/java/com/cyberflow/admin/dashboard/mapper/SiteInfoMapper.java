@@ -119,6 +119,14 @@ public interface SiteInfoMapper {
             "GROUP BY user_group ORDER BY user_group")
     List<Map<String, Object>> summarizeByGroup(@Param("ownerName") String ownerName);
 
+    @Select("SELECT TRIM(user_group) AS user_group, COUNT(*) AS site_count " +
+            "FROM site_info WHERE TRIM(COALESCE(user_group, '')) <> '' " +
+            "GROUP BY TRIM(user_group) ORDER BY TRIM(user_group)")
+    List<Map<String, Object>> listDistinctGroups();
+
+    @Select("SELECT COUNT(*) FROM site_info WHERE TRIM(user_group) = #{userGroup}")
+    long countByUserGroup(@Param("userGroup") String userGroup);
+
     /**
      * 按模板名称分组统计站点数量，结果按数量降序排列。
      *

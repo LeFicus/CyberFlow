@@ -59,6 +59,13 @@ public class DashboardController {
         return Result.ok(dashboardService.getOverview(userGroup));
     }
 
+    /** Return the groups that actually exist in the current site master table. */
+    @GetMapping("/site-groups")
+    @PreAuthorize("hasAnyAuthority('dashboard:overview', 'dashboard:site:view', 'dashboard:order:view', 'crawler:order:start')")
+    public Result<List<Map<String, Object>>> siteGroups() {
+        return Result.ok(dashboardService.getSiteGroups());
+    }
+
     /**
      * 分页查询站点列表，支持按管理员名称或模板名称过滤。
      *

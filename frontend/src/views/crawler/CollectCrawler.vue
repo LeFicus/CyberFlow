@@ -3,7 +3,9 @@
     <template #header>
       <div class="card-header">
         <span>站点收录统计</span>
-        <el-button type="primary" :loading="loading" @click="handleTrigger">立即统计</el-button>
+        <el-button type="primary" :loading="loading" :disabled="taskActive" @click="handleTrigger">
+          {{ taskActive ? '统计中' : '立即统计' }}
+        </el-button>
       </div>
     </template>
 
@@ -14,7 +16,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import TaskProgress from '@/components/TaskProgress.vue'
 import { useTaskProgress } from '@/composables/useTaskProgress'
@@ -22,8 +24,10 @@ import { triggerCollectCrawler } from '@/api/crawler'
 
 const loading = ref(false)
 const { task, track } = useTaskProgress()
+const taskActive = computed(() => ['PENDING', 'RUNNING', 'PAUSED'].includes(task.value?.state))
 
 async function handleTrigger() {
+  if (taskActive.value) return
   loading.value = true
   try {
     const res = await triggerCollectCrawler()

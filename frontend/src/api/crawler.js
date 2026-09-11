@@ -85,6 +85,11 @@ export function getTaskSummary() {
   return request.get('/admin/crawler/task-history/summary')
 }
 
+/** 获取数据同步控制台所需的轻量任务快照。 */
+export function getTaskOverview() {
+  return request.get('/admin/crawler/task-history/overview')
+}
+
 export function pauseTask(taskId) {
   return request.post(`/admin/crawler/task-history/tasks/${taskId}/pause`)
 }

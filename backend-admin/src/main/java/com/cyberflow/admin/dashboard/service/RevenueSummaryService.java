@@ -59,7 +59,9 @@ public class RevenueSummaryService {
             person.validOrders += account.validOrders;
             person.successfulOrders += account.successfulOrders;
             person.siteCount += account.siteCount;
+            person.batchSiteCount += account.batchSiteCount;
             person.originalAmount = person.originalAmount.add(account.originalAmount);
+            person.batchSiteAmount = person.batchSiteAmount.add(account.batchSiteAmount);
             if (!isTeacherSuffixAccount(account.adminName, teacherMap)) {
                 person.commissionEligible = true;
             }
@@ -83,6 +85,7 @@ public class RevenueSummaryService {
                     if (mentor == null) mentor = people.get(realName(rule.getKey(), mergeMap));
                     if (mentor != null) {
                         mentor.syncedAmount = mentor.syncedAmount.add(account.originalAmount);
+                        mentor.syncedBatchSiteAmount = mentor.syncedBatchSiteAmount.add(account.batchSiteAmount);
                         mentor.commissionEligible = true;
                     }
                     break;
@@ -93,6 +96,11 @@ public class RevenueSummaryService {
         List<Map<String, Object>> personal = new ArrayList<>();
         for (PersonStats person : people.values()) {
             BigDecimal successAmount = person.originalAmount.add(person.syncedAmount);
+            BigDecimal batchSiteAmount = person.batchSiteAmount.add(person.syncedBatchSiteAmount);
+            BigDecimal regularAmount = successAmount.subtract(batchSiteAmount).max(BigDecimal.ZERO);
+            BigDecimal regularCommission = commission(regularAmount, config);
+            BigDecimal batchCommission = fixedCommission(batchSiteAmount, config, "batchSiteCommissionRate", "0.02");
+            BigDecimal totalCommission = regularCommission.add(batchCommission);
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("user_group", String.join(",", person.groups));
             item.put("real_name", person.realName);
@@ -105,11 +113,19 @@ public class RevenueSummaryService {
             item.put("synced_amount", money(person.syncedAmount));
             item.put("successful_amount", money(successAmount));
             item.put("site_count", person.siteCount);
+            item.put("batch_site_count", person.batchSiteCount);
+            item.put("batch_site_amount", money(batchSiteAmount));
+            item.put("regular_commission_rmb", person.commissionEligible ? money(regularCommission) : null);
+            item.put("batch_site_commission_rmb", person.commissionEligible ? money(batchCommission) : null);
             item.put("conversion_rate", percent(person.totalOrders, person.siteCount));
-            item.put("commission_rmb", person.commissionEligible ? money(commission(successAmount, config)) : null);
+            item.put("commission_rmb", person.commissionEligible ? money(totalCommission) : null);
+            item.put("total_member_commission_rmb", person.commissionEligible ? money(totalCommission) : null);
             personal.add(item);
         }
         sortByDeduplicatedOrders(personal);
+        BigDecimal totalMemberCommission = personal.stream()
+                .map(row -> number(row.get("total_member_commission_rmb")))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // Personal data remains owner-scoped, but a non-admin needs the
         // aggregate for their whole group in order to see a meaningful leader
@@ -128,7 +144,10 @@ public class RevenueSummaryService {
                 groupOrderTotals.put(text(row, "user_group"), row);
             }
 
-            for (String group : List.of("A", "B")) {
+            Set<String> currentGroups = new TreeSet<>(groupOrderTotals.keySet());
+            leaderAccounts.values().stream().map(account -> account.group)
+                    .filter(group -> group != null && !group.isBlank()).forEach(currentGroups::add);
+            for (String group : currentGroups) {
                 if (userGroup != null && !userGroup.equals(group)) continue;
                 if (visibleLeaderGroup != null && !visibleLeaderGroup.equals(group)) continue;
                 List<AccountStats> members = leaderAccounts.values().stream().filter(a -> group.equals(a.group)).toList();
@@ -220,8 +239,10 @@ public class RevenueSummaryService {
                 "exchange_rate", decimal(config.get("exchangeRate"), "6.73"),
                 "rate_factor", decimal(config.get("rateFactor"), "0.42"),
                 "leader_commission_rate", decimal(config.get("leaderCommissionRate"), "0.02"),
+                "batch_site_commission_rate", decimal(config.get("batchSiteCommissionRate"), "0.02"),
                 "commission_tiers", config.getOrDefault("commissionTiers", List.of())
         ));
+        result.put("total_member_commission_rmb", money(totalMemberCommission));
         result.put("personal_performance", personal);
         result.put("leader_summary", leaders);
         result.put("monthly_conversion", monthly);
@@ -247,12 +268,14 @@ public class RevenueSummaryService {
             stats.validOrders = number(row.get("valid_orders")).longValue();
             stats.successfulOrders = number(row.get("successful_orders")).longValue();
             stats.originalAmount = number(row.get("original_amount"));
+            stats.batchSiteAmount = number(row.get("batch_site_amount"));
         }
         for (Map<String, Object> row : revenueMapper.adminSiteStats(
                 userGroup, ownerName, teacherSuffixes, siteCreatedBefore)) {
             AccountStats stats = accounts.computeIfAbsent(text(row, "admin_name"), AccountStats::new);
             stats.group = text(row, "user_group");
             stats.siteCount = number(row.get("site_count")).longValue();
+            stats.batchSiteCount = number(row.get("batch_site_count")).longValue();
         }
         return accounts;
     }
@@ -284,7 +307,7 @@ public class RevenueSummaryService {
     private static String resolveGroup(Map<String, AccountStats> accounts) {
         return accounts.values().stream()
                 .map(account -> account.group)
-                .filter(group -> Set.of("A", "B").contains(group))
+                .filter(group -> group != null && !group.isBlank())
                 .distinct()
                 .findFirst()
                 .orElse(null);
@@ -334,6 +357,13 @@ public class RevenueSummaryService {
         return BigDecimal.ZERO;
     }
 
+    private BigDecimal fixedCommission(BigDecimal usd, Map<String, Object> config,
+                                       String rateKey, String fallbackRate) {
+        return usd.multiply(decimal(config.get("exchangeRate"), "6.73"))
+                .multiply(decimal(config.get("rateFactor"), "0.42"))
+                .multiply(decimal(config.get(rateKey), fallbackRate));
+    }
+
     private static String realName(String adminName, Map<String, List<String>> mergeMap) {
         for (Map.Entry<String, List<String>> entry : mergeMap.entrySet()) {
             if (entry.getValue().contains(adminName)) return entry.getKey();
@@ -359,8 +389,10 @@ public class RevenueSummaryService {
 
     private static String normalizeGroup(String value) {
         if (value == null || value.isBlank() || "ALL".equalsIgnoreCase(value)) return null;
-        String group = value.trim().toUpperCase(Locale.ROOT);
-        if (!Set.of("A", "B").contains(group)) throw new IllegalArgumentException("userGroup must be A, B or empty");
+        String group = value.trim();
+        if (group.length() > 32 || !group.matches("[\\p{L}\\p{N}_-]+")) {
+            throw new IllegalArgumentException("userGroup must be an existing site group or empty");
+        }
         return group;
     }
 
@@ -404,7 +436,9 @@ public class RevenueSummaryService {
         long validOrders;
         long successfulOrders;
         long siteCount;
+        long batchSiteCount;
         BigDecimal originalAmount = BigDecimal.ZERO;
+        BigDecimal batchSiteAmount = BigDecimal.ZERO;
         AccountStats(String adminName) { this.adminName = adminName; }
     }
 
@@ -416,8 +450,11 @@ public class RevenueSummaryService {
         long validOrders;
         long successfulOrders;
         long siteCount;
+        long batchSiteCount;
         BigDecimal originalAmount = BigDecimal.ZERO;
         BigDecimal syncedAmount = BigDecimal.ZERO;
+        BigDecimal batchSiteAmount = BigDecimal.ZERO;
+        BigDecimal syncedBatchSiteAmount = BigDecimal.ZERO;
         boolean commissionEligible;
         PersonStats(String realName) { this.realName = realName; }
     }

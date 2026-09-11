@@ -53,11 +53,14 @@
       <div class="panel-heading revenue-heading">
         <div><h2>收入转化与提成</h2><p>按 monthly_revenue_conversion.py 口径实时汇总</p></div>
         <div class="revenue-rules">
+          <el-button text size="small" :loading="revenueLoading" @click="loadDashboard">刷新统计</el-button>
           <div class="revenue-date-control"><span>订单统计</span><el-date-picker v-model="revenueDateRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" class="revenue-date" @change="loadDashboard" /></div>
           <div class="revenue-date-control"><span>域名申请月份</span><el-date-picker v-model="siteCreatedMonth" type="month" value-format="YYYY-MM" placeholder="选择申请月份" class="revenue-month" @change="loadDashboard" /></div>
           <span>汇率 {{ revenueParameters.exchange_rate || '—' }}</span>
           <span>折算系数 {{ revenueParameters.rate_factor || '—' }}</span>
           <span>组长比例 {{ formatRate(revenueParameters.leader_commission_rate) }}</span>
+          <span>批量站点比例 {{ formatRate(revenueParameters.batch_site_commission_rate) }}</span>
+          <span>组员总提成 {{ formatCommission(revenue.total_member_commission_rmb) }}</span>
         </div>
       </div>
       <el-tabs v-model="revenueTab" class="revenue-tabs">
@@ -72,7 +75,11 @@
             <el-table-column label="原成交金额" min-width="120" align="right"><template #default="{ row }">{{ formatMoney(row.original_amount) }}</template></el-table-column>
             <el-table-column label="实习生同步" min-width="115" align="right"><template #default="{ row }">{{ formatMoney(row.synced_amount) }}</template></el-table-column>
             <el-table-column label="成功金额" min-width="115" align="right"><template #default="{ row }">{{ formatMoney(row.successful_amount) }}</template></el-table-column>
-            <el-table-column label="个人提成(RMB)" min-width="135" align="right"><template #default="{ row }"><strong class="commission-value">{{ formatCommission(row.commission_rmb) }}</strong></template></el-table-column>
+            <el-table-column label="批量站点" width="90" align="right" prop="batch_site_count" />
+            <el-table-column label="批量成交额" min-width="115" align="right"><template #default="{ row }">{{ formatMoney(row.batch_site_amount) }}</template></el-table-column>
+            <el-table-column label="普通提成" min-width="115" align="right"><template #default="{ row }">{{ formatCommission(row.regular_commission_rmb) }}</template></el-table-column>
+            <el-table-column :label="`批量提成(${formatRate(revenueParameters.batch_site_commission_rate)})`" min-width="135" align="right"><template #default="{ row }">{{ formatCommission(row.batch_site_commission_rmb) }}</template></el-table-column>
+            <el-table-column label="组员总提成(RMB)" min-width="145" align="right"><template #default="{ row }"><strong class="commission-value">{{ formatCommission(row.total_member_commission_rmb) }}</strong></template></el-table-column>
           </el-table>
         </el-tab-pane>
         <el-tab-pane v-if="canViewLeaderSummary" label="组长汇总" name="leaders">
@@ -147,6 +154,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { getCharts, getOverview, getRevenueSummary } from '@/api/dashboard'
+import { useSiteGroups } from '@/composables/useSiteGroups'
 
 use([CanvasRenderer, LineChart, GridComponent, LegendComponent, TooltipComponent])
 const router = useRouter()
@@ -154,6 +162,7 @@ const userStore = useUserStore()
 const overview = ref({})
 const charts = ref({})
 const revenue = ref({})
+const revenueLoading = ref(false)
 const revenueTab = ref('personal')
 const dateKey = date => {
   const year = date.getFullYear()
@@ -169,7 +178,7 @@ const currentMonthRange = () => {
 const revenueDateRange = ref(currentMonthRange())
 const siteCreatedMonth = ref(currentMonthRange()[0].slice(0, 7))
 const userGroup = ref('')
-const groupOptions = [{ label: '全部', value: '' }, { label: 'A组', value: 'A' }, { label: 'B组', value: 'B' }]
+const { groupOptions, loadSiteGroups } = useSiteGroups()
 const userRoles = computed(() => userStore.userInfo?.roles || [])
 const isAdmin = computed(() => userRoles.value.some(role => String(role).toUpperCase() === 'ROLE_ADMIN'))
 const canViewLeaderSummary = computed(() => isAdmin.value || userRoles.value.some(role => String(role).toUpperCase() === 'ROLE_OPERATOR'))
@@ -241,6 +250,7 @@ const adminRanking = computed(() => {
   const max = Math.max(...source.map(item => toNumber(item.count)), 1)
   return source.map(item => ({ name: item.admin_name || '未分配', count: toNumber(item.count), percent: (toNumber(item.count) / max) * 100 }))
 })
+let dashboardRequestId = 0
 const orderTrendOption = computed(() => ({
   animationDuration: 650,
   grid: { left: 5, right: 8, top: 38, bottom: 4, containLabel: true },
@@ -258,20 +268,26 @@ const orderTrendOption = computed(() => ({
 }))
 
 async function loadDashboard() {
+  const requestId = ++dashboardRequestId
+  revenueLoading.value = true
   const params = { userGroup: userGroup.value || undefined }
   const revenueParams = { ...params, startDate: revenueDateRange.value?.[0], endDate: revenueDateRange.value?.[1], siteCreatedMonth: siteCreatedMonth.value }
-  const [overviewResponse, chartResponse] = await Promise.all([getOverview(params), getCharts(params)])
-  overview.value = overviewResponse.data || {}
-  charts.value = chartResponse.data || {}
-  try {
-    const revenueResponse = await getRevenueSummary(revenueParams)
-    revenue.value = revenueResponse.data || {}
-  } catch {
-    revenue.value = {}
-  }
+  const [overviewResult, chartResult, revenueResult] = await Promise.allSettled([
+    getOverview(params),
+    getCharts(params),
+    getRevenueSummary(revenueParams),
+  ])
+  if (requestId !== dashboardRequestId) return
+  if (overviewResult.status === 'fulfilled') overview.value = overviewResult.value.data || {}
+  if (chartResult.status === 'fulfilled') charts.value = chartResult.value.data || {}
+  revenue.value = revenueResult.status === 'fulfilled' ? revenueResult.value.data || {} : {}
+  revenueLoading.value = false
 }
 
-onMounted(loadDashboard)
+onMounted(async () => {
+  await loadSiteGroups()
+  await loadDashboard()
+})
 </script>
 
 <style scoped>

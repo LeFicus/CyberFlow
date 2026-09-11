@@ -9,7 +9,7 @@
           <el-form-item label="站点域名"><el-input v-model="filters.domain" clearable placeholder="输入域名关键词" @keyup.enter="search" /></el-form-item>
           <el-form-item label="建站者"><el-input v-model="filters.adminName" clearable placeholder="姓名或账号" @keyup.enter="search" /></el-form-item>
           <el-form-item label="服务器"><el-input v-model="filters.serverName" clearable placeholder="名称或 IP" @keyup.enter="search" /></el-form-item>
-          <el-form-item v-if="isAdmin" label="分组"><el-select v-model="filters.userGroup" clearable placeholder="全部分组"><el-option value="A" label="A组" /><el-option value="B" label="B组" /></el-select></el-form-item>
+          <el-form-item v-if="isAdmin" label="分组"><el-select v-model="filters.userGroup" clearable placeholder="全部分组"><el-option v-for="option in groupOptions.slice(1)" :key="option.value" :value="option.value" :label="option.label" /></el-select></el-form-item>
         </div>
         <div v-if="advanced" class="filter-grid">
           <el-form-item label="主题"><el-input v-model="filters.themeName" clearable /></el-form-item>
@@ -50,8 +50,11 @@ import { ElMessage } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
 import { exportSiteIndexes, getSiteIndexes } from '@/api/dashboard'
 import { useUserStore } from '@/store/user'
+import { useSiteGroups } from '@/composables/useSiteGroups'
 const route=useRoute(), router=useRouter(), user=useUserStore()
 const isAdmin=computed(() => user.userInfo?.roles?.includes('ROLE_ADMIN'))
+const { groupOptions, loadSiteGroups } = useSiteGroups()
+loadSiteGroups()
 const dimension=computed(() => route.path.endsWith('/builders') ? 'builder' : route.path.endsWith('/servers') ? 'server' : 'site')
 const title=computed(() => ({site:'站点明细',builder:'建站者汇总',server:'服务器汇总'}[dimension.value]))
 const drilled=computed(() => !!(route.query.builderUsername || route.query.serverIp || route.query.serverNameExact))

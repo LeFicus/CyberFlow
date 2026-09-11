@@ -137,7 +137,7 @@
       <el-table-column prop="shipping_email" label="收货邮箱" width="180" />
       <el-table-column prop="admin_name" label="管理员" width="90" />
       <el-table-column label="用户组" width="86" align="center">
-        <template #default="{ row }"><el-tag v-if="row.user_group" :type="row.user_group === 'A' ? 'primary' : 'success'">{{ row.user_group }}组</el-tag><span v-else>—</span></template>
+        <template #default="{ row }"><el-tag v-if="row.user_group" type="primary">{{ row.user_group }}组</el-tag><span v-else>—</span></template>
       </el-table-column>
       <el-table-column prop="create_time" label="创建时间" width="180" />
     </el-table>
@@ -159,6 +159,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOrders, clearAllOrders } from '@/api/dashboard'
 import { useUserStore } from '@/store/user'
 import { normalizeOrder } from '@/utils/orderProducts'
+import { useSiteGroups } from '@/composables/useSiteGroups'
 
 /** 表格 loading 状态 */
 const loading = ref(false)
@@ -174,7 +175,7 @@ const clearingOrders = ref(false)
 const userStore = useUserStore()
 /** 筛选条件 */
 const summary = ref({})
-const groupOptions = [{ label: '全部', value: '' }, { label: 'A组', value: 'A' }, { label: 'B组', value: 'B' }]
+const { groupOptions, loadSiteGroups } = useSiteGroups()
 const isAdmin = computed(() => (userStore.userInfo?.roles || []).some(role => String(role).toUpperCase() === 'ROLE_ADMIN'))
 const filters = reactive({ userGroup: '', orderId: '', domain: '', adminName: '', payStatus: '', currency: '', country: '', dateRange: [] })
 const payStatusOptions = ['已支付', '支付异常', '支付失败', '待支付', '退款', '已取消']
@@ -245,7 +246,7 @@ async function handleClearAllOrders() {
   if (!isAdmin.value || total.value === 0) return
   try {
     await ElMessageBox.confirm(
-      `将永久删除全部 ${total.value.toLocaleString('en-US')} 条订单（包含 A/B 两个用户组），该操作不可恢复，确定继续吗？`,
+      `将永久删除全部 ${total.value.toLocaleString('en-US')} 条订单（包含当前数据库全部站点分组），该操作不可恢复，确定继续吗？`,
       '清空全部订单',
       { type: 'warning', confirmButtonText: '确认清空', cancelButtonText: '取消' },
     )
@@ -264,7 +265,10 @@ async function handleClearAllOrders() {
   }
 }
 
-onMounted(fetchData)
+onMounted(async () => {
+  await loadSiteGroups()
+  await fetchData()
+})
 
 </script>
 <style scoped>

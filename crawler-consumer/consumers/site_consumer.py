@@ -381,24 +381,41 @@ class SiteConsumer(BaseConsumer):
                 for domain, r in normalized.items():
                     await cur.execute(
                         """INSERT INTO site_info (username, builder_username, site_domain, server_name, server_ip, admin_name, user_group,
-                           theme_name, product_category, last_submitted_at, domain_applied_at, created_at)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           theme_name, product_category, cat_names, site_tag, last_submitted_at, domain_applied_at, created_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                            ON DUPLICATE KEY UPDATE
                              builder_username=COALESCE(NULLIF(VALUES(builder_username), ''), builder_username),
                              server_name=COALESCE(NULLIF(VALUES(server_name), ''), server_name),
                              server_ip=COALESCE(NULLIF(VALUES(server_ip), ''), server_ip),
                              admin_name=VALUES(admin_name),
-                             user_group=VALUES(user_group),
+                             user_group=COALESCE(NULLIF(site_info.user_group, ''), NULLIF(VALUES(user_group), '')),
                              theme_name=VALUES(theme_name),
                              product_category=VALUES(product_category),
+                             cat_names=VALUES(cat_names),
+                             site_tag=VALUES(site_tag),
                              last_submitted_at=COALESCE(VALUES(last_submitted_at), last_submitted_at),
                              domain_applied_at=COALESCE(VALUES(domain_applied_at), domain_applied_at),
                              created_at=COALESCE(VALUES(created_at), created_at)""",
                         (r["username"], r.get("builder_username"), domain, r.get("server_name"),
                          r.get("server_ip"), r.get("admin_name"),
                          r.get("user_group"), r.get("theme_name"), r.get("product_category"),
+                         _json_array(r.get("cat_names")), r.get("site_tag", 0),
                          r.get("last_submitted_at"), r.get("domain_applied_at"), r.get("created_at")),
                     )
+                await cur.executemany(
+                    """UPDATE orders o
+                       JOIN site_info s ON LOWER(CASE WHEN LEFT(TRIM(o.product_host), 4)='www.'
+                           THEN SUBSTRING(TRIM(o.product_host), 5) ELSE TRIM(o.product_host) END)
+                           = LOWER(CASE WHEN LEFT(TRIM(s.site_domain), 4)='www.'
+                           THEN SUBSTRING(TRIM(s.site_domain), 5) ELSE TRIM(s.site_domain) END)
+                       SET o.admin_name=s.admin_name,
+                           o.theme_name=s.theme_name,
+                           o.product_category=s.product_category,
+                           o.site_tag=s.site_tag
+                       WHERE LOWER(CASE WHEN LEFT(TRIM(s.site_domain), 4)='www.'
+                           THEN SUBSTRING(TRIM(s.site_domain), 5) ELSE TRIM(s.site_domain) END)=%s""",
+                    [(domain,) for domain in normalized],
+                )
                 deleted_history, deleted_sites = await self._delete_inactive_sites(cur)
         return deleted_sites, deleted_history
 
@@ -443,3 +460,20 @@ def _as_bool(value) -> bool:
     if value is None:
         return False
     return str(value).lower() in {"1", "true", "yes", "on"}
+
+
+def _json_array(value) -> str:
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            value = []
+        else:
+            try:
+                value = json.loads(text)
+            except json.JSONDecodeError:
+                value = [part.strip() for part in text.split(",") if part.strip()]
+    if value is None:
+        value = []
+    if not isinstance(value, list):
+        value = [value]
+    return json.dumps(value, ensure_ascii=False)

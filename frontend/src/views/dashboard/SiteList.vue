@@ -98,10 +98,12 @@
       <el-table-column prop="server_name" label="所属服务器" min-width="190"><template #default="{ row }"><div>{{ row.server_name || '—' }}</div><small v-if="row.server_ip">{{ row.server_ip }}</small></template></el-table-column>
       <el-table-column label="建站者" width="150"><template #default="{ row }"><div>{{ row.builder_username || '—' }}</div><small>{{ row.admin_name || '—' }}</small></template></el-table-column>
       <el-table-column label="用户组" width="86" align="center">
-        <template #default="{ row }"><el-tag v-if="row.user_group" :type="row.user_group === 'A' ? 'primary' : 'success'">{{ row.user_group }}组</el-tag><span v-else>—</span></template>
+        <template #default="{ row }"><el-tag v-if="row.user_group" type="primary">{{ row.user_group }}组</el-tag><span v-else>—</span></template>
       </el-table-column>
       <el-table-column prop="theme_name" label="主题" width="100" />
       <el-table-column prop="product_category" label="产品分类" width="100" />
+      <el-table-column label="分类明细" min-width="150" show-overflow-tooltip><template #default="{ row }">{{ formatCatNames(row.cat_names) }}</template></el-table-column>
+      <el-table-column label="建站类型" width="100"><template #default="{ row }"><el-tag :type="Number(row.site_tag) === 1 ? 'warning' : Number(row.site_tag) === 2 ? 'info' : 'success'">{{ siteTagLabel(row.site_tag) }}</el-tag></template></el-table-column>
       <el-table-column prop="domain_applied_at" label="域名申请时间" width="180" />
       <el-table-column prop="created_at" label="建站时间" width="180" />
       <el-table-column label="操作" width="120" fixed="right">
@@ -164,6 +166,7 @@ import { LineChart, BarChart } from 'echarts/charts'
 import { TitleComponent, TooltipComponent, LegendComponent, GridComponent, DataZoomComponent } from 'echarts/components'
 import { getSites, getSiteIndexHistory, getOrdersByDomain } from '@/api/dashboard'
 import { useUserStore } from '@/store/user'
+import { useSiteGroups } from '@/composables/useSiteGroups'
 
 // 注册 ECharts 所需模块
 use([CanvasRenderer, LineChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, DataZoomComponent])
@@ -180,7 +183,13 @@ const size = ref(10)
 const total = ref(0)
 const userStore = useUserStore()
 /** 筛选条件 */
-const groupOptions = [{ label: '全部', value: '' }, { label: 'A组', value: 'A' }, { label: 'B组', value: 'B' }]
+const { groupOptions, loadSiteGroups } = useSiteGroups()
+const siteTagLabel = value => ({ 0: '单独建站', 1: '批量建站', 2: '复制站' }[Number(value)] || '单独建站')
+const formatCatNames = value => {
+  if (Array.isArray(value)) return value.join('、') || '—'
+  if (!value) return '—'
+  try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed.join('、') || '—' : String(parsed) } catch { return String(value) }
+}
 const isAdmin = computed(() => (userStore.userInfo?.roles || []).some(role => String(role).toUpperCase() === 'ROLE_ADMIN'))
 const filters = reactive({ userGroup: '', adminName: '', domain: '', serverName: '', themeName: '', productCategory: '', dateRange: [] })
 const activeFilterCount = computed(() => [filters.userGroup, filters.adminName, filters.domain, filters.serverName, filters.themeName, filters.productCategory, filters.dateRange?.length].filter(Boolean).length)
@@ -397,7 +406,10 @@ function resetFilters() {
   fetchData()
 }
 
-onMounted(fetchData)
+onMounted(async () => {
+  await loadSiteGroups()
+  await fetchData()
+})
 </script>
 
 <style scoped>

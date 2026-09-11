@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.Job;
 import org.quartz.JobExecutionContext;
+import org.quartz.DisallowConcurrentExecution;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -19,6 +20,7 @@ import java.time.LocalDateTime;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@DisallowConcurrentExecution
 public class SiteIndexCrawlJob implements Job {
 
     private final TaskMessagePublisher publisher;
@@ -30,6 +32,10 @@ public class SiteIndexCrawlJob implements Job {
     public void execute(JobExecutionContext context) {
         if (!crawlerConfigService.isScheduleEnabled("site_index")) {
             log.info("Site index schedule is disabled");
+            return;
+        }
+        if (taskHistoryService.hasActiveTask("site_index", null)) {
+            log.info("Site index already has an active task; skipping duplicate schedule dispatch");
             return;
         }
         CrawlCursor cursor = cursorMapper.selectOne(
