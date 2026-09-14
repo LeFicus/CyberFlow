@@ -98,12 +98,11 @@
       <el-table-column prop="server_name" label="所属服务器" min-width="190"><template #default="{ row }"><div>{{ row.server_name || '—' }}</div><small v-if="row.server_ip">{{ row.server_ip }}</small></template></el-table-column>
       <el-table-column label="建站者" width="150"><template #default="{ row }"><div>{{ row.builder_username || '—' }}</div><small>{{ row.admin_name || '—' }}</small></template></el-table-column>
       <el-table-column label="用户组" width="86" align="center">
-        <template #default="{ row }"><el-tag v-if="row.user_group" type="primary">{{ row.user_group }}组</el-tag><span v-else>—</span></template>
+        <template #default="{ row }"><el-tag v-if="row.user_group" effect="light" :style="groupTagStyle(row.user_group)">{{ row.user_group }}组</el-tag><span v-else>—</span></template>
       </el-table-column>
       <el-table-column prop="theme_name" label="主题" width="100" />
-      <el-table-column prop="product_category" label="产品分类" width="100" />
-      <el-table-column label="分类明细" min-width="150" show-overflow-tooltip><template #default="{ row }">{{ formatCatNames(row.cat_names) }}</template></el-table-column>
-      <el-table-column label="建站类型" width="100"><template #default="{ row }"><el-tag :type="Number(row.site_tag) === 1 ? 'warning' : Number(row.site_tag) === 2 ? 'info' : 'success'">{{ siteTagLabel(row.site_tag) }}</el-tag></template></el-table-column>
+      <el-table-column label="产品分类" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ formatSiteCategories(row.cat_names, row.product_category) }}</template></el-table-column>
+      <el-table-column label="建站类型" width="100"><template #default="{ row }"><el-tag :type="siteTagType(row.site_tag)">{{ siteTagLabel(row.site_tag) }}</el-tag></template></el-table-column>
       <el-table-column prop="domain_applied_at" label="域名申请时间" width="180" />
       <el-table-column prop="created_at" label="建站时间" width="180" />
       <el-table-column label="操作" width="120" fixed="right">
@@ -136,7 +135,7 @@
             <el-descriptions-item label="建站者">{{ drawerSite.builder_username || '—' }} / {{ drawerSite.admin_name || '—' }}</el-descriptions-item>
             <el-descriptions-item label="所属服务器">{{ drawerSite.server_name || '—' }}<span v-if="drawerSite.server_ip"> / {{ drawerSite.server_ip }}</span></el-descriptions-item>
             <el-descriptions-item label="主题">{{ drawerSite.theme_name }}</el-descriptions-item>
-            <el-descriptions-item label="产品分类">{{ drawerSite.product_category }}</el-descriptions-item>
+            <el-descriptions-item label="产品分类">{{ formatSiteCategories(drawerSite.cat_names, drawerSite.product_category) }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ drawerSite.created_at }}</el-descriptions-item>
             <el-descriptions-item label="Google 收录数">
               {{ latestIndex?.index_count ?? '-' }}
@@ -167,6 +166,7 @@ import { TitleComponent, TooltipComponent, LegendComponent, GridComponent, DataZ
 import { getSites, getSiteIndexHistory, getOrdersByDomain } from '@/api/dashboard'
 import { useUserStore } from '@/store/user'
 import { useSiteGroups } from '@/composables/useSiteGroups'
+import { formatSiteCategories, groupTagStyle, siteTagLabel, siteTagType } from '@/utils/sitePresentation'
 
 // 注册 ECharts 所需模块
 use([CanvasRenderer, LineChart, BarChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent, DataZoomComponent])
@@ -184,12 +184,6 @@ const total = ref(0)
 const userStore = useUserStore()
 /** 筛选条件 */
 const { groupOptions, loadSiteGroups } = useSiteGroups()
-const siteTagLabel = value => ({ 0: '单独建站', 1: '批量建站', 2: '复制站' }[Number(value)] || '单独建站')
-const formatCatNames = value => {
-  if (Array.isArray(value)) return value.join('、') || '—'
-  if (!value) return '—'
-  try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed.join('、') || '—' : String(parsed) } catch { return String(value) }
-}
 const isAdmin = computed(() => (userStore.userInfo?.roles || []).some(role => String(role).toUpperCase() === 'ROLE_ADMIN'))
 const filters = reactive({ userGroup: '', adminName: '', domain: '', serverName: '', themeName: '', productCategory: '', dateRange: [] })
 const activeFilterCount = computed(() => [filters.userGroup, filters.adminName, filters.domain, filters.serverName, filters.themeName, filters.productCategory, filters.dateRange?.length].filter(Boolean).length)

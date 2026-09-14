@@ -238,40 +238,51 @@ class SiteConsumer(BaseConsumer):
                 }
                 if not normalized:
                     raise RuntimeError("收录数据未匹配到已建站主数据，已停止入库")
+                for item in normalized.values():
+                    if not item.get("recorded_at"):
+                        raise RuntimeError("收录数据缺少有效的 ymd 更新时间，已停止入库")
+                    item["recorded_date"] = str(item["recorded_at"])[:10]
+                earliest_date = min(item["recorded_date"] for item in normalized.values())
+                latest_date = max(item["recorded_date"] for item in normalized.values())
                 await cur.execute(
                     """SELECT LOWER(CASE WHEN LEFT(TRIM(site_domain), 4)='www.'
-                           THEN SUBSTRING(TRIM(site_domain), 5) ELSE TRIM(site_domain) END)
+                           THEN SUBSTRING(TRIM(site_domain), 5) ELSE TRIM(site_domain) END),
+                              DATE_FORMAT(recorded_at, '%%Y-%%m-%%d')
                        FROM site_indexing_history
-                       WHERE recorded_at >= CURDATE()
-                         AND recorded_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)"""
+                       WHERE recorded_at >= %s
+                         AND recorded_at < DATE_ADD(%s, INTERVAL 1 DAY)""",
+                    (earliest_date, latest_date),
                 )
-                existing = {row[0] for row in await cur.fetchall()}
+                existing = {(row[0], row[1]) for row in await cur.fetchall()}
                 updates = [
                     (item["index_count"], item["product_count"], item.get("server_name"),
-                     item.get("server_ip"), item.get("last_submitted_at"), domain)
-                    for domain, item in normalized.items() if domain in existing
+                     item.get("server_ip"), item.get("last_submitted_at"), item["recorded_at"],
+                     domain, item["recorded_date"], item["recorded_date"])
+                    for domain, item in normalized.items()
+                    if (domain, item["recorded_date"]) in existing
                 ]
                 inserts = [
                     (domain, item["index_count"], item["product_count"], item.get("server_name"),
-                     item.get("server_ip"), item.get("last_submitted_at"))
-                    for domain, item in normalized.items() if domain not in existing
+                     item.get("server_ip"), item.get("last_submitted_at"), item["recorded_at"])
+                    for domain, item in normalized.items()
+                    if (domain, item["recorded_date"]) not in existing
                 ]
                 if updates:
                     await cur.executemany(
                         """UPDATE site_indexing_history
                            SET index_count=%s, product_count=%s, server_name=%s, server_ip=%s,
-                               last_submitted_at=%s, recorded_at=NOW()
+                               last_submitted_at=%s, recorded_at=%s
                            WHERE LOWER(CASE WHEN LEFT(TRIM(site_domain), 4)='www.'
                                THEN SUBSTRING(TRIM(site_domain), 5) ELSE TRIM(site_domain) END)=%s
-                             AND recorded_at >= CURDATE()
-                             AND recorded_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)""",
+                             AND recorded_at >= %s
+                             AND recorded_at < DATE_ADD(%s, INTERVAL 1 DAY)""",
                         updates,
                     )
                 if inserts:
                     await cur.executemany(
                         """INSERT INTO site_indexing_history
                            (site_domain, index_count, product_count, server_name, server_ip, last_submitted_at, recorded_at)
-                           VALUES (%s, %s, %s, %s, %s, %s, NOW())""",
+                           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                         inserts,
                     )
 

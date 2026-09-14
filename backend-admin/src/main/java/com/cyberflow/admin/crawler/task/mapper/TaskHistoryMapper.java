@@ -68,7 +68,7 @@ public interface TaskHistoryMapper extends BaseMapper<TaskHistory> {
             "SUM(content_length) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS endOffset " +
             "FROM task_crawl_log WHERE task_id=#{taskId}) " +
             "SELECT content, startOffset, endOffset FROM ordered_log " +
-            "WHERE endOffset &gt; #{startOffset} AND startOffset &lt; #{endOffset} ORDER BY id")
+            "WHERE endOffset > #{startOffset} AND startOffset < #{endOffset} ORDER BY id")
     List<Map<String, Object>> selectLogSegments(@Param("taskId") String taskId,
                                                  @Param("startOffset") long startOffset,
                                                  @Param("endOffset") long endOffset);

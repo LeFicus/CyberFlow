@@ -78,8 +78,15 @@ public interface OrderMapper {
                              @Param("startDate") String startDate,
                              @Param("endDate") String endDate);
 
-    @Select({"<script>", "SELECT * FROM orders", FILTER_SQL,
-            "ORDER BY create_time DESC LIMIT #{offset}, #{size}", "</script>"})
+    @Select({"<script>",
+            "SELECT o.*, s.cat_names, COALESCE(s.site_tag, o.site_tag) AS site_tag FROM",
+            "(SELECT * FROM orders", FILTER_SQL,
+            "ORDER BY create_time DESC LIMIT #{offset}, #{size}) o",
+            "LEFT JOIN site_info s ON LOWER(CASE WHEN LEFT(TRIM(s.site_domain), 4) = 'www.'",
+            "THEN SUBSTRING(TRIM(s.site_domain), 5) ELSE TRIM(s.site_domain) END) =",
+            "LOWER(CASE WHEN LEFT(TRIM(o.product_host), 4) = 'www.'",
+            "THEN SUBSTRING(TRIM(o.product_host), 5) ELSE TRIM(o.product_host) END)",
+            "ORDER BY o.create_time DESC", "</script>"})
     List<Map<String, Object>> listOrdersFiltered(@Param("orderId") String orderId,
                                                  @Param("adminName") String adminName,
                                                  @Param("userGroup") String userGroup,

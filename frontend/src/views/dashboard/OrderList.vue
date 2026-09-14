@@ -132,12 +132,18 @@
       <el-table-column prop="amount" label="金额" width="100" />
       <el-table-column prop="currency" label="币种" width="80" />
       <el-table-column prop="product_host" label="订单站点" min-width="160" />
+      <el-table-column label="分类明细" min-width="170" show-overflow-tooltip>
+        <template #default="{ row }">{{ formatSiteCategories(row.cat_names, row.product_category) }}</template>
+      </el-table-column>
+      <el-table-column label="建站类型" width="100" align="center">
+        <template #default="{ row }"><el-tag :type="siteTagType(row.site_tag)">{{ siteTagLabel(row.site_tag) }}</el-tag></template>
+      </el-table-column>
       <el-table-column prop="pay_status_text" label="支付状态" width="90" />
       <el-table-column prop="customer_ip_country" label="国家" width="70" />
       <el-table-column prop="shipping_email" label="收货邮箱" width="180" />
       <el-table-column prop="admin_name" label="管理员" width="90" />
       <el-table-column label="用户组" width="86" align="center">
-        <template #default="{ row }"><el-tag v-if="row.user_group" type="primary">{{ row.user_group }}组</el-tag><span v-else>—</span></template>
+        <template #default="{ row }"><el-tag v-if="row.user_group" effect="light" :style="groupTagStyle(row.user_group)">{{ row.user_group }}组</el-tag><span v-else>—</span></template>
       </el-table-column>
       <el-table-column prop="create_time" label="创建时间" width="180" />
     </el-table>
@@ -159,6 +165,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOrders, clearAllOrders } from '@/api/dashboard'
 import { useUserStore } from '@/store/user'
 import { normalizeOrder } from '@/utils/orderProducts'
+import { formatSiteCategories, groupTagStyle, siteTagLabel, siteTagType } from '@/utils/sitePresentation'
 import { useSiteGroups } from '@/composables/useSiteGroups'
 
 /** 表格 loading 状态 */

@@ -1,6 +1,7 @@
 package com.cyberflow.admin.crawler.task.service;
 
 import com.cyberflow.admin.crawler.task.mapper.TaskHistoryMapper;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.session.Configuration;
 import org.apache.ibatis.cursor.Cursor;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,19 @@ class TaskHistoryLogServiceTest {
         Configuration configuration = new Configuration();
         configuration.addMapper(TaskHistoryMapper.class);
         assertTrue(configuration.hasMapper(TaskHistoryMapper.class));
+    }
+
+    @Test
+    void logRangeSqlUsesRealComparisonOperators() throws Exception {
+        Select select = TaskHistoryMapper.class
+                .getMethod("selectLogSegments", String.class, long.class, long.class)
+                .getAnnotation(Select.class);
+        String sql = String.join(" ", select.value());
+
+        assertTrue(sql.contains("endOffset > #{startOffset}"));
+        assertTrue(sql.contains("startOffset < #{endOffset}"));
+        assertFalse(sql.contains("&gt;"));
+        assertFalse(sql.contains("&lt;"));
     }
 
     @Test

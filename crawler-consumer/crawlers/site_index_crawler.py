@@ -61,6 +61,17 @@ def normalize_datetime(value: object) -> str | None:
     return parsed.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def normalize_ymd(value: object) -> str | None:
+    """Normalize the response's ymd field without treating YYYYMMDD as Unix time."""
+    raw = str(value or "").strip()
+    if len(raw) == 8 and raw.isdigit():
+        try:
+            return datetime.strptime(raw, "%Y%m%d").strftime("%Y-%m-%d 00:00:00")
+        except ValueError:
+            return None
+    return normalize_datetime(value)
+
+
 class AsyncSiteIndexCrawler:
     """Fetch Google index and product counts from the configured admin API."""
 
@@ -116,7 +127,8 @@ class AsyncSiteIndexCrawler:
                 if str(item.get("site_status") or "").strip() != "2":
                     continue
                 domain = normalize_domain(item.get("site_domain") or item.get("domain"))
-                if domain:
+                recorded_at = normalize_ymd(item.get("ymd"))
+                if domain and recorded_at:
                     server_info = item.get("server_info") if isinstance(item.get("server_info"), dict) else {}
                     admin_info = item.get("admin_info") if isinstance(item.get("admin_info"), dict) else {}
                     records[domain] = {
@@ -130,7 +142,12 @@ class AsyncSiteIndexCrawler:
                         "user_group": str(admin_info.get("realname") or "").strip()[:1].upper(),
                         "theme_name": item.get("theme_name") or "",
                         "last_submitted_at": normalize_datetime(item.get("submit_time")),
+                        # ymd is the source system's snapshot update time.  Do
+                        # not replace it with the local request completion time.
+                        "recorded_at": recorded_at,
                     }
+                elif domain:
+                    logger.warning(f"Skipping indexing row without a valid ymd value: {domain}")
             if len(items) < self.page_size:
                 break
             page += 1
