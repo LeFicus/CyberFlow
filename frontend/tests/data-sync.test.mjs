@@ -40,8 +40,11 @@ test('order groups use independent activity scopes and revenue settings validate
   assert.match(revenue, /hasChanges/)
   assert.match(revenue, /buildPayload\(\)/)
   assert.match(revenue, /各比例必须在 0% 到 100% 之间/)
+  assert.match(revenue, /不足 5 万按 2%/)
+  assert.doesNotMatch(revenue, /form\.batchSiteCommissionRate/)
   assert.match(overview, /Promise\.allSettled/)
   assert.match(overview, /dashboardRequestId/)
+  assert.match(overview, /batch_site_commission_rate/)
 })
 
 test('individual crawler pages block repeat dispatch while a task is active', async () => {

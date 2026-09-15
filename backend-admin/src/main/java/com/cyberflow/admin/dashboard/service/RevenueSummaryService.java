@@ -21,6 +21,11 @@ public class RevenueSummaryService {
     private final CrawlerConfigService configService;
     private final DataScopeService dataScopeService;
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final BigDecimal BATCH_SITE_MIDDLE_THRESHOLD = new BigDecimal("50000");
+    private static final BigDecimal BATCH_SITE_HIGH_THRESHOLD = new BigDecimal("150000");
+    private static final BigDecimal BATCH_SITE_LOW_RATE = new BigDecimal("0.02");
+    private static final BigDecimal BATCH_SITE_MIDDLE_RATE = new BigDecimal("0.04");
+    private static final BigDecimal BATCH_SITE_HIGH_RATE = new BigDecimal("0.06");
 
     public Map<String, Object> summarize(String rawUserGroup, String startDate, String endDate) {
         return summarize(rawUserGroup, startDate, endDate, null);
@@ -99,7 +104,9 @@ public class RevenueSummaryService {
             BigDecimal batchSiteAmount = person.batchSiteAmount.add(person.syncedBatchSiteAmount);
             BigDecimal regularAmount = successAmount.subtract(batchSiteAmount).max(BigDecimal.ZERO);
             BigDecimal regularCommission = commission(regularAmount, config);
-            BigDecimal batchCommission = fixedCommission(batchSiteAmount, config, "batchSiteCommissionRate", "0.02");
+            BigDecimal batchCommissionBase = commissionBase(batchSiteAmount, config);
+            BigDecimal batchCommissionRate = batchSiteCommissionRate(batchCommissionBase);
+            BigDecimal batchCommission = batchCommissionBase.multiply(batchCommissionRate);
             BigDecimal totalCommission = regularCommission.add(batchCommission);
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("user_group", String.join(",", person.groups));
@@ -115,6 +122,8 @@ public class RevenueSummaryService {
             item.put("site_count", person.siteCount);
             item.put("batch_site_count", person.batchSiteCount);
             item.put("batch_site_amount", money(batchSiteAmount));
+            item.put("batch_site_commission_base_rmb", money(batchCommissionBase));
+            item.put("batch_site_commission_rate", batchCommissionRate);
             item.put("regular_commission_rmb", person.commissionEligible ? money(regularCommission) : null);
             item.put("batch_site_commission_rmb", person.commissionEligible ? money(batchCommission) : null);
             item.put("conversion_rate", percent(person.totalOrders, person.siteCount));
@@ -239,7 +248,7 @@ public class RevenueSummaryService {
                 "exchange_rate", decimal(config.get("exchangeRate"), "6.73"),
                 "rate_factor", decimal(config.get("rateFactor"), "0.42"),
                 "leader_commission_rate", decimal(config.get("leaderCommissionRate"), "0.02"),
-                "batch_site_commission_rate", decimal(config.get("batchSiteCommissionRate"), "0.02"),
+                "batch_site_commission_tiers", batchSiteCommissionTiers(),
                 "commission_tiers", config.getOrDefault("commissionTiers", List.of())
         ));
         result.put("total_member_commission_rmb", money(totalMemberCommission));
@@ -341,8 +350,7 @@ public class RevenueSummaryService {
     }
 
     private BigDecimal commission(BigDecimal usd, Map<String, Object> config) {
-        BigDecimal base = usd.multiply(decimal(config.get("exchangeRate"), "6.73"))
-                .multiply(decimal(config.get("rateFactor"), "0.42"));
+        BigDecimal base = commissionBase(usd, config);
         Object rawTiers = config.get("commissionTiers");
         if (rawTiers instanceof List<?> tiers) {
             for (Object rawTier : tiers) {
@@ -357,11 +365,28 @@ public class RevenueSummaryService {
         return BigDecimal.ZERO;
     }
 
-    private BigDecimal fixedCommission(BigDecimal usd, Map<String, Object> config,
-                                       String rateKey, String fallbackRate) {
+    private BigDecimal commissionBase(BigDecimal usd, Map<String, Object> config) {
         return usd.multiply(decimal(config.get("exchangeRate"), "6.73"))
-                .multiply(decimal(config.get("rateFactor"), "0.42"))
-                .multiply(decimal(config.get(rateKey), fallbackRate));
+                .multiply(decimal(config.get("rateFactor"), "0.42"));
+    }
+
+    /** Batch-site tiers use the converted RMB commission base and are not progressive. */
+    static BigDecimal batchSiteCommissionRate(BigDecimal commissionBase) {
+        if (commissionBase.compareTo(BATCH_SITE_MIDDLE_THRESHOLD) < 0) {
+            return BATCH_SITE_LOW_RATE;
+        }
+        if (commissionBase.compareTo(BATCH_SITE_HIGH_THRESHOLD) <= 0) {
+            return BATCH_SITE_MIDDLE_RATE;
+        }
+        return BATCH_SITE_HIGH_RATE;
+    }
+
+    private static List<Map<String, Object>> batchSiteCommissionTiers() {
+        return List.of(
+                Map.of("min", 0, "max", 50000, "max_inclusive", false, "rate", BATCH_SITE_LOW_RATE),
+                Map.of("min", 50000, "max", 150000, "max_inclusive", true, "rate", BATCH_SITE_MIDDLE_RATE),
+                Map.of("min_exclusive", 150000, "rate", BATCH_SITE_HIGH_RATE)
+        );
     }
 
     private static String realName(String adminName, Map<String, List<String>> mergeMap) {

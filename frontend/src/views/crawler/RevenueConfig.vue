@@ -12,7 +12,7 @@
       </template>
 
       <el-alert
-        title="参数保存后会立即用于收入统计；金额按汇率 × 折算系数计算，批量建站（site_tag=1）按独立比例提成。"
+        title="参数保存后会立即用于收入统计；批量建站按折算后的人民币基数应用独立阶梯。"
         type="info"
         :closable="false"
         show-icon
@@ -22,7 +22,7 @@
         <div><span>当前汇率</span><strong>{{ number(form.exchangeRate, 4) }}</strong></div>
         <div><span>折算系数</span><strong>{{ percent(form.rateFactor) }}</strong></div>
         <div><span>组长比例</span><strong>{{ percent(form.leaderCommissionRate) }}</strong></div>
-        <div><span>批量站点比例</span><strong>{{ percent(form.batchSiteCommissionRate) }}</strong></div>
+        <div><span>批量站点阶梯</span><strong class="batch-rule">2% / 4% / 6%</strong></div>
       </div>
 
       <el-form :model="form" label-width="150px" class="config-form">
@@ -35,9 +35,8 @@
         <el-form-item label="组长提成比例">
           <el-input-number v-model="form.leaderCommissionRate" :disabled="!canEditConfig" :min="0" :max="1" :precision="4" :step="0.01" />
         </el-form-item>
-        <el-form-item label="批量站点提成比例">
-          <el-input-number v-model="form.batchSiteCommissionRate" :disabled="!canEditConfig" :min="0" :max="1" :precision="4" :step="0.01" />
-          <div class="help-text">site_tag=1 的批量建站成交额不进入普通阶梯，按此比例单独计算。</div>
+        <el-form-item label="批量站点提成">
+          <div class="help-text">人民币提成基数不足 5 万按 2%；5 万（含）至 15 万（含）按 4%；超过 15 万按 6%。</div>
         </el-form-item>
         <el-form-item label="提成阶梯">
           <el-input v-model="commissionTiersText" :disabled="!canEditConfig" type="textarea" :rows="5" />
@@ -72,7 +71,7 @@ const leaderConfigText = ref('{}')
 const teacherMapText = ref('{}')
 const userMergeMapText = ref('{}')
 const savedSnapshot = ref('')
-const form = reactive({ exchangeRate: 6.73, rateFactor: 0.42, leaderCommissionRate: 0.02, batchSiteCommissionRate: 0.02 })
+const form = reactive({ exchangeRate: 6.73, rateFactor: 0.42, leaderCommissionRate: 0.02 })
 const hasChanges = computed(() => savedSnapshot.value !== snapshot())
 
 function snapshot() {
@@ -93,7 +92,9 @@ function percent(value) { return `${(Number(value || 0) * 100).toFixed(2)}%` }
 
 async function loadConfig() {
   const response = await getRevenueConfig()
-  Object.assign(form, response.data || {})
+  form.exchangeRate = Number(response.data?.exchangeRate ?? 6.73)
+  form.rateFactor = Number(response.data?.rateFactor ?? 0.42)
+  form.leaderCommissionRate = Number(response.data?.leaderCommissionRate ?? 0.02)
   commissionTiersText.value = JSON.stringify(response.data?.commissionTiers || [], null, 2)
   leaderConfigText.value = JSON.stringify(response.data?.leaderConfig || {}, null, 2)
   teacherMapText.value = JSON.stringify(response.data?.teacherMap || {}, null, 2)
@@ -129,12 +130,11 @@ function parseObject(text, label) {
 }
 
 function buildPayload() {
-  const numeric = [form.exchangeRate, form.rateFactor, form.leaderCommissionRate, form.batchSiteCommissionRate]
+  const numeric = [form.exchangeRate, form.rateFactor, form.leaderCommissionRate]
   if (numeric.some(value => !Number.isFinite(Number(value)) || Number(value) < 0)
       || Number(form.exchangeRate) <= 0
       || Number(form.rateFactor) > 1
-      || Number(form.leaderCommissionRate) > 1
-      || Number(form.batchSiteCommissionRate) > 1) {
+      || Number(form.leaderCommissionRate) > 1) {
     throw new Error('汇率必须大于 0，各比例必须在 0% 到 100% 之间')
   }
   let tiers
@@ -154,7 +154,6 @@ function buildPayload() {
     exchangeRate: Number(form.exchangeRate),
     rateFactor: Number(form.rateFactor),
     leaderCommissionRate: Number(form.leaderCommissionRate),
-    batchSiteCommissionRate: Number(form.batchSiteCommissionRate),
     commissionTiers: tiers,
     leaderConfig: parseObject(leaderConfigText.value, '组长配置'),
     teacherMap: parseObject(teacherMapText.value, '导师后缀映射'),
@@ -171,5 +170,6 @@ onMounted(loadConfig)
 .config-form { max-width: 720px; }
 .config-tip { margin-bottom: 16px; }.rate-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }.rate-summary > div { padding: 13px 15px; border: 1px solid #edf0f5; border-radius: 8px; background: #fafbfd; }.rate-summary span { display: block; color: #8b98ad; font-size: 12px; }.rate-summary strong { display: block; margin-top: 7px; color: #2f4262; font-size: 20px; }
 .help-text { margin-top: 5px; color: #8b97aa; font-size: 12px; line-height: 1.5; }
+.batch-rule { font-size: 16px !important; }
 @media (max-width: 700px) { .rate-summary { grid-template-columns: repeat(2, 1fr); } }
 </style>

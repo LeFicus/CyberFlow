@@ -123,7 +123,7 @@ public class CrawlerConfigService {
     @Transactional
     public Map<String, Object> updateRevenueConfig(Map<String, Object> body) {
         Set<String> allowed = Set.of(
-            "exchangeRate", "rateFactor", "leaderCommissionRate", "batchSiteCommissionRate",
+            "exchangeRate", "rateFactor", "leaderCommissionRate",
             "commissionTiers", "leaderConfig", "teacherMap", "userMergeMap"
         );
         for (Map.Entry<String, Object> entry : body.entrySet()) {
@@ -136,7 +136,7 @@ public class CrawlerConfigService {
     }
 
     private static void validateRevenueValue(String key, Object value) {
-        if (Set.of("exchangeRate", "rateFactor", "leaderCommissionRate", "batchSiteCommissionRate").contains(key)) {
+        if (Set.of("exchangeRate", "rateFactor", "leaderCommissionRate").contains(key)) {
             final double number;
             try {
                 number = Double.parseDouble(String.valueOf(value));
@@ -187,7 +187,11 @@ public class CrawlerConfigService {
 
     public Map<String, Object> getRevenueConfig() {
         Map<String, Object> cfg = getRuntimeConfig(false);
-        return group(cfg, "revenue");
+        Map<String, Object> revenue = group(cfg, "revenue");
+        // Older databases may still contain this setting. The batch-site rate is
+        // now determined by fixed business tiers, so never expose the legacy value.
+        revenue.remove("batchSiteCommissionRate");
+        return revenue;
     }
 
     /** AI generation settings used by the new-site module. */
@@ -423,7 +427,6 @@ public class CrawlerConfigService {
             "exchangeRate", 6.73,
             "rateFactor", 0.42,
             "leaderCommissionRate", 0.02,
-            "batchSiteCommissionRate", 0.02,
             "leaderConfig", new LinkedHashMap<>(),
             "teacherMap", new LinkedHashMap<>(Map.of(
                 "A-贺国君", "-hgj",

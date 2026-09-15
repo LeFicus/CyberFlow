@@ -36,7 +36,6 @@ const crawlerConfig = {
     exchangeRate: 6.73,
     rateFactor: 0.42,
     leaderCommissionRate: 0.02,
-    batchSiteCommissionRate: 0.02,
     commissionTiers: [
       { threshold: 30000, rate: 0.03 },
       { threshold: 80000, rate: 0.05 },

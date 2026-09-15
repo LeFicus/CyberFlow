@@ -59,7 +59,7 @@
           <span>汇率 {{ revenueParameters.exchange_rate || '—' }}</span>
           <span>折算系数 {{ revenueParameters.rate_factor || '—' }}</span>
           <span>组长比例 {{ formatRate(revenueParameters.leader_commission_rate) }}</span>
-          <span>批量站点比例 {{ formatRate(revenueParameters.batch_site_commission_rate) }}</span>
+          <span>批量站点：&lt;5万 2% · 5–15万 4% · &gt;15万 6%</span>
           <span>组员总提成 {{ formatCommission(revenue.total_member_commission_rmb) }}</span>
         </div>
       </div>
@@ -77,8 +77,9 @@
             <el-table-column label="成功金额" min-width="115" align="right"><template #default="{ row }">{{ formatMoney(row.successful_amount) }}</template></el-table-column>
             <el-table-column label="批量站点" width="90" align="right" prop="batch_site_count" />
             <el-table-column label="批量成交额" min-width="115" align="right"><template #default="{ row }">{{ formatMoney(row.batch_site_amount) }}</template></el-table-column>
+            <el-table-column label="批量提成基数" min-width="125" align="right"><template #default="{ row }">{{ formatCommission(row.batch_site_commission_base_rmb) }}</template></el-table-column>
             <el-table-column label="普通提成" min-width="115" align="right"><template #default="{ row }">{{ formatCommission(row.regular_commission_rmb) }}</template></el-table-column>
-            <el-table-column :label="`批量提成(${formatRate(revenueParameters.batch_site_commission_rate)})`" min-width="135" align="right"><template #default="{ row }">{{ formatCommission(row.batch_site_commission_rmb) }}</template></el-table-column>
+            <el-table-column label="批量提成" min-width="135" align="right"><template #default="{ row }"><div>{{ formatCommission(row.batch_site_commission_rmb) }}</div><small>{{ formatRate(row.batch_site_commission_rate) }}</small></template></el-table-column>
             <el-table-column label="组员总提成(RMB)" min-width="145" align="right"><template #default="{ row }"><strong class="commission-value">{{ formatCommission(row.total_member_commission_rmb) }}</strong></template></el-table-column>
           </el-table>
         </el-tab-pane>
