@@ -62,14 +62,19 @@ def normalize_datetime(value: object) -> str | None:
 
 
 def normalize_ymd(value: object) -> str | None:
-    """Normalize the response's ymd field without treating YYYYMMDD as Unix time."""
+    """Normalize the response's date-only ymd field to YYYY-MM-DD."""
+    if isinstance(value, datetime):
+        return value.date().isoformat()
     raw = str(value or "").strip()
     if len(raw) == 8 and raw.isdigit():
         try:
-            return datetime.strptime(raw, "%Y%m%d").strftime("%Y-%m-%d 00:00:00")
+            return datetime.strptime(raw, "%Y%m%d").date().isoformat()
         except ValueError:
             return None
-    return normalize_datetime(value)
+    try:
+        return datetime.fromisoformat(raw.replace("/", "-").replace("T", " ").removesuffix("Z")).date().isoformat()
+    except ValueError:
+        return None
 
 
 class AsyncSiteIndexCrawler:

@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -23,7 +23,7 @@ class SiteIndexExportServiceTest {
                         Map.entry("product_count", 10L),
                         Map.entry("admin_name", "张三"),
                         Map.entry("user_group", "A"),
-                        Map.entry("index_updated_at", LocalDateTime.of(2026, 9, 1, 10, 30))
+                        Map.entry("index_updated_at", LocalDate.of(2026, 9, 1))
                 ),
                 Map.<String, Object>ofEntries(
                         Map.entry("site_domain", "uncollected.test"),
@@ -39,10 +39,10 @@ class SiteIndexExportServiceTest {
         try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(output.toByteArray()))) {
             var sheet = workbook.getSheet("站点明细");
             assertEquals("站点域名", sheet.getRow(0).getCell(0).getStringCellValue());
-            assertEquals("最近收录更新", sheet.getRow(0).getCell(9).getStringCellValue());
+            assertEquals("收录日期", sheet.getRow(0).getCell(9).getStringCellValue());
             assertEquals(42, sheet.getRow(1).getCell(1).getNumericCellValue());
             assertEquals("A组", sheet.getRow(1).getCell(6).getStringCellValue());
-            assertEquals("2026-09-01 10:30", sheet.getRow(1).getCell(9).getStringCellValue());
+            assertEquals("2026-09-01", sheet.getRow(1).getCell(9).getStringCellValue());
             assertEquals("uncollected.test", sheet.getRow(2).getCell(0).getStringCellValue());
             assertEquals(org.apache.poi.ss.usermodel.CellType.BLANK, sheet.getRow(2).getCell(1).getCellType());
             assertEquals(org.apache.poi.ss.usermodel.CellType.BLANK, sheet.getRow(2).getCell(2).getCellType());

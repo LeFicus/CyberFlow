@@ -78,7 +78,7 @@ public interface SiteIndexingHistoryMapper {
             "COALESCE(NULLIF(l.server_ip, ''), s.server_ip) AS server_ip,",
             "COALESCE(l.last_submitted_at, s.last_submitted_at) AS last_submitted_at,",
             "COALESCE(l.product_count, 0) AS product_count, COALESCE(l.index_count, 0) AS index_count,",
-            "l.recorded_at AS index_updated_at, " + INDEX_CHANGE + " AS index_change",
+            "DATE(l.recorded_at) AS index_updated_at, " + INDEX_CHANGE + " AS index_change",
             INDEX_JOINS, INDEX_FILTERS,
             "ORDER BY l.recorded_at IS NULL, l.recorded_at DESC, s.created_at DESC LIMIT #{offset}, #{size}",
             "</script>"})
@@ -93,7 +93,7 @@ public interface SiteIndexingHistoryMapper {
             "COALESCE(NULLIF(l.server_ip, ''), s.server_ip) AS server_ip,",
             "COALESCE(l.last_submitted_at, s.last_submitted_at) AS last_submitted_at,",
             "COALESCE(l.product_count, 0) AS product_count, COALESCE(l.index_count, 0) AS index_count,",
-            "l.recorded_at AS index_updated_at, " + INDEX_CHANGE + " AS index_change",
+            "DATE(l.recorded_at) AS index_updated_at, " + INDEX_CHANGE + " AS index_change",
             INDEX_JOINS, INDEX_FILTERS,
             "ORDER BY l.recorded_at IS NULL, l.recorded_at DESC, s.created_at DESC",
             "</script>"})
@@ -107,7 +107,7 @@ public interface SiteIndexingHistoryMapper {
             "COUNT(*) AS site_count, COALESCE(SUM(l.product_count), 0) AS product_count,",
             "COALESCE(SUM(l.index_count), 0) AS index_count, ROUND(AVG(COALESCE(l.index_count, 0)), 2) AS average_index_count,",
             "COALESCE(SUM(" + INDEX_CHANGE + "), 0) AS index_change, ROUND(AVG(" + INDEX_CHANGE + "), 2) AS average_index_change,",
-            "MAX(COALESCE(l.last_submitted_at, s.last_submitted_at)) AS last_submitted_at, MAX(l.recorded_at) AS index_updated_at",
+            "MAX(COALESCE(l.last_submitted_at, s.last_submitted_at)) AS last_submitted_at, MAX(DATE(l.recorded_at)) AS index_updated_at",
             INDEX_JOINS, INDEX_FILTERS,
             "GROUP BY COALESCE(NULLIF(TRIM(s.builder_username), ''), '未分配'), COALESCE(NULLIF(TRIM(s.admin_name), ''), '未分配') ORDER BY builder_username, admin_name",
             "</script>"})
@@ -119,7 +119,7 @@ public interface SiteIndexingHistoryMapper {
             "COUNT(*) AS site_count, COALESCE(SUM(l.product_count), 0) AS product_count,",
             "COALESCE(SUM(l.index_count), 0) AS index_count, ROUND(AVG(COALESCE(l.index_count, 0)), 2) AS average_index_count,",
             "COALESCE(SUM(" + INDEX_CHANGE + "), 0) AS index_change, ROUND(AVG(" + INDEX_CHANGE + "), 2) AS average_index_change,",
-            "MAX(COALESCE(l.last_submitted_at, s.last_submitted_at)) AS last_submitted_at, MAX(l.recorded_at) AS index_updated_at",
+            "MAX(COALESCE(l.last_submitted_at, s.last_submitted_at)) AS last_submitted_at, MAX(DATE(l.recorded_at)) AS index_updated_at",
             INDEX_JOINS, INDEX_FILTERS,
             "GROUP BY COALESCE(NULLIF(TRIM(COALESCE(NULLIF(l.server_name, ''), s.server_name)), ''), '未分配'), COALESCE(NULLIF(TRIM(COALESCE(NULLIF(l.server_ip, ''), s.server_ip)), ''), '') ORDER BY dimension_name, server_ip",
             "</script>"})
@@ -129,7 +129,7 @@ public interface SiteIndexingHistoryMapper {
             "SELECT COUNT(*) AS site_count, COALESCE(SUM(l.product_count), 0) AS product_count,",
             "COALESCE(SUM(l.index_count), 0) AS index_count, ROUND(AVG(COALESCE(l.index_count, 0)), 2) AS average_index_count,",
             "COALESCE(SUM(" + INDEX_CHANGE + "), 0) AS index_change, ROUND(AVG(" + INDEX_CHANGE + "), 2) AS average_index_change,",
-            "MAX(COALESCE(l.last_submitted_at, s.last_submitted_at)) AS last_submitted_at, MAX(l.recorded_at) AS index_updated_at",
+            "MAX(COALESCE(l.last_submitted_at, s.last_submitted_at)) AS last_submitted_at, MAX(DATE(l.recorded_at)) AS index_updated_at",
             INDEX_JOINS, INDEX_FILTERS, "</script>"})
     Map<String, Object> summarizeLatestSites(@Param("filters") Map<String, Object> filters);
 

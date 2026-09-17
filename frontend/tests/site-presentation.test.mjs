@@ -29,3 +29,22 @@ test('order list renders category details and build type from its site', async (
   assert.match(view, /row\.cat_names/)
   assert.match(view, /siteTagLabel\(row\.site_tag\)/)
 })
+
+test('site and indexing analysis use one compact workspace', async () => {
+  const [siteView, workspace, router] = await Promise.all([
+    readFile(new URL('../src/views/dashboard/SiteList.vue', import.meta.url), 'utf8'),
+    readFile(new URL('../src/views/dashboard/IndexingList.vue', import.meta.url), 'utf8'),
+    readFile(new URL('../src/router/index.js', import.meta.url), 'utf8'),
+  ])
+  assert.match(siteView, /<IndexingList/)
+  assert.match(workspace, /站点与收录数据/)
+  assert.match(workspace, /viewOptions/)
+  assert.match(workspace, /查看详情/)
+  assert.match(workspace, /收录趋势/)
+  assert.match(workspace, /dateOnly\(row\.index_updated_at\)/)
+  assert.doesNotMatch(workspace, /收录更新时间/)
+  assert.match(workspace, /高级筛选/)
+  assert.match(router, /indexing\/builders.*dashboard\/sites/)
+  assert.match(router, /crawler\/collect.*crawler\/site/)
+  assert.match(router, /crawler\/order.*crawler\/site/)
+})

@@ -500,15 +500,13 @@ DELETE FROM sys_user_role WHERE user_id = 1 AND role_id = 2;
 -- 菜单树结构:
 --   /dashboard (数据看板)
 --     ├── 概览
---     ├── 站点列表
+--     ├── 站点与收录
 --     ├── 订单列表
 --     └── 商品列表
 --   /crawler (爬虫管理)
---     ├── 站点爬虫
---     │   └── [按钮] 触发站点爬虫
---     ├── 收录统计
---     │   └── [按钮] 触发收录统计
---     ├── 订单爬虫
+--     ├── 站点、收录与订单同步
+--     │   ├── [按钮] 触发站点爬虫
+--     │   ├── [按钮] 触发收录统计
 --     │   └── [按钮] 触发订单爬虫
 --     └── 任务历史
 --   /system (系统管理)
@@ -524,21 +522,21 @@ INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, path, component, icon
 (3,  0, '系统管理', 0, '/system', NULL, 'Setting', 3),
 -- 看板子菜单
 (11, 1, '概览', 1, '/dashboard/overview', 'dashboard/Overview', NULL, 1),
-(12, 1, '站点列表', 1, '/dashboard/sites', 'dashboard/SiteList', NULL, 2),
+(12, 1, '站点与收录', 1, '/dashboard/sites', 'dashboard/SiteList', NULL, 2),
 (13, 1, '订单列表', 1, '/dashboard/orders', 'dashboard/OrderList', NULL, 3),
 (14, 1, '商品列表', 1, '/dashboard/products', 'dashboard/ProductList', NULL, 4),
 (16, 1, '收录数据列表', 1, '/dashboard/indexing', 'dashboard/IndexingList', NULL, 5),
 (15, 14, '删除商品', 2, NULL, NULL, NULL, 1),
 -- 爬虫子菜单
-(21, 2, '站点爬虫', 1, '/crawler/site', 'crawler/SiteCrawler', NULL, 1),
-(22, 2, '收录统计', 1, '/crawler/collect', 'crawler/CollectCrawler', NULL, 2),
+(21, 2, '站点、收录与订单同步', 1, '/crawler/site', 'crawler/SiteCrawler', NULL, 1),
+(22, 2, '收录统计（旧入口）', 1, '/crawler/collect', 'crawler/CollectCrawler', NULL, 2),
 (23, 2, '订单爬虫', 1, '/crawler/order', 'crawler/OrderCrawler', NULL, 3),
 (24, 2, '任务历史', 1, '/crawler/history', 'crawler/TaskHistory', NULL, 4),
 (28, 2, '计划任务', 1, '/crawler/schedule', 'crawler/ScheduleTask', 'Timer', 5),
 (35, 2, '收入参数', 1, '/crawler/revenue-config', 'crawler/RevenueConfig', 'Money', 6),
 -- 爬虫按钮权限
 (25, 21, '触发站点爬虫', 2, NULL, NULL, NULL, 1),
-(26, 22, '触发收录统计', 2, NULL, NULL, NULL, 1),
+(26, 21, '触发收录统计', 2, NULL, NULL, NULL, 2),
 (27, 23, '触发订单爬虫', 2, NULL, NULL, NULL, 1),
 (29, 28, '修改计划任务', 2, NULL, NULL, 'crawler:schedule:update', 1),
 (30, 28, '手动触发计划任务', 2, NULL, NULL, 'crawler:schedule:trigger', 2),
@@ -634,6 +632,23 @@ DELETE FROM sys_role_menu WHERE role_id = 3;
 INSERT IGNORE INTO sys_role_menu (role_id, menu_id) VALUES
 (3, 1), (3, 11), (3, 12), (3, 13), (3, 16), (3, 2), (3, 23), (3, 24), (3, 27);
 
+-- 站点资料与收录数据使用统一入口；旧菜单保留为禁用记录以兼容历史角色关联。
+INSERT IGNORE INTO sys_role_menu(role_id, menu_id)
+SELECT role_id, 12 FROM sys_role_menu WHERE menu_id IN (16, 68, 69);
+INSERT IGNORE INTO sys_role_menu(role_id, menu_id)
+SELECT role_id, 21 FROM sys_role_menu WHERE menu_id = 22;
+UPDATE sys_menu SET menu_name='站点与收录', status=1 WHERE id=12;
+UPDATE sys_menu SET status=0 WHERE id IN (6,16,68,69);
+UPDATE sys_menu SET menu_name='站点与收录同步', status=1 WHERE id=21;
+UPDATE sys_menu SET status=0 WHERE id=22;
+UPDATE sys_menu SET parent_id=21, sort_order=2 WHERE id=26;
+INSERT IGNORE INTO sys_role_menu(role_id, menu_id)
+SELECT role_id, 21 FROM sys_role_menu WHERE menu_id = 23;
+UPDATE sys_menu SET menu_name='站点、收录与订单同步', path='/crawler/site', component='crawler/SiteCrawler', status=1 WHERE id=21;
+UPDATE sys_menu SET parent_id=21, menu_name='查看订单同步', menu_type=2, perms='crawler:order:view', path=NULL, component=NULL, sort_order=3, status=1 WHERE id=23;
+UPDATE sys_menu SET parent_id=21, sort_order=4 WHERE id=27;
+UPDATE sys_menu SET parent_id=21, sort_order=5 WHERE id=51;
+
 INSERT INTO sys_user (id, username, password, nickname, status) VALUES
 (2, 'normal_user', '$2b$12$VA8lCR9fDcXkscYPUls7.O6dGD67C1FKpx9HtTIwuX3nzq5fVJ7KC', '普通用户', 1)
 ON DUPLICATE KEY UPDATE nickname=VALUES(nickname), status=1;
@@ -677,9 +692,7 @@ INSERT INTO crawler_runtime_config (config_group, config_key, config_value, is_s
 ('orderStrategy', 'pageSize', '100', 0, 'Payment API page size'),
 ('orderStrategy', 'initialOrderId', '0', 0, 'Initial max order ID for incremental crawl'),
 ('revenue', 'exchangeRate', '6.73', 0, 'Realtime exchange rate'),
-('revenue', 'rateFactor', '0.42', 0, 'Rate factor'),
-('revenue', 'leaderCommissionRate', '0.02', 0, 'Leader commission rate'),
-('revenue', 'commissionTiers', '[{"threshold":30000,"rate":0.03},{"threshold":80000,"rate":0.05},{"threshold":"","rate":0.08}]', 0, 'Commission tiers')
+('revenue', 'rateFactor', '0.42', 0, 'Rate factor')
 ON DUPLICATE KEY UPDATE config_value=VALUES(config_value);
 
 INSERT INTO crawler_schedule_config (task_type, cron_expression, enabled) VALUES

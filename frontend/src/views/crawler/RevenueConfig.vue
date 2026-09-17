@@ -12,7 +12,7 @@
       </template>
 
       <el-alert
-        title="参数保存后会立即用于收入统计；批量建站按折算后的人民币基数应用独立阶梯。"
+        title="提成比例采用固定业务规则，无需配置；此处仅维护汇率、折算系数和人员归属。"
         type="info"
         :closable="false"
         show-icon
@@ -21,8 +21,9 @@
       <div class="rate-summary">
         <div><span>当前汇率</span><strong>{{ number(form.exchangeRate, 4) }}</strong></div>
         <div><span>折算系数</span><strong>{{ percent(form.rateFactor) }}</strong></div>
-        <div><span>组长比例</span><strong>{{ percent(form.leaderCommissionRate) }}</strong></div>
-        <div><span>批量站点阶梯</span><strong class="batch-rule">2% / 4% / 6%</strong></div>
+        <div><span>组长提成</span><strong class="fixed-rule">固定 2%</strong></div>
+        <div><span>普通提成阶梯</span><strong class="fixed-rule">3% / 5% / 8%</strong><small>≤3万 / ≤8万 / &gt;8万</small></div>
+        <div><span>批量站点提成</span><strong class="fixed-rule">2% / 4% / 6%</strong><small>&lt;5万 / 5–15万 / &gt;15万</small></div>
       </div>
 
       <el-form :model="form" label-width="150px" class="config-form">
@@ -31,16 +32,6 @@
         </el-form-item>
         <el-form-item label="折算系数">
           <el-input-number v-model="form.rateFactor" :disabled="!canEditConfig" :min="0" :max="1" :precision="4" :step="0.01" />
-        </el-form-item>
-        <el-form-item label="组长提成比例">
-          <el-input-number v-model="form.leaderCommissionRate" :disabled="!canEditConfig" :min="0" :max="1" :precision="4" :step="0.01" />
-        </el-form-item>
-        <el-form-item label="批量站点提成">
-          <div class="help-text">人民币提成基数不足 5 万按 2%；5 万（含）至 15 万（含）按 4%；超过 15 万按 6%。</div>
-        </el-form-item>
-        <el-form-item label="提成阶梯">
-          <el-input v-model="commissionTiersText" :disabled="!canEditConfig" type="textarea" :rows="5" />
-          <div class="help-text">JSON 示例：[{"threshold":30000,"rate":0.03},{"threshold":"","rate":0.08}]</div>
         </el-form-item>
         <el-form-item label="组长配置">
           <el-input v-model="leaderConfigText" :disabled="!canEditConfig" type="textarea" :rows="3" placeholder='{"业务一组":"组长账号"}' />
@@ -66,18 +57,16 @@ import { getRevenueConfig, updateRevenueConfig } from '@/api/crawler'
 const userStore = useUserStore()
 const canEditConfig = computed(() => userStore.hasPermission('crawler:revenue:update'))
 const saving = ref(false)
-const commissionTiersText = ref('[]')
 const leaderConfigText = ref('{}')
 const teacherMapText = ref('{}')
 const userMergeMapText = ref('{}')
 const savedSnapshot = ref('')
-const form = reactive({ exchangeRate: 6.73, rateFactor: 0.42, leaderCommissionRate: 0.02 })
+const form = reactive({ exchangeRate: 6.73, rateFactor: 0.42 })
 const hasChanges = computed(() => savedSnapshot.value !== snapshot())
 
 function snapshot() {
   return JSON.stringify({
     ...form,
-    commissionTiers: commissionTiersText.value,
     leaderConfig: leaderConfigText.value,
     teacherMap: teacherMapText.value,
     userMergeMap: userMergeMapText.value,
@@ -94,8 +83,6 @@ async function loadConfig() {
   const response = await getRevenueConfig()
   form.exchangeRate = Number(response.data?.exchangeRate ?? 6.73)
   form.rateFactor = Number(response.data?.rateFactor ?? 0.42)
-  form.leaderCommissionRate = Number(response.data?.leaderCommissionRate ?? 0.02)
-  commissionTiersText.value = JSON.stringify(response.data?.commissionTiers || [], null, 2)
   leaderConfigText.value = JSON.stringify(response.data?.leaderConfig || {}, null, 2)
   teacherMapText.value = JSON.stringify(response.data?.teacherMap || {}, null, 2)
   userMergeMapText.value = JSON.stringify(response.data?.userMergeMap || {}, null, 2)
@@ -130,31 +117,15 @@ function parseObject(text, label) {
 }
 
 function buildPayload() {
-  const numeric = [form.exchangeRate, form.rateFactor, form.leaderCommissionRate]
+  const numeric = [form.exchangeRate, form.rateFactor]
   if (numeric.some(value => !Number.isFinite(Number(value)) || Number(value) < 0)
       || Number(form.exchangeRate) <= 0
-      || Number(form.rateFactor) > 1
-      || Number(form.leaderCommissionRate) > 1) {
-    throw new Error('汇率必须大于 0，各比例必须在 0% 到 100% 之间')
+      || Number(form.rateFactor) > 1) {
+    throw new Error('汇率必须大于 0，折算系数必须在 0% 到 100% 之间')
   }
-  let tiers
-  try { tiers = JSON.parse(commissionTiersText.value || '[]') } catch { throw new Error('提成阶梯 JSON 格式不正确') }
-  if (!Array.isArray(tiers) || tiers.length === 0) throw new Error('提成阶梯至少配置一档')
-  let previous = -1
-  tiers.forEach((tier, index) => {
-    const threshold = tier?.threshold === '' || tier?.threshold === null ? null : Number(tier?.threshold)
-    const rate = Number(tier?.rate)
-    if ((!Number.isFinite(rate) || rate < 0 || rate > 1) || (threshold !== null && (!Number.isFinite(threshold) || threshold < 0))) {
-      throw new Error(`第 ${index + 1} 档提成参数无效`)
-    }
-    if (threshold !== null && threshold < previous) throw new Error('提成阶梯金额必须按从小到大排列')
-    if (threshold !== null) previous = threshold
-  })
   return {
     exchangeRate: Number(form.exchangeRate),
     rateFactor: Number(form.rateFactor),
-    leaderCommissionRate: Number(form.leaderCommissionRate),
-    commissionTiers: tiers,
     leaderConfig: parseObject(leaderConfigText.value, '组长配置'),
     teacherMap: parseObject(teacherMapText.value, '导师后缀映射'),
     userMergeMap: parseObject(userMergeMapText.value, '多账号合并'),
@@ -168,8 +139,9 @@ onMounted(loadConfig)
 .crawler-page { max-width: 900px; }
 .card-header { display: flex; align-items: center; justify-content: space-between; }.header-actions { display: flex; align-items: center; gap: 10px; }
 .config-form { max-width: 720px; }
-.config-tip { margin-bottom: 16px; }.rate-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }.rate-summary > div { padding: 13px 15px; border: 1px solid #edf0f5; border-radius: 8px; background: #fafbfd; }.rate-summary span { display: block; color: #8b98ad; font-size: 12px; }.rate-summary strong { display: block; margin-top: 7px; color: #2f4262; font-size: 20px; }
+.config-tip { margin-bottom: 16px; }.rate-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 20px; }.rate-summary > div { padding: 13px 15px; border: 1px solid #edf0f5; border-radius: 8px; background: #fafbfd; }.rate-summary span { display: block; color: #8b98ad; font-size: 12px; }.rate-summary strong { display: block; margin-top: 7px; color: #2f4262; font-size: 20px; }.rate-summary small { display: block; margin-top: 4px; color: #9aa5b5; font-size: 11px; white-space: nowrap; }
 .help-text { margin-top: 5px; color: #8b97aa; font-size: 12px; line-height: 1.5; }
-.batch-rule { font-size: 16px !important; }
+.fixed-rule { font-size: 16px !important; }
+@media (max-width: 1000px) { .rate-summary { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 700px) { .rate-summary { grid-template-columns: repeat(2, 1fr); } }
 </style>

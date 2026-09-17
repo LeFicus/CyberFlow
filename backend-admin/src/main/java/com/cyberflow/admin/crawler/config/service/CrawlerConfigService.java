@@ -123,8 +123,7 @@ public class CrawlerConfigService {
     @Transactional
     public Map<String, Object> updateRevenueConfig(Map<String, Object> body) {
         Set<String> allowed = Set.of(
-            "exchangeRate", "rateFactor", "leaderCommissionRate",
-            "commissionTiers", "leaderConfig", "teacherMap", "userMergeMap"
+            "exchangeRate", "rateFactor", "leaderConfig", "teacherMap", "userMergeMap"
         );
         for (Map.Entry<String, Object> entry : body.entrySet()) {
             if (!allowed.contains(entry.getKey())) continue;
@@ -136,7 +135,7 @@ public class CrawlerConfigService {
     }
 
     private static void validateRevenueValue(String key, Object value) {
-        if (Set.of("exchangeRate", "rateFactor", "leaderCommissionRate").contains(key)) {
+        if (Set.of("exchangeRate", "rateFactor").contains(key)) {
             final double number;
             try {
                 number = Double.parseDouble(String.valueOf(value));
@@ -146,10 +145,8 @@ public class CrawlerConfigService {
             boolean valid = Double.isFinite(number)
                     && ("exchangeRate".equals(key) ? number > 0 : number >= 0 && number <= 1);
             if (!valid) {
-                throw new IllegalArgumentException("汇率必须大于 0，各提成比例必须在 0 到 1 之间");
+                throw new IllegalArgumentException("汇率必须大于 0，折算系数必须在 0 到 1 之间");
             }
-        } else if ("commissionTiers".equals(key) && !(value instanceof List<?>)) {
-            throw new IllegalArgumentException("提成阶梯必须是数组");
         } else if (Set.of("leaderConfig", "teacherMap", "userMergeMap").contains(key)
                 && (!(value instanceof Map<?, ?>))) {
             throw new IllegalArgumentException(key + " 必须是对象");
@@ -188,9 +185,11 @@ public class CrawlerConfigService {
     public Map<String, Object> getRevenueConfig() {
         Map<String, Object> cfg = getRuntimeConfig(false);
         Map<String, Object> revenue = group(cfg, "revenue");
-        // Older databases may still contain this setting. The batch-site rate is
-        // now determined by fixed business tiers, so never expose the legacy value.
+        // Commission ratios are fixed business rules. Older databases may still
+        // contain editable values, but they must never affect or re-enter the UI.
         revenue.remove("batchSiteCommissionRate");
+        revenue.remove("leaderCommissionRate");
+        revenue.remove("commissionTiers");
         return revenue;
     }
 
@@ -426,7 +425,6 @@ public class CrawlerConfigService {
         root.put("revenue", new LinkedHashMap<>(Map.of(
             "exchangeRate", 6.73,
             "rateFactor", 0.42,
-            "leaderCommissionRate", 0.02,
             "leaderConfig", new LinkedHashMap<>(),
             "teacherMap", new LinkedHashMap<>(Map.of(
                 "A-贺国君", "-hgj",
@@ -439,12 +437,7 @@ public class CrawlerConfigService {
                 "B-吴靖涛", "-wjt",
                 "B-王华炜", "-whw"
             )),
-            "userMergeMap", new LinkedHashMap<>(),
-            "commissionTiers", new ArrayList<>(List.of(
-                Map.of("threshold", 30000, "rate", 0.03),
-                Map.of("threshold", 80000, "rate", 0.05),
-                Map.of("threshold", "", "rate", 0.08)
-            ))
+            "userMergeMap", new LinkedHashMap<>()
         )));
         return root;
     }

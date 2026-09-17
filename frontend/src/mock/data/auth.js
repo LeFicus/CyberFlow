@@ -36,7 +36,7 @@ export default {
             id: 1, parentId: 0, menuName: '数据看板', menuType: 0, icon: 'DataBoard',
             children: [
               { id: 11, parentId: 1, menuName: '概览', menuType: 1, path: '/dashboard/overview', component: 'dashboard/Overview' },
-              { id: 12, parentId: 1, menuName: '站点列表', menuType: 1, path: '/dashboard/sites', component: 'dashboard/SiteList' },
+              { id: 12, parentId: 1, menuName: '站点与收录', menuType: 1, path: '/dashboard/sites', component: 'dashboard/SiteList' },
               { id: 13, parentId: 1, menuName: '订单列表', menuType: 1, path: '/dashboard/orders', component: 'dashboard/OrderList' },
               // { id: 14, parentId: 1, menuName: '商品列表', menuType: 1, path: '/dashboard/products', component: 'dashboard/ProductList' },
             ],
@@ -44,9 +44,7 @@ export default {
           {
             id: 2, parentId: 0, menuName: '数据同步', menuType: 0, icon: 'RefreshRight',
             children: [
-              { id: 21, parentId: 2, menuName: '站点爬虫', menuType: 1, path: '/crawler/site', component: 'crawler/SiteCrawler' },
-              { id: 22, parentId: 2, menuName: '收录统计', menuType: 1, path: '/crawler/collect', component: 'crawler/CollectCrawler' },
-              { id: 23, parentId: 2, menuName: '订单爬虫', menuType: 1, path: '/crawler/order', component: 'crawler/OrderCrawler' },
+              { id: 21, parentId: 2, menuName: '站点、收录与订单同步', menuType: 1, path: '/crawler/site', component: 'crawler/SiteCrawler' },
               { id: 24, parentId: 2, menuName: '任务历史', menuType: 1, path: '/crawler/history', component: 'crawler/TaskHistory' },
               { id: 28, parentId: 2, menuName: '计划任务', menuType: 1, path: '/crawler/schedule', component: 'crawler/ScheduleTask', perms: 'crawler:schedule:view' },
             ],

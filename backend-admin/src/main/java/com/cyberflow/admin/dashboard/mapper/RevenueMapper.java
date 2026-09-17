@@ -16,6 +16,9 @@ public interface RevenueMapper {
             "SELECT user_group, COUNT(DISTINCT " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + ") AS total_orders,",
             "COUNT(DISTINCT CASE WHEN is_valid = 0 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders,",
+            "COUNT(DISTINCT CASE WHEN site_tag = 0 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS standalone_orders,",
+            "COUNT(DISTINCT CASE WHEN site_tag = 1 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS batch_orders,",
+            "COUNT(DISTINCT CASE WHEN site_tag = 2 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS copy_orders,",
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS original_amount",
             "FROM orders WHERE TRIM(COALESCE(user_group, '')) &lt;&gt; ''",
             "AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
@@ -30,6 +33,9 @@ public interface RevenueMapper {
             "SELECT admin_name, user_group, COUNT(DISTINCT " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + ") AS total_orders,",
             "COUNT(DISTINCT CASE WHEN is_valid = 0 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders,",
+            "COUNT(DISTINCT CASE WHEN site_tag = 0 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS standalone_orders,",
+            "COUNT(DISTINCT CASE WHEN site_tag = 1 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS batch_orders,",
+            "COUNT(DISTINCT CASE WHEN site_tag = 2 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS copy_orders,",
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS original_amount,",
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' AND site_tag = 1 THEN amount ELSE 0 END), 0) AS batch_site_amount",
             "FROM orders WHERE TRIM(COALESCE(admin_name, '')) &lt;&gt; ''",
@@ -61,7 +67,26 @@ public interface RevenueMapper {
                                               @Param("teacherSuffixes") List<String> teacherSuffixes,
                                               @Param("siteCreatedBefore") String siteCreatedBefore);
 
-    @Select({"<script>", "SELECT site_domain, admin_name, user_group, DATE_FORMAT(COALESCE(domain_applied_at, created_at), '%Y-%m') AS site_month",
+    @Select({"<script>",
+            "SELECT s.admin_name, s.user_group,",
+            "COALESCE(NULLIF(TRIM(categories.category_name), ''), '未分类') AS category_name, COUNT(*) AS site_count",
+            "FROM site_info s JOIN JSON_TABLE(",
+            "CASE WHEN s.cat_names IS NULL OR JSON_LENGTH(s.cat_names) = 0 THEN JSON_ARRAY('未分类') ELSE s.cat_names END,",
+            "'$[*]' COLUMNS(category_name VARCHAR(100) PATH '$')) categories",
+            "WHERE TRIM(COALESCE(s.admin_name, '')) &lt;&gt; ''",
+            "AND TRIM(COALESCE(s.user_group, '')) &lt;&gt; '' AND (#{userGroup} IS NULL OR s.user_group = #{userGroup})",
+            "AND (#{ownerName} IS NULL OR FIND_IN_SET(s.admin_name, #{ownerName}) &gt; 0 " +
+            "<if test='teacherSuffixes != null and !teacherSuffixes.isEmpty()'> OR " +
+            "<foreach collection='teacherSuffixes' item='suffix' separator=' OR '>s.admin_name LIKE CONCAT('%', #{suffix})</foreach>" +
+            "</if>)",
+            "AND COALESCE(s.domain_applied_at, s.created_at) &lt; CONCAT(#{siteCreatedBefore}, ' 00:00:00')",
+            "GROUP BY s.admin_name, s.user_group, category_name", "</script>"})
+    List<Map<String, Object>> adminSiteCategoryStats(@Param("userGroup") String userGroup,
+                                                      @Param("ownerName") String ownerName,
+                                                      @Param("teacherSuffixes") List<String> teacherSuffixes,
+                                                      @Param("siteCreatedBefore") String siteCreatedBefore);
+
+    @Select({"<script>", "SELECT site_domain, admin_name, user_group, site_tag, cat_names, DATE_FORMAT(COALESCE(domain_applied_at, created_at), '%Y-%m') AS site_month",
             "FROM site_info WHERE TRIM(COALESCE(admin_name, '')) &lt;&gt; ''",
             "AND TRIM(COALESCE(user_group, '')) &lt;&gt; '' AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
             "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) &gt; 0 " +

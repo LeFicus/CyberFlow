@@ -31,7 +31,7 @@ public class SiteIndexExportService {
             new Column("分组", "user_group", 10),
             new Column("服务器名称", "server_name", 20),
             new Column("服务器 IP", "server_ip", 18),
-            new Column("最近收录更新", "index_updated_at", 20),
+            new Column("收录日期", "index_updated_at", 14),
             new Column("Sitemap 提交", "last_submitted_at", 20),
             new Column("主题", "theme_name", 20),
             new Column("商品分类", "product_category", 20),
@@ -46,7 +46,7 @@ public class SiteIndexExportService {
             new Column("平均收录", "average_index_count", 14),
             new Column("平均变化", "average_index_change", 14),
             new Column("商品总数", "product_count", 14),
-            new Column("最近收录更新", "index_updated_at", 20),
+            new Column("最近收录日期", "index_updated_at", 14),
             new Column("Sitemap 提交", "last_submitted_at", 20)
     );
     private static final List<Column> SERVER_COLUMNS = List.of(
@@ -58,7 +58,7 @@ public class SiteIndexExportService {
             new Column("平均收录", "average_index_count", 14),
             new Column("平均变化", "average_index_change", 14),
             new Column("商品总数", "product_count", 14),
-            new Column("最近收录更新", "index_updated_at", 20),
+            new Column("最近收录日期", "index_updated_at", 14),
             new Column("Sitemap 提交", "last_submitted_at", 20)
     );
 

@@ -27,16 +27,18 @@ const routes = [
     redirect: '/dashboard/overview',
     children: [
       { path: 'dashboard/overview', name: 'DashboardOverview', component: () => import('@/views/dashboard/Overview.vue'), meta: { title: '概览', section: '数据看板', description: '站点、订单与采集任务的实时运营视图', perm: 'dashboard:overview' } },
-      { path: 'dashboard/sites', name: 'DashboardSites', component: () => import('@/views/dashboard/SiteList.vue'), meta: { title: '站点列表', section: '数据看板', description: '查看站点信息、关联订单与收录趋势', perm: 'dashboard:site:view' } },
+      { path: 'dashboard/sites', name: 'DashboardSites', component: () => import('@/views/dashboard/SiteList.vue'), meta: { title: '站点与收录', section: '数据看板', description: '统一查看站点信息、收录状态与归属汇总', perm: 'dashboard:site:view' } },
       { path: 'dashboard/orders', name: 'DashboardOrders', component: () => import('@/views/dashboard/OrderList.vue'), meta: { title: '订单列表', section: '数据看板', description: '筛选并追踪多站点订单数据', perm: 'dashboard:order:view' } },
       { path: 'dashboard/products', name: 'DashboardProducts', component: () => import('@/views/dashboard/ProductList.vue'), meta: { title: '商品列表', section: '数据看板', description: '集中管理采集商品与跨平台导出', perm: 'dashboard:product:view' } },
-      { path: 'dashboard/indexing', redirect: '/indexing/sites' },
-      ...[['sites','站点明细'],['builders','建站者汇总'],['servers','服务器汇总']].map(([path,title]) => ({ path: `indexing/${path}`, component: () => import('@/views/dashboard/IndexingList.vue'), meta: { title, section:'收录数据', description:'查看站点收录快照、变化及归属汇总', perm:'dashboard:site:view' } })),
+      { path: 'dashboard/indexing', redirect: '/dashboard/sites' },
+      { path: 'indexing/sites', redirect: '/dashboard/sites' },
+      { path: 'indexing/builders', redirect: { path: '/dashboard/sites', query: { view: 'builder' } } },
+      { path: 'indexing/servers', redirect: { path: '/dashboard/sites', query: { view: 'server' } } },
       { path:'categories', component: () => import('@/views/category/CategoryList.vue'), meta:{ title:'自定义分类', section:'分类维护', description:'统一维护商品筛选与数据源站点使用的分类', perm:'category:list' } },
-      { path: 'crawler/site', name: 'CrawlerSite', component: () => import('@/views/crawler/SiteCrawler.vue'), meta: { title: '站点爬虫', section: '数据同步', description: '配置站点基础信息同步策略与执行计划', perm: 'crawler:site:start' } },
-      { path: 'crawler/collect', name: 'CrawlerCollect', component: () => import('@/views/crawler/CollectCrawler.vue'), meta: { title: '收录统计', section: '数据同步', description: '同步站点搜索引擎收录数据', perm: 'crawler:collect:start' } },
-      { path: 'crawler/order', name: 'CrawlerOrder', component: () => import('@/views/crawler/OrderCrawler.vue'), meta: { title: '订单爬虫', section: '数据同步', description: '配置订单同步来源与增量规则', perm: 'crawler:order:view' } },
-      { path: 'crawler/revenue-config', name: 'CrawlerRevenueConfig', component: () => import('@/views/crawler/RevenueConfig.vue'), meta: { title: '收入参数', section: '数据同步', description: '维护汇率、提成阶梯与导师后缀映射', perm: 'crawler:revenue:view' } },
+      { path: 'crawler/site', name: 'CrawlerSite', component: () => import('@/views/crawler/SiteCrawler.vue'), meta: { title: '站点、收录与订单同步', section: '数据同步', description: '统一同步站点资料、搜索引擎收录和支付订单', perms: ['crawler:site:start', 'crawler:collect:start', 'crawler:order:view', 'crawler:order:start', 'crawler:order:config'] } },
+      { path: 'crawler/collect', redirect: '/crawler/site' },
+      { path: 'crawler/order', redirect: '/crawler/site' },
+      { path: 'crawler/revenue-config', name: 'CrawlerRevenueConfig', component: () => import('@/views/crawler/RevenueConfig.vue'), meta: { title: '收入参数', section: '数据同步', description: '维护汇率、折算系数与人员归属映射', perm: 'crawler:revenue:view' } },
       { path: 'crawler/history', name: 'CrawlerHistory', component: () => import('@/views/crawler/TaskHistory.vue'), meta: { title: '任务历史', section: '数据同步', description: '统一追踪同步与商品采集任务的执行结果', perm: 'crawler:history:view' } },
       { path: 'crawler/schedule', name: 'CrawlerSchedule', component: () => import('@/views/crawler/ScheduleTask.vue'), meta: { title: '计划任务', section: '数据同步', description: '统一管理爬虫任务的自动执行计划', perm: 'crawler:schedule:view' } },
       { path: 'crawler/selector-template', name: 'SelectorTemplate', component: () => import('@/views/crawler/SelectorTemplate.vue'), meta: { title: '选择器模板', section: '商品采集', description: '维护不同电商平台的商品字段提取规则', perm: 'selector:template:list' } },
@@ -86,10 +88,11 @@ router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
   if (to.path !== '/login' && !token) {
     next('/login')
-  } else if (to.meta?.perm) {
+  } else if (to.meta?.perm || to.meta?.perms) {
     const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}')
     const permissions = userInfo.permissions || []
-    if (permissions.length && !permissions.includes(to.meta.perm)) {
+    const required = to.meta.perms || [to.meta.perm]
+    if (permissions.length && !required.some(permission => permissions.includes(permission))) {
       next('/dashboard/overview')
       return
     }

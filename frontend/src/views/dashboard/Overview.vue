@@ -51,65 +51,56 @@
 
     <section class="panel revenue-panel">
       <div class="panel-heading revenue-heading">
-        <div><h2>收入转化与提成</h2><p>按 monthly_revenue_conversion.py 口径实时汇总</p></div>
+        <div><h2>收入转化与提成</h2><p>按当前统计周期汇总个人绩效、团队提成与月度转化</p></div>
         <div class="revenue-rules">
           <el-button text size="small" :loading="revenueLoading" @click="loadDashboard">刷新统计</el-button>
           <div class="revenue-date-control"><span>订单统计</span><el-date-picker v-model="revenueDateRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" class="revenue-date" @change="loadDashboard" /></div>
           <div class="revenue-date-control"><span>域名申请月份</span><el-date-picker v-model="siteCreatedMonth" type="month" value-format="YYYY-MM" placeholder="选择申请月份" class="revenue-month" @change="loadDashboard" /></div>
           <span>汇率 {{ revenueParameters.exchange_rate || '—' }}</span>
           <span>折算系数 {{ revenueParameters.rate_factor || '—' }}</span>
-          <span>组长比例 {{ formatRate(revenueParameters.leader_commission_rate) }}</span>
-          <span>批量站点：&lt;5万 2% · 5–15万 4% · &gt;15万 6%</span>
-          <span>组员总提成 {{ formatCommission(revenue.total_member_commission_rmb) }}</span>
+          <span>固定规则：组长 2% · 普通 3/5/8% · 批量 2/4/6%</span>
         </div>
       </div>
       <el-tabs v-model="revenueTab" class="revenue-tabs">
         <el-tab-pane label="个人绩效" name="personal">
-          <el-table :data="personalPerformance" stripe max-height="390" empty-text="暂无绩效数据">
+          <el-table :data="personalPerformance" stripe max-height="390" empty-text="暂无绩效数据" class="compact-revenue-table">
+            <el-table-column type="expand" label="详情" width="62">
+              <template #default="{ row }"><RevenueRowDetails :details="personalDetails(row)" :breakdown="row.classification_breakdown" :category-breakdown="row.category_breakdown" /></template>
+            </el-table-column>
             <el-table-column prop="user_group" label="组别" width="70" />
             <el-table-column prop="real_name" label="姓名" min-width="120" />
-            <el-table-column prop="site_count" label="成熟站点" width="90" align="right" />
-            <el-table-column prop="deduplicated_orders" label="去重订单" width="95" align="right" />
-            <el-table-column prop="valid_deduplicated_orders" label="有效去重" width="95" align="right" />
-            <el-table-column label="转化率" width="95" align="right"><template #default="{ row }">{{ formatPercent(row.conversion_rate) }}</template></el-table-column>
-            <el-table-column label="原成交金额" min-width="120" align="right"><template #default="{ row }">{{ formatMoney(row.original_amount) }}</template></el-table-column>
-            <el-table-column label="实习生同步" min-width="115" align="right"><template #default="{ row }">{{ formatMoney(row.synced_amount) }}</template></el-table-column>
-            <el-table-column label="成功金额" min-width="115" align="right"><template #default="{ row }">{{ formatMoney(row.successful_amount) }}</template></el-table-column>
-            <el-table-column label="批量站点" width="90" align="right" prop="batch_site_count" />
-            <el-table-column label="批量成交额" min-width="115" align="right"><template #default="{ row }">{{ formatMoney(row.batch_site_amount) }}</template></el-table-column>
-            <el-table-column label="批量提成基数" min-width="125" align="right"><template #default="{ row }">{{ formatCommission(row.batch_site_commission_base_rmb) }}</template></el-table-column>
-            <el-table-column label="普通提成" min-width="115" align="right"><template #default="{ row }">{{ formatCommission(row.regular_commission_rmb) }}</template></el-table-column>
-            <el-table-column label="批量提成" min-width="135" align="right"><template #default="{ row }"><div>{{ formatCommission(row.batch_site_commission_rmb) }}</div><small>{{ formatRate(row.batch_site_commission_rate) }}</small></template></el-table-column>
-            <el-table-column label="组员总提成(RMB)" min-width="145" align="right"><template #default="{ row }"><strong class="commission-value">{{ formatCommission(row.total_member_commission_rmb) }}</strong></template></el-table-column>
+            <el-table-column prop="site_count" label="成熟站点" width="100" align="right" />
+            <el-table-column prop="valid_deduplicated_orders" label="有效去重" width="100" align="right" />
+            <el-table-column label="转化率" width="100" align="right"><template #default="{ row }">{{ formatPercent(row.conversion_rate) }}</template></el-table-column>
+            <el-table-column label="成功金额" min-width="130" align="right"><template #default="{ row }">{{ formatMoney(row.successful_amount) }}</template></el-table-column>
+            <el-table-column label="组员总提成(RMB)" min-width="190" align="right" fixed="right"><template #default="{ row }"><div class="commission-breakdown"><strong>{{ formatCommission(row.total_member_commission_rmb) }}</strong><small><span>普通 {{ formatCommission(row.regular_commission_rmb) }}</span><span>批量 {{ formatCommission(row.batch_site_commission_rmb) }}</span></small></div></template></el-table-column>
           </el-table>
         </el-tab-pane>
         <el-tab-pane v-if="canViewLeaderSummary" label="组长汇总" name="leaders">
-          <el-table :data="leaderSummary" stripe empty-text="暂无组长汇总">
+          <el-table :data="leaderSummary" stripe empty-text="暂无组长汇总" class="compact-revenue-table">
+            <el-table-column type="expand" label="详情" width="62">
+              <template #default="{ row }"><RevenueRowDetails :details="leaderDetails(row)" :breakdown="row.classification_breakdown" :category-breakdown="row.category_breakdown" /></template>
+            </el-table-column>
             <el-table-column prop="user_group" label="组别" width="70" />
             <el-table-column prop="leader_name" label="组长" min-width="120" />
             <el-table-column prop="member_count" label="成员" width="80" align="right" />
-            <el-table-column prop="site_count" label="成熟站点" width="95" align="right" />
-            <el-table-column prop="deduplicated_orders" label="去重订单" width="100" align="right" />
             <el-table-column prop="valid_deduplicated_orders" label="有效去重" width="100" align="right" />
             <el-table-column label="转化率" width="100" align="right"><template #default="{ row }">{{ formatPercent(row.conversion_rate) }}</template></el-table-column>
             <el-table-column label="小组成功金额" min-width="145" align="right"><template #default="{ row }">{{ formatMoney(row.original_amount) }}</template></el-table-column>
-            <el-table-column label="扣除组长绩效" min-width="135" align="right"><template #default="{ row }">{{ formatMoney(row.leader_personal_amount) }}</template></el-table-column>
-            <el-table-column label="提成计算基数" min-width="135" align="right"><template #default="{ row }">{{ formatMoney(row.commission_base_amount) }}</template></el-table-column>
-            <el-table-column label="组长提成(RMB)" min-width="145" align="right"><template #default="{ row }"><strong class="commission-value">¥{{ formatPlainMoney(row.leader_commission_rmb) }}</strong></template></el-table-column>
+            <el-table-column label="组长总提成(RMB)" min-width="210" align="right" fixed="right"><template #default="{ row }"><div class="commission-breakdown"><strong>{{ formatCommission(row.leader_total_commission_rmb ?? row.leader_commission_rmb) }}</strong><small><span>小组 {{ formatCommission(row.leader_commission_rmb) }}</span><span>个人 {{ formatCommission(row.leader_personal_commission_rmb) }}</span></small></div></template></el-table-column>
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="月度转化" name="monthly">
-          <el-table :data="monthlyConversion" stripe max-height="390" empty-text="暂无月度数据">
+          <el-table :data="monthlyConversion" stripe max-height="390" empty-text="暂无月度数据" class="compact-revenue-table">
+            <el-table-column type="expand" label="详情" width="62">
+              <template #default="{ row }"><RevenueRowDetails :details="monthlyDetails(row)" :breakdown="row.classification_breakdown" :category-breakdown="row.category_breakdown" /></template>
+            </el-table-column>
             <el-table-column prop="site_month" label="申请月份" width="105" />
             <el-table-column prop="user_group" label="组别" width="70" />
             <el-table-column prop="real_name" label="姓名" min-width="120" />
-            <el-table-column prop="admin_name" label="账号" min-width="130" />
             <el-table-column prop="site_count" label="建站数" width="90" align="right" />
-            <el-table-column prop="deduplicated_orders" label="本月去重订单" width="115" align="right" />
             <el-table-column prop="valid_deduplicated_orders" label="有效去重" width="100" align="right" />
-            <el-table-column prop="ordered_site_count" label="本月有订单站点" width="125" align="right" />
             <el-table-column label="订单转化率" width="105" align="right"><template #default="{ row }">{{ formatPercent(row.order_conversion_rate ?? row.conversion_rate) }}</template></el-table-column>
-            <el-table-column label="站点转化率" width="105" align="right"><template #default="{ row }">{{ formatPercent(row.site_conversion_rate) }}</template></el-table-column>
             <el-table-column label="成功金额" min-width="120" align="right"><template #default="{ row }">{{ formatMoney(row.successful_amount) }}</template></el-table-column>
           </el-table>
         </el-tab-pane>
@@ -156,6 +147,7 @@ import { LineChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { getCharts, getOverview, getRevenueSummary } from '@/api/dashboard'
 import { useSiteGroups } from '@/composables/useSiteGroups'
+import RevenueRowDetails from '@/components/RevenueRowDetails.vue'
 
 use([CanvasRenderer, LineChart, GridComponent, LegendComponent, TooltipComponent])
 const router = useRouter()
@@ -196,6 +188,33 @@ const revenueParameters = computed(() => revenue.value.parameters || {})
 const personalPerformance = computed(() => revenue.value.personal_performance || [])
 const leaderSummary = computed(() => revenue.value.leader_summary || [])
 const monthlyConversion = computed(() => revenue.value.monthly_conversion || [])
+const personalDetails = row => [
+  { label: '账号', value: row.accounts || '—' },
+  { label: '去重订单', value: formatNumber(row.deduplicated_orders) },
+  { label: '成功订单', value: formatNumber(row.successful_orders) },
+  { label: '原成交金额', value: formatMoney(row.original_amount) },
+  { label: '实习生同步', value: formatMoney(row.synced_amount) },
+  { label: '批量站点', value: formatNumber(row.batch_site_count) },
+  { label: '批量成交额', value: formatMoney(row.batch_site_amount) },
+  { label: '批量提成基数', value: formatCommission(row.batch_site_commission_base_rmb) },
+  { label: '普通提成', value: formatCommission(row.regular_commission_rmb) },
+  { label: `批量提成（${formatRate(row.batch_site_commission_rate)}）`, value: formatCommission(row.batch_site_commission_rmb) },
+]
+const leaderDetails = row => [
+  { label: '成熟站点', value: formatNumber(row.site_count) },
+  { label: '去重订单', value: formatNumber(row.deduplicated_orders) },
+  { label: '组长个人业绩', value: formatMoney(row.leader_personal_amount) },
+  { label: '小组提成基数', value: formatMoney(row.commission_base_amount) },
+  { label: '小组提成', value: formatCommission(row.leader_commission_rmb) },
+  { label: '个人提成', value: formatCommission(row.leader_personal_commission_rmb) },
+]
+const monthlyDetails = row => [
+  { label: '账号', value: row.admin_name || '—' },
+  { label: '本月去重订单', value: formatNumber(row.deduplicated_orders) },
+  { label: '成功订单', value: formatNumber(row.successful_orders) },
+  { label: '本月有订单站点', value: formatNumber(row.ordered_site_count) },
+  { label: '站点转化率', value: formatPercent(row.site_conversion_rate) },
+]
 const orderTrend = computed(() => {
   const source = new Map((charts.value.order_trend || []).map(item => [String(item.date || '').slice(0, 10), item]))
   const today = new Date()
@@ -307,7 +326,7 @@ h1, h2, p { margin: 0; } h1 { color: var(--cf-ink); font-size: 28px; letter-spac
 .brief-metrics { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, 1fr); }.brief-metric { min-width: 0; padding: 4px 18px; border-left: 1px solid #ffffff14; }.brief-metric span, .brief-metric small { display: block; color: #8392b0; font-size: 9px; }.brief-metric strong { display: block; margin: 8px 0 5px; overflow: hidden; color: #fff; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }.brief-metric small { color: #7383a4; }
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 15px; }
 .forecast-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 15px; }.forecast-card { padding: 20px 22px; border: 1px solid var(--cf-line); border-radius: 14px; background: linear-gradient(135deg, #fff, #f8faff); box-shadow: var(--cf-shadow-sm); }.forecast-heading { display: flex; align-items: flex-start; justify-content: space-between; }.forecast-heading span { color: #8d99ab; font-size: 9px; font-weight: 750; letter-spacing: .08em; }.forecast-heading h2 { margin-top: 5px; color: #3a4861; font-size: 13px; }.forecast-card > strong { display: block; margin-top: 16px; color: var(--cf-ink); font-size: 28px; letter-spacing: -.04em; }.forecast-card > p { margin-top: 6px; color: #8d99ab; font-size: 10px; }.forecast-progress { overflow: hidden; height: 5px; margin-top: 16px; border-radius: 999px; background: #e9edf5; }.forecast-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #536ff1, #45bc8d); }.forecast-card > small { display: block; margin-top: 7px; color: #9aa7b8; font-size: 9px; }
-.revenue-panel { margin-top: 15px; }.revenue-heading { gap: 18px; }.revenue-rules { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 7px; }.revenue-rules span { padding: 5px 9px; border-radius: 999px; color: #536ff1; background: #eef1ff; font-size: 9px; font-weight: 700; }.revenue-date-control { display: flex; align-items: center; gap: 5px; }.revenue-date-control > span { padding: 0; color: #8490a4; background: transparent; font-size: 9px; font-weight: 700; white-space: nowrap; }.revenue-tabs { margin-top: 12px; }.commission-value { color: #36a77e; font-size: 12px; }
+.revenue-panel { margin-top: 15px; }.revenue-heading { gap: 18px; }.revenue-rules { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 7px; }.revenue-rules span { padding: 5px 9px; border-radius: 999px; color: #536ff1; background: #eef1ff; font-size: 9px; font-weight: 700; }.revenue-date-control { display: flex; align-items: center; gap: 5px; }.revenue-date-control > span { padding: 0; color: #8490a4; background: transparent; font-size: 9px; font-weight: 700; white-space: nowrap; }.revenue-tabs { margin-top: 16px; }.commission-breakdown { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; padding: 3px 0; }.commission-breakdown strong { color: #24956e; font-size: 14px; line-height: 1.2; white-space: nowrap; }.commission-breakdown small { display: flex; gap: 9px; color: #8a96a9; font-size: 9px; line-height: 1.2; white-space: nowrap; }.compact-revenue-table :deep(.el-table__expanded-cell) { padding: 0 !important; }
 .metric-card, .panel { border: 1px solid var(--cf-line); border-radius: 14px; background: #fff; box-shadow: var(--cf-shadow-sm); }
 .metric-card { padding: 18px 20px 16px; }.metric-top, .metric-foot, .panel-heading { display: flex; align-items: center; justify-content: space-between; }.metric-label { color: var(--cf-muted); font-size: 11px; }.metric-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; font-size: 16px; }.tone-blue { color: #536ff1; background: #eef1ff; }.tone-violet { color: #8a64e8; background: #f3edff; }.tone-amber { color: #d99a37; background: #fff6e3; }.tone-green { color: #36ad82; background: #eaf9f3; }
 .metric-value { margin: 14px 0 11px; color: var(--cf-ink); font-size: 25px; font-weight: 750; letter-spacing: -.04em; }.metric-foot { color: var(--cf-subtle); font-size: 10px; }.metric-trend { font-weight: 700; }.metric-trend.up { color: var(--cf-green); }.metric-trend.down { color: #df6577; }.metric-trend.neutral { color: var(--cf-blue); }

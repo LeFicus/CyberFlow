@@ -3,6 +3,8 @@ package com.cyberflow.admin.dashboard.service;
 import com.cyberflow.admin.crawler.config.service.CrawlerConfigService;
 import com.cyberflow.admin.common.DataScopeService;
 import com.cyberflow.admin.dashboard.mapper.RevenueMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -20,12 +22,19 @@ public class RevenueSummaryService {
     private final RevenueMapper revenueMapper;
     private final CrawlerConfigService configService;
     private final DataScopeService dataScopeService;
+    private final ObjectMapper objectMapper;
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final BigDecimal BATCH_SITE_MIDDLE_THRESHOLD = new BigDecimal("50000");
     private static final BigDecimal BATCH_SITE_HIGH_THRESHOLD = new BigDecimal("150000");
     private static final BigDecimal BATCH_SITE_LOW_RATE = new BigDecimal("0.02");
     private static final BigDecimal BATCH_SITE_MIDDLE_RATE = new BigDecimal("0.04");
     private static final BigDecimal BATCH_SITE_HIGH_RATE = new BigDecimal("0.06");
+    private static final BigDecimal LEADER_COMMISSION_RATE = new BigDecimal("0.02");
+    private static final BigDecimal REGULAR_LOW_THRESHOLD = new BigDecimal("30000");
+    private static final BigDecimal REGULAR_MIDDLE_THRESHOLD = new BigDecimal("80000");
+    private static final BigDecimal REGULAR_LOW_RATE = new BigDecimal("0.03");
+    private static final BigDecimal REGULAR_MIDDLE_RATE = new BigDecimal("0.05");
+    private static final BigDecimal REGULAR_HIGH_RATE = new BigDecimal("0.08");
 
     public Map<String, Object> summarize(String rawUserGroup, String startDate, String endDate) {
         return summarize(rawUserGroup, startDate, endDate, null);
@@ -63,8 +72,12 @@ public class RevenueSummaryService {
             person.totalOrders += account.totalOrders;
             person.validOrders += account.validOrders;
             person.successfulOrders += account.successfulOrders;
+            person.standaloneOrders += account.standaloneOrders;
+            person.batchOrders += account.batchOrders;
+            person.copyOrders += account.copyOrders;
             person.siteCount += account.siteCount;
             person.batchSiteCount += account.batchSiteCount;
+            mergeCounts(person.categorySites, account.categorySites);
             person.originalAmount = person.originalAmount.add(account.originalAmount);
             person.batchSiteAmount = person.batchSiteAmount.add(account.batchSiteAmount);
             if (!isTeacherSuffixAccount(account.adminName, teacherMap)) {
@@ -99,6 +112,7 @@ public class RevenueSummaryService {
         }
 
         List<Map<String, Object>> personal = new ArrayList<>();
+        Map<String, BigDecimal> personalCommissionByName = new HashMap<>();
         for (PersonStats person : people.values()) {
             BigDecimal successAmount = person.originalAmount.add(person.syncedAmount);
             BigDecimal batchSiteAmount = person.batchSiteAmount.add(person.syncedBatchSiteAmount);
@@ -129,6 +143,10 @@ public class RevenueSummaryService {
             item.put("conversion_rate", percent(person.totalOrders, person.siteCount));
             item.put("commission_rmb", person.commissionEligible ? money(totalCommission) : null);
             item.put("total_member_commission_rmb", person.commissionEligible ? money(totalCommission) : null);
+            item.put("classification_breakdown", classificationBreakdown(
+                    person.standaloneOrders, person.batchOrders, person.copyOrders));
+            item.put("category_breakdown", categoryBreakdown(person.categorySites));
+            if (person.commissionEligible) personalCommissionByName.put(person.realName, money(totalCommission));
             personal.add(item);
         }
         sortByDeduplicatedOrders(personal);
@@ -171,7 +189,9 @@ public class RevenueSummaryService {
                 BigDecimal leaderCommission = commissionBaseAmount
                         .multiply(decimal(config.get("exchangeRate"), "6.73"))
                         .multiply(decimal(config.get("rateFactor"), "0.42"))
-                        .multiply(decimal(config.get("leaderCommissionRate"), "0.02"));
+                        .multiply(LEADER_COMMISSION_RATE);
+                BigDecimal leaderPersonalCommission = personalCommissionByName.getOrDefault(leaderName, BigDecimal.ZERO);
+                BigDecimal leaderTotalCommission = leaderCommission.add(leaderPersonalCommission);
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("user_group", group);
                 item.put("leader_name", leaderName);
@@ -184,9 +204,24 @@ public class RevenueSummaryService {
                 item.put("commission_base_amount", money(commissionBaseAmount));
                 item.put("conversion_rate", percent(orders, sites));
                 item.put("leader_commission_rmb", money(leaderCommission));
+                item.put("leader_personal_commission_rmb", money(leaderPersonalCommission));
+                item.put("leader_total_commission_rmb", money(leaderTotalCommission));
+                item.put("classification_breakdown", classificationBreakdown(
+                        number(groupTotals.get("standalone_orders")).longValue(),
+                        number(groupTotals.get("batch_orders")).longValue(),
+                        number(groupTotals.get("copy_orders")).longValue()));
+                Map<String, Long> groupCategorySites = new LinkedHashMap<>();
+                members.forEach(member -> mergeCounts(groupCategorySites, member.categorySites));
+                item.put("category_breakdown", categoryBreakdown(groupCategorySites));
                 leaders.add(item);
             }
         }
+        BigDecimal totalLeaderGroupCommission = leaders.stream()
+                .map(row -> number(row.get("leader_commission_rmb")))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalLeaderCommission = leaders.stream()
+                .map(row -> number(row.get("leader_total_commission_rmb")))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // Orders are matched to the owning site's domain.  Do not use the order
         // platform/group here: a site can contain orders imported by the other
@@ -207,6 +242,9 @@ public class RevenueSummaryService {
             MonthlyStats stats = monthlyStats.computeIfAbsent(group + "|" + month + "|" + admin,
                     ignored -> new MonthlyStats(group, month, admin));
             stats.siteCount++;
+            for (String category : siteCategories(site.get("cat_names"))) {
+                stats.categorySites.merge(category, 1L, Long::sum);
+            }
             DomainOrderStats order = domainOrders.get(domain(text(site, "site_domain")));
             if (order != null && order.totalOrders > 0) {
                 stats.totalOrders += order.totalOrders;
@@ -214,6 +252,7 @@ public class RevenueSummaryService {
                 stats.successfulOrders += order.successfulOrders;
                 stats.successfulAmount = stats.successfulAmount.add(order.successfulAmount);
                 stats.orderedSiteCount++;
+                stats.classificationOrders[siteTag(site.get("site_tag"))] += order.totalOrders;
             }
         }
         List<Map<String, Object>> monthly = new ArrayList<>();
@@ -234,6 +273,9 @@ public class RevenueSummaryService {
             item.put("site_conversion_rate", percent(stats.orderedSiteCount, stats.siteCount));
             // Keep the old field for existing clients; it now means order conversion.
             item.put("conversion_rate", percent(stats.totalOrders, stats.siteCount));
+            item.put("classification_breakdown", classificationBreakdown(
+                    stats.classificationOrders[0], stats.classificationOrders[1], stats.classificationOrders[2]));
+            item.put("category_breakdown", categoryBreakdown(stats.categorySites));
             monthly.add(item);
         }
         sortByDeduplicatedOrders(monthly);
@@ -247,11 +289,13 @@ public class RevenueSummaryService {
         result.put("parameters", Map.of(
                 "exchange_rate", decimal(config.get("exchangeRate"), "6.73"),
                 "rate_factor", decimal(config.get("rateFactor"), "0.42"),
-                "leader_commission_rate", decimal(config.get("leaderCommissionRate"), "0.02"),
+                "leader_commission_rate", LEADER_COMMISSION_RATE,
                 "batch_site_commission_tiers", batchSiteCommissionTiers(),
-                "commission_tiers", config.getOrDefault("commissionTiers", List.of())
+                "commission_tiers", regularCommissionTiers()
         ));
         result.put("total_member_commission_rmb", money(totalMemberCommission));
+        result.put("total_leader_group_commission_rmb", money(totalLeaderGroupCommission));
+        result.put("total_leader_commission_rmb", money(totalLeaderCommission));
         result.put("personal_performance", personal);
         result.put("leader_summary", leaders);
         result.put("monthly_conversion", monthly);
@@ -276,6 +320,9 @@ public class RevenueSummaryService {
             stats.totalOrders = number(row.get("total_orders")).longValue();
             stats.validOrders = number(row.get("valid_orders")).longValue();
             stats.successfulOrders = number(row.get("successful_orders")).longValue();
+            stats.standaloneOrders = number(row.get("standalone_orders")).longValue();
+            stats.batchOrders = number(row.get("batch_orders")).longValue();
+            stats.copyOrders = number(row.get("copy_orders")).longValue();
             stats.originalAmount = number(row.get("original_amount"));
             stats.batchSiteAmount = number(row.get("batch_site_amount"));
         }
@@ -285,6 +332,13 @@ public class RevenueSummaryService {
             stats.group = text(row, "user_group");
             stats.siteCount = number(row.get("site_count")).longValue();
             stats.batchSiteCount = number(row.get("batch_site_count")).longValue();
+        }
+        for (Map<String, Object> row : revenueMapper.adminSiteCategoryStats(
+                userGroup, ownerName, teacherSuffixes, siteCreatedBefore)) {
+            AccountStats stats = accounts.computeIfAbsent(text(row, "admin_name"), AccountStats::new);
+            stats.group = text(row, "user_group");
+            stats.categorySites.merge(categoryName(row.get("category_name")),
+                    number(row.get("site_count")).longValue(), Long::sum);
         }
         return accounts;
     }
@@ -351,23 +405,19 @@ public class RevenueSummaryService {
 
     private BigDecimal commission(BigDecimal usd, Map<String, Object> config) {
         BigDecimal base = commissionBase(usd, config);
-        Object rawTiers = config.get("commissionTiers");
-        if (rawTiers instanceof List<?> tiers) {
-            for (Object rawTier : tiers) {
-                if (!(rawTier instanceof Map<?, ?> tier)) continue;
-                String thresholdText = Objects.toString(tier.get("threshold"), "").trim();
-                BigDecimal rate = decimal(tier.get("rate"), "0");
-                if (thresholdText.isEmpty() || base.compareTo(decimal(thresholdText, "0")) <= 0) {
-                    return base.multiply(rate);
-                }
-            }
-        }
-        return BigDecimal.ZERO;
+        return base.multiply(regularCommissionRate(base));
     }
 
     private BigDecimal commissionBase(BigDecimal usd, Map<String, Object> config) {
         return usd.multiply(decimal(config.get("exchangeRate"), "6.73"))
                 .multiply(decimal(config.get("rateFactor"), "0.42"));
+    }
+
+    /** Regular tiers use the converted RMB commission base and are not progressive. */
+    static BigDecimal regularCommissionRate(BigDecimal commissionBase) {
+        if (commissionBase.compareTo(REGULAR_LOW_THRESHOLD) <= 0) return REGULAR_LOW_RATE;
+        if (commissionBase.compareTo(REGULAR_MIDDLE_THRESHOLD) <= 0) return REGULAR_MIDDLE_RATE;
+        return REGULAR_HIGH_RATE;
     }
 
     /** Batch-site tiers use the converted RMB commission base and are not progressive. */
@@ -387,6 +437,69 @@ public class RevenueSummaryService {
                 Map.of("min", 50000, "max", 150000, "max_inclusive", true, "rate", BATCH_SITE_MIDDLE_RATE),
                 Map.of("min_exclusive", 150000, "rate", BATCH_SITE_HIGH_RATE)
         );
+    }
+
+    private static List<Map<String, Object>> regularCommissionTiers() {
+        return List.of(
+                Map.of("max", REGULAR_LOW_THRESHOLD, "rate", REGULAR_LOW_RATE),
+                Map.of("min_exclusive", REGULAR_LOW_THRESHOLD, "max", REGULAR_MIDDLE_THRESHOLD, "rate", REGULAR_MIDDLE_RATE),
+                Map.of("min_exclusive", REGULAR_MIDDLE_THRESHOLD, "rate", REGULAR_HIGH_RATE)
+        );
+    }
+
+    static List<Map<String, Object>> classificationBreakdown(long standalone, long batch, long copy) {
+        long total = standalone + batch + copy;
+        return List.of(
+                classificationItem(0, "单独建站", standalone, total),
+                classificationItem(1, "批量建站", batch, total),
+                classificationItem(2, "复制站", copy, total)
+        );
+    }
+
+    static List<Map<String, Object>> categoryBreakdown(Map<String, Long> categories) {
+        long total = categories.values().stream().filter(Objects::nonNull).mapToLong(Long::longValue).sum();
+        return categories.entrySet().stream()
+                .filter(entry -> entry.getValue() != null && entry.getValue() > 0)
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
+                .map(entry -> Map.<String, Object>of(
+                        "category", categoryName(entry.getKey()),
+                        "site_count", entry.getValue(),
+                        "ratio", percent(entry.getValue(), total)))
+                .toList();
+    }
+
+    private static void mergeCounts(Map<String, Long> target, Map<String, Long> source) {
+        source.forEach((key, value) -> target.merge(categoryName(key), value, Long::sum));
+    }
+
+    private List<String> siteCategories(Object value) {
+        if (value instanceof Collection<?> collection) {
+            List<String> result = collection.stream().map(RevenueSummaryService::categoryName).distinct().toList();
+            return result.isEmpty() ? List.of("未分类") : result;
+        }
+        String raw = Objects.toString(value, "").trim();
+        if (raw.isEmpty()) return List.of("未分类");
+        try {
+            List<Object> parsed = objectMapper.readValue(raw, new TypeReference<>() {});
+            List<String> result = parsed.stream().map(RevenueSummaryService::categoryName).distinct().toList();
+            return result.isEmpty() ? List.of("未分类") : result;
+        } catch (Exception ignored) {
+            return List.of(categoryName(raw));
+        }
+    }
+
+    private static String categoryName(Object value) {
+        String category = Objects.toString(value, "").trim();
+        return category.isEmpty() ? "未分类" : category;
+    }
+
+    private static Map<String, Object> classificationItem(int type, String label, long orders, long total) {
+        return Map.of("type", type, "label", label, "orders", orders, "ratio", percent(orders, total));
+    }
+
+    private static int siteTag(Object value) {
+        int tag = number(value).intValue();
+        return tag >= 0 && tag <= 2 ? tag : 0;
     }
 
     private static String realName(String adminName, Map<String, List<String>> mergeMap) {
@@ -460,8 +573,12 @@ public class RevenueSummaryService {
         long totalOrders;
         long validOrders;
         long successfulOrders;
+        long standaloneOrders;
+        long batchOrders;
+        long copyOrders;
         long siteCount;
         long batchSiteCount;
+        final Map<String, Long> categorySites = new LinkedHashMap<>();
         BigDecimal originalAmount = BigDecimal.ZERO;
         BigDecimal batchSiteAmount = BigDecimal.ZERO;
         AccountStats(String adminName) { this.adminName = adminName; }
@@ -474,8 +591,12 @@ public class RevenueSummaryService {
         long totalOrders;
         long validOrders;
         long successfulOrders;
+        long standaloneOrders;
+        long batchOrders;
+        long copyOrders;
         long siteCount;
         long batchSiteCount;
+        final Map<String, Long> categorySites = new LinkedHashMap<>();
         BigDecimal originalAmount = BigDecimal.ZERO;
         BigDecimal syncedAmount = BigDecimal.ZERO;
         BigDecimal batchSiteAmount = BigDecimal.ZERO;
@@ -493,6 +614,8 @@ public class RevenueSummaryService {
         long validOrders;
         long orderedSiteCount;
         long successfulOrders;
+        final long[] classificationOrders = new long[3];
+        final Map<String, Long> categorySites = new LinkedHashMap<>();
         BigDecimal successfulAmount = BigDecimal.ZERO;
         MonthlyStats(String group, String month, String adminName) {
             this.group = group;

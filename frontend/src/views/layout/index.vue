@@ -132,7 +132,7 @@ const routePermissions = {
   '/indexing/builders': 'dashboard:site:view',
   '/indexing/servers': 'dashboard:site:view',
   '/categories': 'category:list',
-  '/crawler/site': 'crawler:site:start',
+  '/crawler/site': ['crawler:site:start', 'crawler:collect:start', 'crawler:order:view', 'crawler:order:start', 'crawler:order:config'],
   '/crawler/collect': 'crawler:collect:start',
   '/crawler/order': 'crawler:order:view',
   '/crawler/revenue-config': 'crawler:revenue:view',
@@ -159,6 +159,7 @@ const canViewPath = path => {
   if (!path) return true
   if (serverMenuPaths.value.has(path)) return true
   const requiredPermission = routePermissions[path]
+  if (Array.isArray(requiredPermission)) return requiredPermission.some(permission => userStore.hasPermission(permission))
   return requiredPermission ? userStore.hasPermission(requiredPermission) : !userStore.userInfo?.menus?.length
 }
 const visibleChildren = menu => (menu.children || []).filter(child => child && canViewPath(child.path))
@@ -168,20 +169,13 @@ const visibleChildren = menu => (menu.children || []).filter(child => child && c
 const fallbackMenus = [
   { id: 1, menuName: '数据看板', icon: 'DataBoard', children: [
     { id: 11, menuName: '概览', path: '/dashboard/overview' },
-    { id: 12, menuName: '站点列表', path: '/dashboard/sites' },
+    { id: 12, menuName: '站点与收录', path: '/dashboard/sites' },
     { id: 13, menuName: '订单列表', path: '/dashboard/orders' },
     { id: 14, menuName: '商品列表', path: '/dashboard/products' },
   ] },
-  { id: 6, menuName: '收录数据', icon:'DataLine', children:[
-    {id:16, menuName:'站点明细',path:'/indexing/sites'},
-    {id:68, menuName:'建站者汇总',path:'/indexing/builders'},
-    {id:69, menuName:'服务器汇总',path:'/indexing/servers'},
-  ] },
   { id:70, menuName:'自定义分类',path:'/categories',icon:'CollectionTag',children:[] },
   { id: 2, menuName: '数据同步', icon: 'RefreshRight', children: [
-    { id: 21, menuName: '站点爬虫', path: '/crawler/site' },
-    { id: 22, menuName: '收录统计', path: '/crawler/collect' },
-    { id: 23, menuName: '订单爬虫', path: '/crawler/order' },
+    { id: 21, menuName: '站点、收录与订单同步', path: '/crawler/site' },
     { id: 35, menuName: '收入参数', path: '/crawler/revenue-config' },
     { id: 24, menuName: '任务历史', path: '/crawler/history' },
     { id: 28, menuName: '计划任务', path: '/crawler/schedule' },
@@ -203,11 +197,12 @@ const fallbackMenus = [
 
 const menuTree = computed(() => {
   const rawSource = userStore.userInfo?.menus?.length ? userStore.userInfo.menus : fallbackMenus
+  const legacyPaths = new Set(['/indexing/sites', '/indexing/builders', '/indexing/servers', '/crawler/collect', '/crawler/order'])
   const sanitizeMenu = menu => ({
     ...menu,
     children: menu.path
       ? []
-      : (menu.children || []).filter(child => child.menuType !== 2 && child.menu_type !== 2 && canViewPath(child.path)).map(sanitizeMenu),
+      : (menu.children || []).filter(child => child.menuType !== 2 && child.menu_type !== 2 && !legacyPaths.has(child.path) && canViewPath(child.path)).map(sanitizeMenu),
   })
   const dynamicSource = rawSource.map(sanitizeMenu)
   const source = fallbackMenus.map(fallbackRoot => {
@@ -237,7 +232,7 @@ const menuTree = computed(() => {
   const findCrawlerItem = (path, fallback) => crawlerChildren.find(item => item.path === path) || fallback
   const fallbackSync = fallbackMenus.find(menu => menu.id === 2)
   const fallbackProduct = fallbackMenus.find(menu => menu.id === 4)
-  const syncPaths = ['/crawler/site', '/crawler/collect', '/crawler/order', '/crawler/history', '/crawler/schedule', '/crawler/revenue-config']
+  const syncPaths = ['/crawler/site', '/crawler/history', '/crawler/schedule', '/crawler/revenue-config']
   const productPaths = ['/crawler/site-config', '/crawler/selector-template']
   const groupedMenus = source.filter(menu => menu !== crawlerMenu && menu.id !== 4 && menu.menuName !== '商品采集')
   const crawlerIndex = Math.max(0, source.indexOf(crawlerMenu))

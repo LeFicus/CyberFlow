@@ -732,3 +732,29 @@ INSERT IGNORE INTO sys_role_menu(role_id,menu_id) SELECT role_id,6 FROM sys_role
 INSERT IGNORE INTO sys_role_menu(role_id,menu_id) SELECT role_id,68 FROM sys_role_menu WHERE menu_id=16;
 INSERT IGNORE INTO sys_role_menu(role_id,menu_id) SELECT role_id,69 FROM sys_role_menu WHERE menu_id=16;
 INSERT IGNORE INTO sys_role_menu(role_id,menu_id) VALUES(1,70),(1,71),(2,70),(2,71);
+
+-- Consolidate site information and indexing into one workspace, and keep both
+-- site and indexing trigger permissions under one synchronization page.
+INSERT IGNORE INTO sys_role_menu(role_id,menu_id)
+SELECT role_id,12 FROM sys_role_menu WHERE menu_id IN (16,68,69);
+INSERT IGNORE INTO sys_role_menu(role_id,menu_id)
+SELECT role_id,21 FROM sys_role_menu WHERE menu_id=22;
+UPDATE sys_menu SET menu_name='站点与收录', path='/dashboard/sites', component='dashboard/SiteList', status=1 WHERE id=12;
+UPDATE sys_menu SET status=0 WHERE id IN (6,16,68,69);
+UPDATE sys_menu SET menu_name='站点与收录同步', path='/crawler/site', component='crawler/SiteCrawler', status=1 WHERE id=21;
+UPDATE sys_menu SET status=0 WHERE id=22;
+UPDATE sys_menu SET parent_id=21, sort_order=2 WHERE id=26;
+
+-- The order crawler now lives on the same synchronization page.  Keep menu
+-- 23 as a button permission so existing order-view role assignments survive.
+INSERT IGNORE INTO sys_role_menu(role_id,menu_id)
+SELECT role_id,21 FROM sys_role_menu WHERE menu_id=23;
+UPDATE sys_menu SET menu_name='站点、收录与订单同步', path='/crawler/site', component='crawler/SiteCrawler', status=1 WHERE id=21;
+UPDATE sys_menu SET parent_id=21, menu_name='查看订单同步', menu_type=2, perms='crawler:order:view', path=NULL, component=NULL, sort_order=3, status=1 WHERE id=23;
+UPDATE sys_menu SET parent_id=21, sort_order=4 WHERE id=27;
+UPDATE sys_menu SET parent_id=21, sort_order=5 WHERE id=51;
+
+-- Commission rates are fixed business rules and are no longer configurable.
+DELETE FROM crawler_runtime_config
+WHERE config_group='revenue'
+  AND config_key IN ('leaderCommissionRate','commissionTiers','batchSiteCommissionRate');
