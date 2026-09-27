@@ -193,6 +193,53 @@ public class TaskHistoryService {
         taskHistoryMapper.insert(taskHistory);
     }
 
+    /** Lifecycle updates used by tasks that execute inside the admin service. */
+    public void start(String taskId, String message) {
+        TaskHistory task = requireTask(taskId);
+        task.setStatus("RUNNING");
+        task.setProgress(1);
+        task.setProgressMessage(message);
+        task.setStartedAt(LocalDateTime.now());
+        taskHistoryMapper.updateById(task);
+    }
+
+    public void progress(String taskId, int progress, String message) {
+        TaskHistory task = getByTaskId(taskId);
+        if (task == null || !isActive(task.getStatus())) return;
+        task.setProgress(Math.max(0, Math.min(99, progress)));
+        task.setProgressMessage(message);
+        taskHistoryMapper.updateById(task);
+    }
+
+    public void succeed(String taskId, int rowsAffected, long durationMs, String message) {
+        TaskHistory task = getByTaskId(taskId);
+        if (task == null) return;
+        task.setStatus("SUCCESS");
+        task.setProgress(100);
+        task.setProgressMessage(message);
+        task.setRowsAffected(rowsAffected);
+        task.setErrorMsg(null);
+        task.setDurationMs(durationMs);
+        task.setFinishedAt(LocalDateTime.now());
+        taskHistoryMapper.updateById(task);
+    }
+
+    public void fail(String taskId, String error, long durationMs) {
+        TaskHistory task = getByTaskId(taskId);
+        if (task == null) return;
+        task.setStatus("FAILED");
+        task.setProgressMessage("站点健康检查失败");
+        task.setErrorMsg(error);
+        task.setDurationMs(durationMs);
+        task.setFinishedAt(LocalDateTime.now());
+        taskHistoryMapper.updateById(task);
+    }
+
+    public void appendLog(String taskId, String content) {
+        if (content == null || content.isEmpty()) return;
+        taskHistoryMapper.appendLog(taskId, content, content.codePointCount(0, content.length()));
+    }
+
     /** Check for unfinished work before dispatching the same synchronization scope again. */
     public boolean hasActiveTask(String type, String triggeredBy) {
         QueryWrapper<TaskHistory> wrapper = new QueryWrapper<TaskHistory>()

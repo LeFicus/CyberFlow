@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     shared_data_fields TEXT COMMENT '其他成员数据字段权限编码',
     email       VARCHAR(100) COMMENT '邮箱',
     status      TINYINT      NOT NULL DEFAULT 1 COMMENT '0=禁用 1=启用',
+    site_health_notice_date DATE COMMENT '最近一次个人站点异常登录提醒日期（北京时间）',
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_username (username)
@@ -260,6 +261,26 @@ CREATE TABLE IF NOT EXISTS crawler_schedule_config (
     created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='爬虫定时配置';
+
+CREATE TABLE IF NOT EXISTS site_health_status (
+    site_domain VARCHAR(255) PRIMARY KEY,
+    status VARCHAR(16) NOT NULL,
+    reason VARCHAR(500) NOT NULL,
+    http_status INT,
+    final_url VARCHAR(1000),
+    server_name VARCHAR(255),
+    server_ip VARCHAR(45),
+    admin_name VARCHAR(100),
+    user_group VARCHAR(32),
+    latency_ms BIGINT NOT NULL DEFAULT 0,
+    consecutive_failures INT NOT NULL DEFAULT 0,
+    failure_since DATETIME,
+    checked_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_health_status_checked (status, checked_at),
+    INDEX idx_health_group_status (user_group, status),
+    INDEX idx_health_server (server_ip, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='站点最新健康检查状态';
 
 -- ------------------------------------------------------------
 -- 选择器模板库 — 存储不同电商平台/主题的 XPath 选择器配置
@@ -707,7 +728,8 @@ ON DUPLICATE KEY UPDATE config_value=VALUES(config_value);
 INSERT INTO crawler_schedule_config (task_type, cron_expression, enabled) VALUES
     ('site_crawl', '0 0 */6 * * ?', 1),
     ('site_index', '0 0 0 * * ?', 1),
-    ('order_crawl', '0 0 */6 * * ?', 1)
+    ('order_crawl', '0 0 */6 * * ?', 1),
+    ('site_health', '0 0/30 * * * ?', 1)
 ON DUPLICATE KEY UPDATE task_type=task_type;
 
 -- ============================================================
@@ -1216,3 +1238,14 @@ ON DUPLICATE KEY UPDATE parent_id=VALUES(parent_id),menu_name=VALUES(menu_name),
 UPDATE sys_menu SET sort_order=5 WHERE id=34;
 INSERT IGNORE INTO sys_role_menu(role_id,menu_id)
 SELECT r.id,m.id FROM sys_role r CROSS JOIN sys_menu m WHERE r.role_code='ROLE_ADMIN' AND m.id IN(73,74,75);
+
+-- Native site availability monitor and operator page.
+INSERT INTO sys_menu(id,parent_id,menu_name,menu_type,perms,path,component,icon,sort_order,status) VALUES
+(76,1,'站点健康检查',1,'crawler:health:view','/dashboard/site-health','crawler/SiteHealth','Monitor',5,1),
+(77,76,'执行站点健康检查',2,'crawler:health:trigger',NULL,NULL,NULL,1,1)
+ON DUPLICATE KEY UPDATE parent_id=VALUES(parent_id),menu_name=VALUES(menu_name),menu_type=VALUES(menu_type),perms=VALUES(perms),path=VALUES(path),component=VALUES(component),icon=VALUES(icon),sort_order=VALUES(sort_order),status=VALUES(status);
+INSERT IGNORE INTO sys_role_menu(role_id,menu_id)
+SELECT r.id,m.id FROM sys_role r CROSS JOIN sys_menu m
+WHERE r.role_code IN('ROLE_ADMIN','ROLE_OPERATOR') AND m.id IN(76,77);
+INSERT IGNORE INTO sys_role_menu(role_id,menu_id)
+SELECT r.id,76 FROM sys_role r WHERE r.role_code='ROLE_USER';

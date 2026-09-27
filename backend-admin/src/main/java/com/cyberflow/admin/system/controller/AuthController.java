@@ -2,6 +2,7 @@ package com.cyberflow.admin.system.controller;
 
 import com.cyberflow.admin.common.JwtUtils;
 import com.cyberflow.admin.common.Result;
+import com.cyberflow.admin.crawler.health.SiteHealthPersonalAlertService;
 import com.cyberflow.admin.system.entity.SysUser;
 import com.cyberflow.admin.system.service.SysMenuService;
 import com.cyberflow.admin.system.service.SysUserService;
@@ -42,6 +43,9 @@ public class AuthController {
 
     /** 密码编码器，用于验证登录密码 */
     private final PasswordEncoder passwordEncoder;
+
+    /** Builds an employee-scoped reminder at most once per Beijing calendar day. */
+    private final SiteHealthPersonalAlertService siteHealthPersonalAlertService;
 
     /**
      * 用户登录接口。
@@ -86,6 +90,8 @@ public class AuthController {
         userInfo.put("roles", roles);
         userInfo.put("permissions", perms);
         result.put("userInfo", userInfo);
+        var siteHealthAlert = siteHealthPersonalAlertService.claimForLogin(user);
+        if (siteHealthAlert != null) result.put("siteHealthAlert", siteHealthAlert);
 
         return Result.ok(result);
     }

@@ -3,6 +3,7 @@ package com.cyberflow.admin.crawler.task.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.cyberflow.admin.crawler.task.entity.TaskHistory;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -22,6 +23,10 @@ import java.util.Map;
  */
 @Mapper
 public interface TaskHistoryMapper extends BaseMapper<TaskHistory> {
+
+    @Insert("INSERT INTO task_crawl_log(task_id, content, content_length) VALUES(#{taskId}, #{content}, #{length})")
+    void appendLog(@Param("taskId") String taskId, @Param("content") String content,
+                   @Param("length") int length);
 
     /** Aggregate the small set of counters needed by the data-sync console. */
     @Select("SELECT COUNT(*) AS total, " +

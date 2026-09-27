@@ -140,6 +140,7 @@ public class TaskHistoryController {
             case "site_index" -> "site-index";
             case "order_crawl" -> "order-crawl";
             case "product_crawl" -> "product-crawl";
+            case "site_health" -> "site-health";
             default -> "crawl-task";
         };
         String fileName = prefix + "-" + taskId + ".log";

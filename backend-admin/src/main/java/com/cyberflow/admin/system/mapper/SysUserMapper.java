@@ -3,8 +3,11 @@ package com.cyberflow.admin.system.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.cyberflow.admin.system.entity.SysUser;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -69,4 +72,8 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
             "INNER JOIN sys_role r ON r.id = ur.role_id " +
             "WHERE ur.user_id = #{userId} AND r.role_code = #{roleCode}")
     long countUserRoleCode(Long userId, String roleCode);
+
+    @Update("UPDATE sys_user SET site_health_notice_date=#{noticeDate} " +
+            "WHERE id=#{userId} AND (site_health_notice_date IS NULL OR site_health_notice_date < #{noticeDate})")
+    int markSiteHealthNoticeShown(@Param("userId") Long userId, @Param("noticeDate") LocalDate noticeDate);
 }

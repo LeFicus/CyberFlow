@@ -74,7 +74,7 @@
           <el-dropdown trigger="click" @command="handleUserCommand">
             <button class="profile-button">
               <el-avatar :size="34" class="profile-avatar">{{ avatarText }}</el-avatar>
-              <span class="profile-copy"><strong>{{ displayName }}</strong><small>管理员</small></span>
+              <span class="profile-copy"><strong>{{ displayName }}</strong><small>{{ roleLabel }}</small></span>
               <el-icon><ArrowDown /></el-icon>
             </button>
             <template #dropdown>
@@ -120,6 +120,7 @@ const routePermissions = {
   '/dashboard/sites': 'dashboard:site:view',
   '/dashboard/orders': 'dashboard:order:view',
   '/dashboard/products': 'dashboard:product:view',
+  '/dashboard/site-health': 'crawler:health:view',
   '/indexing/sites': 'dashboard:site:view',
   '/indexing/builders': 'dashboard:site:view',
   '/indexing/servers': 'dashboard:site:view',
@@ -165,6 +166,7 @@ const fallbackMenus = [
     { id: 12, menuName: '站点与收录', path: '/dashboard/sites' },
     { id: 13, menuName: '订单列表', path: '/dashboard/orders' },
     { id: 14, menuName: '商品列表', path: '/dashboard/products' },
+    { id: 76, menuName: '站点健康检查', path: '/dashboard/site-health' },
   ] },
   { id: 2, menuName: '数据同步', icon: 'RefreshRight', children: [
     { id: 21, menuName: '站点、收录与订单同步', path: '/crawler/site' },
@@ -191,7 +193,7 @@ const fallbackMenus = [
 
 const menuTree = computed(() => {
   const rawSource = userStore.userInfo?.menus?.length ? userStore.userInfo.menus : fallbackMenus
-  const legacyPaths = new Set(['/indexing/sites', '/indexing/builders', '/indexing/servers', '/crawler/collect', '/crawler/order'])
+  const legacyPaths = new Set(['/indexing/sites', '/indexing/builders', '/indexing/servers', '/crawler/collect', '/crawler/order', '/crawler/site-health'])
   const sanitizeMenu = menu => ({
     ...menu,
     children: menu.path
@@ -247,7 +249,13 @@ const menuTree = computed(() => {
   )
   return groupedMenus
 })
-const displayName = computed(() => userStore.userInfo?.nickname || userStore.userInfo?.username || '管理员')
+const displayName = computed(() => userStore.userInfo?.nickname || userStore.userInfo?.username || '用户')
+const roleLabel = computed(() => {
+  const roles = userStore.userInfo?.roles || []
+  if (roles.includes('ROLE_ADMIN')) return '管理员'
+  if (roles.includes('ROLE_OPERATOR')) return '运营人员'
+  return '员工'
+})
 const avatarText = computed(() => displayName.value.slice(0, 1))
 onMounted(async () => {
   if (userStore.token) await userStore.refreshUserInfo().catch(() => {})

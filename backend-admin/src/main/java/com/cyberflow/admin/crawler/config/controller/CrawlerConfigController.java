@@ -4,6 +4,7 @@ import com.cyberflow.admin.common.Result;
 import com.cyberflow.admin.crawler.config.entity.CrawlerScheduleConfig;
 import com.cyberflow.admin.crawler.config.service.CrawlerConfigService;
 import com.cyberflow.admin.crawler.service.CrawlerService;
+import com.cyberflow.admin.crawler.health.SiteHealthCheckService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +22,7 @@ public class CrawlerConfigController {
 
     private final CrawlerConfigService crawlerConfigService;
     private final CrawlerService crawlerService;
+    private final SiteHealthCheckService siteHealthCheckService;
 
     @GetMapping
     @PreAuthorize("hasAnyAuthority('crawler:site:start', 'crawler:order:view', 'crawler:collect:start')")
@@ -67,6 +69,7 @@ public class CrawlerConfigController {
             case "site_crawl" -> Result.ok(crawlerService.triggerSiteCrawler());
             case "site_index" -> Result.ok(crawlerService.triggerSiteIndexCrawler());
             case "order_crawl" -> Result.ok(crawlerService.triggerAllOrderCrawlers());
+            case "site_health" -> Result.ok(siteHealthCheckService.trigger("manual"));
             default -> Result.fail("Unsupported task type: " + taskType);
         };
     }

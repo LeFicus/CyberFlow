@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 /**
  * 系统用户实体类，对应数据库表 {@code sys_user}。
@@ -48,6 +49,9 @@ public class SysUser {
 
     /** 账户状态：1-启用，0-禁用 */
     private Integer status;
+
+    /** Last Beijing-calendar day on which the user's personal site-health reminder was issued. */
+    private LocalDate siteHealthNoticeDate;
 
     /** 记录创建时间 */
     private LocalDateTime createdAt;

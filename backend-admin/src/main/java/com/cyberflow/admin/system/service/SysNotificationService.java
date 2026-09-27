@@ -120,11 +120,18 @@ public class SysNotificationService {
     }
 
     public void sendToEnabled(String title, String content) {
+        sendToEnabled(null, title, content);
+    }
+
+    /** Send only through enabled channels of the requested platform. A null platform means all platforms. */
+    public void sendToEnabled(NotificationPlatform requiredPlatform, String title, String content) {
         if (content == null || content.isBlank()) return;
         String normalizedTitle = normalizeMessagePart(title, "CyberFlow 通知", 200, "通知标题");
         String normalizedContent = normalizeMessagePart(content, null, 3000, "通知正文");
-        mapper.selectList(new LambdaQueryWrapper<SysNotificationChannel>()
-                        .eq(SysNotificationChannel::getEnabled, 1))
+        LambdaQueryWrapper<SysNotificationChannel> query = new LambdaQueryWrapper<SysNotificationChannel>()
+                .eq(SysNotificationChannel::getEnabled, 1);
+        if (requiredPlatform != null) query.eq(SysNotificationChannel::getPlatform, requiredPlatform.name());
+        mapper.selectList(query)
                 .forEach(channel -> {
                     try {
                         NotificationPlatform platform = NotificationPlatform.parse(channel.getPlatform());

@@ -64,6 +64,30 @@ export function triggerCrawlerSchedule(taskType) {
   return request.post(`/admin/crawler/config/schedules/${taskType}/trigger`)
 }
 
+export function getSiteHealth(params) {
+  return request.get('/admin/crawler/site-health', { params })
+}
+
+export function getSiteHealthSummary(params) {
+  return request.get('/admin/crawler/site-health/summary', { params })
+}
+
+export function getSiteHealthFilters() {
+  return request.get('/admin/crawler/site-health/filters')
+}
+
+export function triggerSiteHealth() {
+  return request.post('/admin/crawler/site-health/trigger')
+}
+
+export function getSiteHealthConfig() {
+  return request.get('/admin/crawler/site-health/config')
+}
+
+export function updateSiteHealthConfig(data) {
+  return request.put('/admin/crawler/site-health/config', data)
+}
+
 /**
  * 查询单个任务执行状态
  * @param {string} taskId - 任务唯一标识

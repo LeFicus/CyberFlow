@@ -40,6 +40,19 @@ PREPARE shared_data_fields_stmt FROM @shared_data_fields_sql;
 EXECUTE shared_data_fields_stmt;
 DEALLOCATE PREPARE shared_data_fields_stmt;
 
+SET @site_health_notice_date_exists = (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = DATABASE() AND table_name = 'sys_user' AND column_name = 'site_health_notice_date'
+);
+SET @site_health_notice_date_sql = IF(
+    @site_health_notice_date_exists = 0,
+    'ALTER TABLE sys_user ADD COLUMN site_health_notice_date DATE COMMENT ''最近一次个人站点异常登录提醒日期（北京时间）'' AFTER status',
+    'SELECT 1'
+);
+PREPARE site_health_notice_date_stmt FROM @site_health_notice_date_sql;
+EXECUTE site_health_notice_date_stmt;
+DEALLOCATE PREPARE site_health_notice_date_stmt;
+
 CREATE DATABASE IF NOT EXISTS scraped_data
     DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -53,6 +66,26 @@ CREATE TABLE IF NOT EXISTS crawler_runtime_config (
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_group_key (config_group, config_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS site_health_status (
+    site_domain VARCHAR(255) PRIMARY KEY,
+    status VARCHAR(16) NOT NULL,
+    reason VARCHAR(500) NOT NULL,
+    http_status INT,
+    final_url VARCHAR(1000),
+    server_name VARCHAR(255),
+    server_ip VARCHAR(45),
+    admin_name VARCHAR(100),
+    user_group VARCHAR(32),
+    latency_ms BIGINT NOT NULL DEFAULT 0,
+    consecutive_failures INT NOT NULL DEFAULT 0,
+    failure_since DATETIME,
+    checked_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_health_status_checked (status, checked_at),
+    INDEX idx_health_group_status (user_group, status),
+    INDEX idx_health_server (server_ip, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS crawler_schedule_config (
@@ -254,7 +287,8 @@ CREATE TABLE IF NOT EXISTS scraped_data.ecommerce_products (
 INSERT IGNORE INTO crawler_schedule_config (task_type, cron_expression, enabled) VALUES
     ('site_crawl', '0 0 2 * * ?', 1),
     ('site_index', '0 30 2 * * ?', 1),
-    ('order_crawl', '0 0 3 * * ?', 1);
+    ('order_crawl', '0 0 3 * * ?', 1),
+    ('site_health', '0 0/30 * * * ?', 1);
 
 INSERT INTO selector_template (
     name, platform, title_selector, price_selector, price_regex,

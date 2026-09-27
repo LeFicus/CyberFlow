@@ -1,7 +1,7 @@
 <template>
   <div class="notification-page">
     <el-alert
-      title="Webhook 与签名密钥会加密保存且不会回显；仅允许各平台官方 HTTPS 机器人地址。"
+      title="Webhook 与签名密钥会加密保存且不会回显；站点健康总体汇总只发送到已启用的飞书机器人。"
       type="info"
       :closable="false"
       show-icon
@@ -166,7 +166,7 @@ const testMessage = reactive({ title: 'CyberFlow 测试通知', content: '机器
 const form = reactive({
   id: null,
   name: '',
-  platform: 'DINGTALK',
+  platform: 'FEISHU',
   webhookUrl: '',
   signingSecret: '',
   messageTemplate: DEFAULT_TEMPLATE,
@@ -239,7 +239,7 @@ function openDialog(row) {
   } : {
     id: null,
     name: '',
-    platform: 'DINGTALK',
+    platform: 'FEISHU',
     webhookUrl: '',
     signingSecret: '',
     messageTemplate: DEFAULT_TEMPLATE,

@@ -75,6 +75,7 @@ cyberflow:
     site-cron: "0 0 */6 * * ?"     # 从00:00开始，每6小时整点执行
     index-cron: "0 0 0 * * ?"      # 每天00:00采集站点收录快照
     order-cron: "0 0 */6 * * ?"    # 从00:00开始，每6小时整点执行
+    health-cron: "0 0/30 * * * ?"  # 每30分钟检查一次站点可用性
   jwt:
     secret: ${JWT_SECRET:cyberflow-admin-jwt-secret-key-2026}
     expiration: 14400000

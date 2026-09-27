@@ -185,6 +185,52 @@ public class CrawlerConfigService {
         return group(cfg, "siteStrategy");
     }
 
+    public Map<String, Object> getSiteHealthStrategy() {
+        Map<String, Object> cfg = getRuntimeConfig(false);
+        return group(cfg, "siteHealth");
+    }
+
+    @Transactional
+    public Map<String, Object> updateSiteHealthStrategy(Map<String, Object> body) {
+        Set<String> listKeys = Set.of("userGroups", "excludeDomains", "excludeServerIps");
+        Map<String, int[]> integerKeys = Map.of(
+                "minimumAgeDays", new int[]{0, 365},
+                "maxRetries", new int[]{1, 10},
+                "retryDelaySeconds", new int[]{0, 60},
+                "maxParallelServers", new int[]{1, 100},
+                "sameServerDelaySeconds", new int[]{0, 60},
+                "connectTimeoutSeconds", new int[]{1, 60},
+                "requestTimeoutSeconds", new int[]{2, 120},
+                "minimumBodyLength", new int[]{0, 100000}
+        );
+        for (Map.Entry<String, Object> entry : body.entrySet()) {
+            String key = entry.getKey();
+            Object value;
+            if (listKeys.contains(key)) {
+                if (!(entry.getValue() instanceof Collection<?> items)) {
+                    throw new IllegalArgumentException(key + " 必须是数组");
+                }
+                value = items.stream().map(String::valueOf).map(String::trim)
+                        .filter(item -> !item.isEmpty()).distinct().toList();
+            } else if (integerKeys.containsKey(key)) {
+                int number;
+                try { number = Integer.parseInt(String.valueOf(entry.getValue())); }
+                catch (NumberFormatException e) { throw new IllegalArgumentException(key + " 必须是整数"); }
+                int[] range = integerKeys.get(key);
+                if (number < range[0] || number > range[1]) {
+                    throw new IllegalArgumentException(key + " 超出允许范围");
+                }
+                value = number;
+            } else if ("notifyEveryRun".equals(key)) {
+                value = Boolean.TRUE.equals(entry.getValue()) || "true".equalsIgnoreCase(String.valueOf(entry.getValue()));
+            } else {
+                continue;
+            }
+            upsertRuntime("siteHealth", key, value, false);
+        }
+        return getSiteHealthStrategy();
+    }
+
     public Map<String, Object> getOrderStrategy() {
         Map<String, Object> cfg = getRuntimeConfig(false);
         return group(cfg, "orderStrategy");
@@ -405,6 +451,7 @@ public class CrawlerConfigService {
             case "site_crawl" -> "siteCrawlTrigger";
             case "site_index" -> "siteIndexCrawlTrigger";
             case "order_crawl" -> "orderCrawlTrigger";
+            case "site_health" -> "siteHealthCheckTrigger";
             default -> null;
         };
         if (triggerName == null) {
@@ -474,6 +521,20 @@ public class CrawlerConfigService {
             "filterBuiltOnly", false,
             "pageSize", 100
         )));
+        Map<String, Object> siteHealth = new LinkedHashMap<>();
+        siteHealth.put("userGroups", new ArrayList<>());
+        siteHealth.put("excludeDomains", new ArrayList<>());
+        siteHealth.put("excludeServerIps", new ArrayList<>());
+        siteHealth.put("minimumAgeDays", 7);
+        siteHealth.put("maxRetries", 5);
+        siteHealth.put("retryDelaySeconds", 2);
+        siteHealth.put("maxParallelServers", 20);
+        siteHealth.put("sameServerDelaySeconds", 3);
+        siteHealth.put("connectTimeoutSeconds", 10);
+        siteHealth.put("requestTimeoutSeconds", 30);
+        siteHealth.put("minimumBodyLength", 1200);
+        siteHealth.put("notifyEveryRun", true);
+        root.put("siteHealth", siteHealth);
         root.put("aiGeneration", new LinkedHashMap<>(Map.of(
             "provider", "deepseek",
             "baseUrl", "https://api.deepseek.com",
@@ -528,6 +589,7 @@ public class CrawlerConfigService {
     private String defaultCron(String taskType) {
         return switch (taskType) {
             case "site_index" -> "0 0 0 * * ?";
+            case "site_health" -> "0 0/30 * * * ?";
             case "site_crawl", "order_crawl" -> "0 0 */6 * * ?";
             default -> "0 0 */6 * * ?";
         };

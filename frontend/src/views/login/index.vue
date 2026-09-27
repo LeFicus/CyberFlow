@@ -35,10 +35,10 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { h, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowRight, Lock, User } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { login } from '@/api/auth'
 import { useUserStore } from '@/store/user'
 
@@ -66,12 +66,34 @@ async function handleLogin() {
     userStore.setToken(response.data.token)
     await userStore.refreshUserInfo()
     ElMessage.success('登录成功，欢迎回来')
-    router.push('/dashboard/overview')
+    await router.push('/dashboard/overview')
+    if (response.data.siteHealthAlert) await showSiteHealthAlert(response.data.siteHealthAlert)
   } catch {
     // request 拦截器负责统一展示接口错误。
   } finally {
     loading.value = false
   }
+}
+
+function showSiteHealthAlert(alert) {
+  const rows = (alert.sites || []).map(site => h('li', { style: 'margin: 7px 0;' }, [
+    h('strong', site.domain),
+    `：${site.reason || '状态异常'}${site.serverName ? `（${site.serverName}）` : ''}`,
+  ]))
+  const children = [
+    h('p', { style: 'margin: 0 0 10px; line-height: 1.7;' },
+      `你当前有 ${alert.total} 个异常站点，请尽快检查并处理。`),
+    h('ul', { style: 'max-height: 300px; margin: 0; padding-left: 20px; overflow: auto; line-height: 1.5;' }, rows),
+  ]
+  if (alert.remaining > 0) {
+    children.push(h('p', { style: 'margin: 10px 0 0; color: #909399;' },
+      `另有 ${alert.remaining} 个异常站点，请前往站点健康检查页面查看。`))
+  }
+  return ElMessageBox.alert(h('div', children), '个人站点异常提醒', {
+    type: 'warning',
+    confirmButtonText: '我知道了',
+    closeOnClickModal: false,
+  })
 }
 </script>
 
