@@ -387,7 +387,9 @@ public class CrawlerConfigService {
 
     public List<CrawlerScheduleConfig> listSchedules() {
         return scheduleConfigMapper.selectList(
-            new LambdaQueryWrapper<CrawlerScheduleConfig>().orderByAsc(CrawlerScheduleConfig::getTaskType)
+            new LambdaQueryWrapper<CrawlerScheduleConfig>()
+                .ne(CrawlerScheduleConfig::getTaskType, "site_health")
+                .orderByAsc(CrawlerScheduleConfig::getTaskType)
         );
     }
 
@@ -402,6 +404,9 @@ public class CrawlerConfigService {
 
     @Transactional
     public CrawlerScheduleConfig updateSchedule(String taskType, Map<String, Object> body) {
+        if ("site_health".equals(taskType)) {
+            throw new IllegalArgumentException("站点健康检查只能由管理员手动启动，不能设置自动计划");
+        }
         CrawlerScheduleConfig config = getSchedule(taskType);
         if (config == null) {
             config = new CrawlerScheduleConfig();
@@ -451,7 +456,6 @@ public class CrawlerConfigService {
             case "site_crawl" -> "siteCrawlTrigger";
             case "site_index" -> "siteIndexCrawlTrigger";
             case "order_crawl" -> "orderCrawlTrigger";
-            case "site_health" -> "siteHealthCheckTrigger";
             default -> null;
         };
         if (triggerName == null) {
@@ -589,7 +593,6 @@ public class CrawlerConfigService {
     private String defaultCron(String taskType) {
         return switch (taskType) {
             case "site_index" -> "0 0 0 * * ?";
-            case "site_health" -> "0 0/30 * * * ?";
             case "site_crawl", "order_crawl" -> "0 0 */6 * * ?";
             default -> "0 0 */6 * * ?";
         };

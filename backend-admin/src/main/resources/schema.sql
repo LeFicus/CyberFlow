@@ -287,8 +287,7 @@ CREATE TABLE IF NOT EXISTS scraped_data.ecommerce_products (
 INSERT IGNORE INTO crawler_schedule_config (task_type, cron_expression, enabled) VALUES
     ('site_crawl', '0 0 2 * * ?', 1),
     ('site_index', '0 30 2 * * ?', 1),
-    ('order_crawl', '0 0 3 * * ?', 1),
-    ('site_health', '0 0/30 * * * ?', 1);
+    ('order_crawl', '0 0 3 * * ?', 1);
 
 INSERT INTO selector_template (
     name, platform, title_selector, price_selector, price_regex,

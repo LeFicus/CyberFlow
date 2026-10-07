@@ -92,7 +92,7 @@ import { useUserStore } from '@/store/user'
 import { formatBeijingDateTime } from '@/utils/dateTime'
 
 const userStore = useUserStore()
-const canTrigger = computed(() => userStore.hasPermission('crawler:health:trigger') || userStore.hasPermission('crawler:schedule:trigger'))
+const canTrigger = computed(() => (userStore.userInfo?.roles || []).includes('ROLE_ADMIN'))
 const canConfigure = computed(() => userStore.hasPermission('crawler:schedule:update'))
 const loading = ref(false)
 const triggering = ref(false)

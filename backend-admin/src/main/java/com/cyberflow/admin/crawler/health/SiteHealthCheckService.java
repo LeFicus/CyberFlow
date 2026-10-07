@@ -63,7 +63,7 @@ public class SiteHealthCheckService {
     private final TaskExecutor taskExecutor;
     private final DataScopeService dataScopeService;
 
-    public synchronized Map<String, Object> trigger(String triggerType) {
+    public synchronized Map<String, Object> trigger() {
         if (taskHistoryService.hasActiveTask("site_health", null)) {
             throw new IllegalArgumentException("站点健康检查正在执行，请等待当前任务结束");
         }
@@ -71,7 +71,7 @@ public class SiteHealthCheckService {
         TaskHistory history = new TaskHistory();
         history.setTaskId(taskId);
         history.setType("site_health");
-        history.setTriggerType("cron".equals(triggerType) ? "cron" : "manual");
+        history.setTriggerType("manual");
         history.setStatus("PENDING");
         history.setProgress(0);
         history.setProgressMessage("等待站点健康检查");

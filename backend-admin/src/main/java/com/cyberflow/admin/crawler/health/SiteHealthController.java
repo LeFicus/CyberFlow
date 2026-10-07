@@ -57,6 +57,6 @@ public class SiteHealthController {
     }
 
     @PostMapping("/trigger")
-    @PreAuthorize("hasAnyAuthority('crawler:health:trigger', 'crawler:schedule:trigger')")
-    public Result<?> trigger() { return Result.ok(service.trigger("manual")); }
+    @PreAuthorize("hasRole('ADMIN')")
+    public Result<?> trigger() { return Result.ok(service.trigger()); }
 }
