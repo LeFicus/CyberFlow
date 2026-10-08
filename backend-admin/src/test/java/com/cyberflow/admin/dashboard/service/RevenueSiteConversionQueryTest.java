@@ -29,10 +29,19 @@ class RevenueSiteConversionQueryTest {
 
         assertTrue(sql.contains("COUNT(*) AS site_count"));
         assertTrue(sql.contains("COUNT(valid_sites.product_host) AS valid_ordered_site_count"));
+        assertTrue(sql.contains("FROM retired_site_info r"));
         assertTrue(sql.contains("WHERE is_valid = 0"));
         assertTrue(sql.contains("create_time >= CONCAT(?, ' 00:00:00')"));
         assertTrue(sql.contains("create_time < DATE_ADD(?, INTERVAL 1 DAY)"));
-        assertFalse(sql.contains("domain_applied_at"));
+        assertFalse(sql.contains("site_created_before"));
         assertFalse(sql.contains("siteCreatedBefore"));
+
+        parameters.put("siteCreatedMonth", "2026-09");
+        String cohortSql = configuration.getMappedStatement(
+                RevenueMapper.class.getName() + ".revenueSites"
+        ).getBoundSql(parameters).getSql();
+        assertTrue(cohortSql.contains("FROM retired_site_info r"));
+        assertTrue(cohortSql.contains("DATE_FORMAT(COALESCE(s.domain_applied_at, s.created_at), '%Y-%m') = ?"));
+        assertTrue(cohortSql.contains("OR (s.domain_applied_at IS NULL AND s.created_at IS NULL)"));
     }
 }

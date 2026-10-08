@@ -73,6 +73,21 @@ class SiteCrawlerTest(unittest.TestCase):
         self.assertEqual("shop-admin", records[0]["wp_admin_user"])
         self.assertEqual("site-secret", records[0]["wp_admin_user_pwd"])
 
+    def test_abandoned_domain_is_kept_for_order_history_only(self):
+        crawler = AsyncSiteCrawler("https://admin.example", "admin", "secret")
+        crawler.client = FakeClient({
+            "data": {"data": [{
+                "domain": "retired.example", "admin_name": "A-张三",
+                "status": 3, "add_date": "2026-05-01 00:00:00",
+            }]}
+        })
+
+        records = asyncio.run(crawler.fetch_domains({}))
+
+        self.assertEqual([], records)
+        self.assertEqual("retired.example", crawler.retired_domains[0]["site_domain"])
+        self.assertEqual("A-张三", crawler.retired_domains[0]["admin_name"])
+
 
 if __name__ == "__main__":
     unittest.main()

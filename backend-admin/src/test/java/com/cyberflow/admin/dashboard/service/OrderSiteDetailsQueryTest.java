@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OrderSiteDetailsQueryTest {
     @Test
-    void orderListQueryIncludesCurrentSiteCategoryDetailsAndBuildType() {
+    void orderListQueryIncludesRetiredSiteCategoryDetailsAndBuildType() {
         Configuration configuration = new Configuration();
         configuration.addMapper(OrderMapper.class);
 
@@ -16,7 +16,8 @@ class OrderSiteDetailsQueryTest {
                 OrderMapper.class.getName() + ".listOrdersFiltered"
         ).getBoundSql(null).getSql();
 
-        assertTrue(sql.contains("s.cat_names"));
-        assertTrue(sql.contains("COALESCE(s.site_tag, o.site_tag)"));
+        assertTrue(sql.contains("COALESCE(s.cat_names, r.cat_names) AS cat_names"));
+        assertTrue(sql.contains("COALESCE(s.site_tag, r.site_tag, o.site_tag)"));
+        assertTrue(sql.contains("LEFT JOIN retired_site_info r"));
     }
 }

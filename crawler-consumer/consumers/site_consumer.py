@@ -125,7 +125,7 @@ class SiteConsumer(BaseConsumer):
             await self.repo.update_task_progress(task_id, 75, f"正在保存 {len(records)} 条站点记录")
             await self.append_task_log(self.repo, task_id, f"开始保存 {len(records)} 条站点记录")
             deleted_sites, deleted_history = await self._upsert_site_info(
-                records, payload.get("user_merge_map", {})
+                records, payload.get("user_merge_map", {}), crawler.retired_domains
             )
             await self.append_task_log(
                 self.repo, task_id,
@@ -362,6 +362,24 @@ class SiteConsumer(BaseConsumer):
             "COLLATE utf8mb4_unicode_ci"
         )
         await cur.execute(
+            f"""INSERT INTO retired_site_info
+                   (site_domain, admin_name, user_group, theme_name, product_category,
+                    cat_names, site_tag, domain_applied_at, created_at)
+                SELECT {normalized_site}, s.admin_name, s.user_group, s.theme_name,
+                       s.product_category, s.cat_names, s.site_tag,
+                       s.domain_applied_at, s.created_at
+                FROM site_info s
+                LEFT JOIN tmp_active_site_domains active
+                  ON active.site_domain={normalized_site}
+                WHERE active.site_domain IS NULL
+                ON DUPLICATE KEY UPDATE
+                    admin_name=VALUES(admin_name), user_group=VALUES(user_group),
+                    theme_name=VALUES(theme_name), product_category=VALUES(product_category),
+                    cat_names=VALUES(cat_names), site_tag=VALUES(site_tag),
+                    domain_applied_at=COALESCE(VALUES(domain_applied_at), retired_site_info.domain_applied_at),
+                    created_at=COALESCE(VALUES(created_at), retired_site_info.created_at)"""
+        )
+        await cur.execute(
             f"""DELETE h FROM site_indexing_history h
                 LEFT JOIN tmp_active_site_domains active
                   ON active.site_domain={normalized_history}
@@ -377,7 +395,8 @@ class SiteConsumer(BaseConsumer):
         deleted_sites = max(0, cur.rowcount)
         return deleted_history, deleted_sites
 
-    async def _upsert_site_info(self, records: list[dict], user_merge_map: dict) -> tuple[int, int]:
+    async def _upsert_site_info(self, records: list[dict], user_merge_map: dict,
+                                retired_records: list[dict] | None = None) -> tuple[int, int]:
         """将最新已建站集合写入 site_info，并删除远端已废弃站点。
 
         使用 INSERT ... ON DUPLICATE KEY UPDATE 确保幂等性：
@@ -433,6 +452,60 @@ class SiteConsumer(BaseConsumer):
                          r.get("user_group"), r.get("theme_name"), r.get("product_category"),
                          _json_array(r.get("cat_names")), r.get("site_tag", 0),
                          r.get("last_submitted_at"), r.get("domain_applied_at"), r.get("created_at")),
+                    )
+                await cur.executemany(
+                    "DELETE FROM retired_site_info WHERE site_domain=%s",
+                    [(domain,) for domain in normalized],
+                )
+                order_domains = set()
+                if retired_records:
+                    await cur.execute(
+                        """SELECT DISTINCT LOWER(CASE
+                               WHEN LEFT(TRIM(product_host), 4)='www.'
+                               THEN SUBSTRING(TRIM(product_host), 5)
+                               ELSE TRIM(product_host) END)
+                           FROM orders WHERE TRIM(COALESCE(product_host, ''))<>''"""
+                    )
+                    order_domains = {row[0] for row in await cur.fetchall()}
+                for record in retired_records or []:
+                    domain = normalize_domain(record.get("site_domain"))
+                    if not domain or domain in normalized or domain not in order_domains:
+                        continue
+                    owner = canonical_account(record.get("admin_name"), merge_lookup)
+                    if not owner:
+                        continue
+                    await cur.execute(
+                        """INSERT INTO retired_site_info
+                           (site_domain, admin_name, user_group, theme_name,
+                            product_category, cat_names, site_tag, domain_applied_at, created_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           ON DUPLICATE KEY UPDATE
+                               admin_name=COALESCE(NULLIF(VALUES(admin_name), ''), admin_name),
+                               user_group=COALESCE(NULLIF(VALUES(user_group), ''), user_group),
+                               theme_name=COALESCE(NULLIF(VALUES(theme_name), ''), theme_name),
+                               product_category=COALESCE(NULLIF(VALUES(product_category), ''), product_category),
+                               cat_names=CASE WHEN JSON_LENGTH(VALUES(cat_names)) > 0
+                                   THEN VALUES(cat_names) ELSE cat_names END,
+                               site_tag=CASE WHEN JSON_LENGTH(VALUES(cat_names)) > 0
+                                   THEN VALUES(site_tag) ELSE site_tag END,
+                               domain_applied_at=COALESCE(VALUES(domain_applied_at), domain_applied_at),
+                               created_at=COALESCE(VALUES(created_at), created_at)""",
+                        (domain, owner, account_group(owner) or record.get("user_group"),
+                         record.get("theme_name"), record.get("product_category"),
+                         _json_array(record.get("cat_names")), record.get("site_tag", 0),
+                         record.get("domain_applied_at"), record.get("created_at")),
+                    )
+                if retired_records:
+                    await cur.execute(
+                        """UPDATE orders o JOIN retired_site_info r
+                           ON LOWER(CASE WHEN LEFT(TRIM(o.product_host), 4)='www.'
+                               THEN SUBSTRING(TRIM(o.product_host), 5)
+                               ELSE TRIM(o.product_host) END)=r.site_domain
+                           SET o.admin_name=r.admin_name,
+                               o.theme_name=COALESCE(NULLIF(o.theme_name, ''), r.theme_name),
+                               o.product_category=COALESCE(NULLIF(o.product_category, ''), r.product_category),
+                               o.site_tag=CASE WHEN o.site_tag=0 THEN r.site_tag ELSE o.site_tag END
+                           WHERE TRIM(COALESCE(o.admin_name, ''))=''"""
                     )
                 if merge_lookup:
                     placeholders = ",".join(["%s"] * len(merge_lookup))

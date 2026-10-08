@@ -54,6 +54,7 @@ class AsyncSiteCrawler:
         self.filter_built_only = filter_built_only
         self.client: aiohttp.ClientSession | None = None
         self.token: str | None = None
+        self.retired_domains: list[dict] = []
 
     async def login(self) -> str:
         """登录管理平台，获取 JWT Bearer Token。
@@ -183,6 +184,7 @@ class AsyncSiteCrawler:
                        username、theme_name、product_category
         """
         results = []
+        self.retired_domains = []
         page = 1
         while True:
             url = f"{self.base_url}/adminapi/domain/domain/list?page={page}&pageSize={self.page_size}"
@@ -199,13 +201,28 @@ class AsyncSiteCrawler:
                     domain = item.get("domain", "").strip()
                     admin_name = item.get("admin_name", "")
                     status = item.get("status", 0)
-                    # 跳过超级管理员；filter_built_only 开启时只保留已建站(status=2)
+                    # Keep non-built domain ownership separately when historical
+                    # orders exist; the current-site mirror still contains only status=2.
                     if admin_name == "super":
                         continue
-                    # The local table is an authoritative mirror of currently
-                    # built sites.  Pending/abandoned domains never enter it.
                     if str(status).strip() != "2" or not domain:
+                        if domain:
+                            details = site_map.get(domain, {})
+                            self.retired_domains.append({
+                                "site_domain": domain,
+                                "admin_name": admin_name or details.get("admin_name") or "",
+                                "user_group": details.get("user_group") or self._user_group(admin_name),
+                                "theme_name": details.get("theme_name") or "",
+                                "product_category": details.get("product_category") or "",
+                                "cat_names": details.get("cat_names") or [],
+                                "site_tag": details.get("site_tag", 0),
+                                "domain_applied_at": normalize_datetime(
+                                    item.get("add_date") or item.get("add_time") or item.get("created_at")
+                                ),
+                                "created_at": details.get("created_at"),
+                            })
                         continue
+                    # The local table is an authoritative mirror of currently built sites.
                     applied_at = normalize_datetime(
                         item.get("add_date") or item.get("add_time") or item.get("created_at")
                     )

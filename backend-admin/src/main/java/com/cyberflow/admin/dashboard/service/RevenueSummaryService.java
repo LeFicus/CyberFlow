@@ -273,7 +273,8 @@ public class RevenueSummaryService {
         for (Map<String, Object> site : revenueMapper.revenueSites(userGroup, ownerName, teacherSuffixes, effectiveSiteCreatedMonth)) {
             String admin = text(site, "admin_name");
             String group = text(site, "user_group");
-            String month = text(site, "site_month");
+            String rawMonth = text(site, "site_month");
+            String month = rawMonth.isBlank() ? "待补齐" : rawMonth;
             MonthlyStats stats = monthlyStats.computeIfAbsent(group + "|" + month + "|" + admin,
                     ignored -> new MonthlyStats(group, month, admin));
             stats.siteCount++;

@@ -183,6 +183,13 @@ class OrderConsumer(BaseConsumer):
                             (product_host.lower(),),
                         )
                         site_row = await cur.fetchone()
+                        if not site_row:
+                            await cur.execute(
+                                """SELECT admin_name, user_group, theme_name, product_category, site_tag
+                                   FROM retired_site_info WHERE site_domain=%s""",
+                                (product_host.lower(),),
+                            )
+                            site_row = await cur.fetchone()
                         if site_row:
                             admin_name, site_user_group, theme_name, product_category, site_tag = site_row
                             site_matched += 1
@@ -223,9 +230,12 @@ class OrderConsumer(BaseConsumer):
                                ELSE shipping_address
                            END,
                            is_valid=COALESCE(VALUES(is_valid), is_valid),
-                           admin_name=VALUES(admin_name), user_group=VALUES(user_group),
-                           theme_name=VALUES(theme_name), product_category=VALUES(product_category),
-                           site_tag=VALUES(site_tag),
+                           admin_name=COALESCE(NULLIF(VALUES(admin_name), ''), admin_name),
+                           user_group=VALUES(user_group),
+                           theme_name=COALESCE(NULLIF(VALUES(theme_name), ''), theme_name),
+                           product_category=COALESCE(NULLIF(VALUES(product_category), ''), product_category),
+                           site_tag=CASE WHEN NULLIF(VALUES(admin_name), '') IS NOT NULL
+                               THEN VALUES(site_tag) ELSE site_tag END,
                            product_info=CASE
                                WHEN JSON_LENGTH(VALUES(product_info)) > 0 THEN VALUES(product_info)
                                ELSE product_info

@@ -214,6 +214,21 @@ CREATE TABLE IF NOT EXISTS site_info (
     INDEX idx_site_server (server_name, server_ip)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Retain non-sensitive ownership and cohort data when a built site is retired.
+CREATE TABLE IF NOT EXISTS retired_site_info (
+    site_domain      VARCHAR(255) NOT NULL PRIMARY KEY,
+    admin_name       VARCHAR(100),
+    user_group       VARCHAR(32),
+    theme_name       VARCHAR(100),
+    product_category VARCHAR(100),
+    cat_names        JSON,
+    site_tag         TINYINT NOT NULL DEFAULT 0,
+    domain_applied_at DATETIME,
+    created_at       DATETIME,
+    retired_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_retired_site_owner (admin_name, user_group)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS orders (
     id                  BIGINT NOT NULL,
     amount              DECIMAL(10, 2),

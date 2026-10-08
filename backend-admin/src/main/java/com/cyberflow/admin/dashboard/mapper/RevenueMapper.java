@@ -11,6 +11,18 @@ import java.util.Map;
 @Mapper
 public interface RevenueMapper {
 
+    /** Active sites plus retired sites whose domain has not been reactivated. */
+    String HISTORICAL_SITES_SQL = "(SELECT site_domain, admin_name, user_group, site_tag, " +
+            "CAST(cat_names AS CHAR CHARACTER SET utf8mb4) AS cat_names, " +
+            "product_category, domain_applied_at, created_at FROM site_info " +
+            "UNION ALL SELECT r.site_domain, r.admin_name, r.user_group, r.site_tag, " +
+            "CAST(r.cat_names AS CHAR CHARACTER SET utf8mb4), " +
+            "r.product_category, r.domain_applied_at, r.created_at " +
+            "FROM retired_site_info r WHERE NOT EXISTS (SELECT 1 FROM site_info current_site " +
+            "WHERE LOWER(CASE WHEN LEFT(TRIM(current_site.site_domain), 4) = 'www.' " +
+            "THEN SUBSTRING(TRIM(current_site.site_domain), 5) ELSE TRIM(current_site.site_domain) END) " +
+            "= r.site_domain))";
+
     /** Whole-group totals, including paid orders whose administrator is not yet assigned. */
     @Select({"<script>",
             "SELECT user_group, COUNT(DISTINCT " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + ") AS total_orders,",
@@ -86,7 +98,7 @@ public interface RevenueMapper {
     @Select({"<script>",
             "SELECT s.admin_name, s.user_group, COUNT(*) AS site_count, SUM(s.site_tag = 1) AS batch_site_count,",
             "COUNT(valid_sites.product_host) AS valid_ordered_site_count",
-            "FROM site_info s LEFT JOIN (",
+            "FROM " + HISTORICAL_SITES_SQL + " s LEFT JOIN (",
             "SELECT DISTINCT " + OrderMapper.NORMALIZED_PRODUCT_HOST_SQL + " AS product_host FROM orders",
             "WHERE is_valid = 0 AND TRIM(COALESCE(product_host, '')) &lt;&gt; ''",
             "<if test='startDate != null and startDate != &quot;&quot;'> AND create_time &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>",
@@ -124,8 +136,11 @@ public interface RevenueMapper {
             ") filtered_orders LEFT JOIN site_info s ON",
             "LOWER(CASE WHEN LEFT(TRIM(s.site_domain), 4) = 'www.'",
             "THEN SUBSTRING(TRIM(s.site_domain), 5) ELSE TRIM(s.site_domain) END) = filtered_orders.normalized_host",
-            "JOIN JSON_TABLE(CASE WHEN s.cat_names IS NULL OR JSON_LENGTH(s.cat_names) = 0",
-            "THEN JSON_ARRAY(COALESCE(NULLIF(TRIM(s.product_category), ''), '未分类')) ELSE s.cat_names END,",
+            "LEFT JOIN retired_site_info r ON s.site_domain IS NULL AND r.site_domain = filtered_orders.normalized_host",
+            "JOIN JSON_TABLE(CASE WHEN COALESCE(s.cat_names, r.cat_names) IS NULL",
+            "OR JSON_LENGTH(COALESCE(s.cat_names, r.cat_names)) = 0",
+            "THEN JSON_ARRAY(COALESCE(NULLIF(TRIM(COALESCE(s.product_category, r.product_category)), ''), '未分类'))",
+            "ELSE COALESCE(s.cat_names, r.cat_names) END,",
             "'$[*]' COLUMNS(category_name VARCHAR(100) PATH '$')) categories",
             "GROUP BY filtered_orders.admin_name, filtered_orders.user_group, category_name", "</script>"})
     List<Map<String, Object>> adminOrderCategoryStats(@Param("userGroup") String userGroup,
@@ -134,15 +149,17 @@ public interface RevenueMapper {
                                                        @Param("startDate") String startDate,
                                                        @Param("endDate") String endDate);
 
-    @Select({"<script>", "SELECT site_domain, admin_name, user_group, site_tag, cat_names, DATE_FORMAT(COALESCE(domain_applied_at, created_at), '%Y-%m') AS site_month",
-            "FROM site_info WHERE TRIM(COALESCE(admin_name, '')) &lt;&gt; ''",
-            "AND TRIM(COALESCE(user_group, '')) &lt;&gt; '' AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
-            "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) &gt; 0 " +
+    @Select({"<script>", "SELECT s.site_domain, s.admin_name, s.user_group, s.site_tag, s.cat_names, DATE_FORMAT(COALESCE(s.domain_applied_at, s.created_at), '%Y-%m') AS site_month",
+            "FROM " + HISTORICAL_SITES_SQL + " s WHERE TRIM(COALESCE(s.admin_name, '')) &lt;&gt; ''",
+            "AND TRIM(COALESCE(s.user_group, '')) &lt;&gt; '' AND (#{userGroup} IS NULL OR s.user_group = #{userGroup})",
+            "AND (#{ownerName} IS NULL OR FIND_IN_SET(s.admin_name, #{ownerName}) &gt; 0 " +
             "<if test='teacherSuffixes != null and !teacherSuffixes.isEmpty()'> OR " +
-            "<foreach collection='teacherSuffixes' item='suffix' separator=' OR '>admin_name LIKE CONCAT('%', #{suffix})</foreach>" +
+            "<foreach collection='teacherSuffixes' item='suffix' separator=' OR '>s.admin_name LIKE CONCAT('%', #{suffix})</foreach>" +
             "</if>)",
-            "<if test='siteCreatedMonth != null and siteCreatedMonth != &quot;&quot;'> AND DATE_FORMAT(COALESCE(domain_applied_at, created_at), '%Y-%m') = #{siteCreatedMonth}</if>",
-            "ORDER BY site_month DESC, user_group, admin_name", "</script>"})
+            "<if test='siteCreatedMonth != null and siteCreatedMonth != &quot;&quot;'> " +
+            "AND (DATE_FORMAT(COALESCE(s.domain_applied_at, s.created_at), '%Y-%m') = #{siteCreatedMonth} " +
+            "OR (s.domain_applied_at IS NULL AND s.created_at IS NULL))</if>",
+            "ORDER BY site_month DESC, s.user_group, s.admin_name", "</script>"})
     List<Map<String, Object>> revenueSites(@Param("userGroup") String userGroup,
                                            @Param("ownerName") String ownerName,
                                            @Param("teacherSuffixes") List<String> teacherSuffixes,

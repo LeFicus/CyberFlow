@@ -33,6 +33,8 @@ class RevenueCategoryBreakdownQueryTest {
         assertTrue(sql.contains("create_time < DATE_ADD(?, INTERVAL 1 DAY)"));
         assertTrue(sql.contains("COUNT(*) AS order_count"));
         assertTrue(sql.contains("JOIN JSON_TABLE"));
+        assertTrue(sql.contains("LEFT JOIN retired_site_info r"));
+        assertTrue(sql.contains("COALESCE(s.cat_names, r.cat_names)"));
         assertFalse(sql.contains("site_created_before"));
         assertFalse(sql.contains("AS site_count"));
     }

@@ -96,6 +96,7 @@
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="月度转化" name="monthly">
+          <el-alert v-if="monthlyConversion.some(row => row.site_month === '待补齐')" title="申请月份未知的历史站点单独列示，未归入所选月份" type="info" :closable="false" class="mb-3" />
           <el-table :data="monthlyConversion" stripe max-height="390" empty-text="暂无月度数据" class="compact-revenue-table">
             <el-table-column type="expand" label="详情" width="62">
               <template #default="{ row }"><RevenueRowDetails :details="monthlyDetails(row)" :breakdown="row.classification_breakdown" :category-breakdown="row.category_breakdown" :country-breakdown="row.customer_country_breakdown" /></template>

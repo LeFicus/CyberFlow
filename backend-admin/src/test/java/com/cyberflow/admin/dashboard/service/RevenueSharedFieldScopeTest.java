@@ -22,6 +22,34 @@ import static org.mockito.Mockito.when;
 class RevenueSharedFieldScopeTest {
     @Test
     @SuppressWarnings("unchecked")
+    void retiredSiteWithoutApplicationDateRemainsVisibleAsUnknownCohort() {
+        RevenueMapper mapper = mock(RevenueMapper.class);
+        CrawlerConfigService config = mock(CrawlerConfigService.class);
+        DataScopeService scopes = mock(DataScopeService.class);
+        when(config.getRevenueConfig()).thenReturn(Map.of("departedEmployees", List.of()));
+        when(scopes.current()).thenReturn(DataScope.all());
+
+        Map<String, Object> site = new LinkedHashMap<>();
+        site.put("site_domain", "retired.example");
+        site.put("admin_name", "A-成员");
+        site.put("user_group", "A");
+        site.put("site_month", null);
+        when(mapper.revenueSites(any(), any(), any(), eq("2026-09"))).thenReturn(List.of(site));
+        when(mapper.revenueOrdersByDomain(any(), any(), any(), any())).thenReturn(List.of(Map.of(
+                "product_host", "retired.example", "total_orders", 2L,
+                "valid_orders", 2L, "successful_orders", 1L, "successful_amount", 10.0)));
+
+        var service = new RevenueSummaryService(mapper, config, scopes, new ObjectMapper());
+        Map<String, Object> result = service.summarize("A", "2026-09-01", "2026-09-30", "2026-09");
+        Map<String, Object> unknown = ((List<Map<String, Object>>) result.get("monthly_conversion")).get(0);
+
+        assertEquals("待补齐", unknown.get("site_month"));
+        assertEquals(2L, unknown.get("total_orders"));
+        assertEquals(1L, unknown.get("site_count"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void sharedPerformanceRowsOnlyContainGrantedFields() {
         RevenueMapper mapper = mock(RevenueMapper.class);
         CrawlerConfigService config = mock(CrawlerConfigService.class);

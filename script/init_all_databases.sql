@@ -438,6 +438,21 @@ CREATE TABLE IF NOT EXISTS site_info (
     INDEX idx_site_server (server_name, server_ip)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='站点信息';
 
+-- Preserve historical order ownership and site cohorts without retaining login credentials.
+CREATE TABLE IF NOT EXISTS retired_site_info (
+    site_domain       VARCHAR(255) NOT NULL PRIMARY KEY,
+    admin_name        VARCHAR(100),
+    user_group        VARCHAR(32),
+    theme_name        VARCHAR(100),
+    product_category  VARCHAR(100),
+    cat_names         JSON,
+    site_tag          TINYINT NOT NULL DEFAULT 0,
+    domain_applied_at DATETIME,
+    created_at        DATETIME,
+    retired_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_retired_site_owner (admin_name, user_group)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='废弃站点的非敏感历史归属';
+
 -- ------------------------------------------------------------
 -- 订单表 — 存储电商平台支付系统的订单流水
 -- ------------------------------------------------------------
