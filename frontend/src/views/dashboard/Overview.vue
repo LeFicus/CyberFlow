@@ -36,19 +36,6 @@
       </article>
     </section>
 
-    <section v-if="overview.month_forecast_days_in_month" class="forecast-grid">
-      <article v-for="item in forecastMetrics" :key="item.label" class="forecast-card">
-        <div class="forecast-heading">
-          <div><span>本月趋势预测</span><h2>{{ item.label }}</h2></div>
-          <span class="metric-icon" :class="`tone-${item.tone}`"><el-icon><component :is="item.icon" /></el-icon></span>
-        </div>
-        <strong>{{ item.value }}</strong>
-        <p>{{ item.note }}</p>
-        <div class="forecast-progress"><i :style="{ width: `${monthProgress}%` }"></i></div>
-        <small>按本月至今日均外推 · 已统计 {{ forecastElapsedDays }}/{{ forecastDaysInMonth }} 天</small>
-      </article>
-    </section>
-
     <section class="panel revenue-panel">
       <div class="panel-heading revenue-heading">
         <div><h2>收入转化与提成</h2><p>按当前统计周期汇总{{ isAdmin ? '个人绩效、团队提成与月度转化' : '个人绩效与月度转化' }}</p></div>
@@ -113,53 +100,19 @@
       </el-tabs>
     </section>
 
-    <section class="content-grid">
-      <article class="panel chart-panel">
-        <div class="panel-heading">
-          <div><h2>去重订单与交易趋势</h2><p>同站点内收货邮箱或地址相同即合并，不包含支付卡号</p></div>
-          <span class="panel-chip blue">最近 30 天</span>
-        </div>
-        <v-chart :option="orderTrendOption" autoresize class="chart chart-large" />
-      </article>
-
-      <article class="panel ranking-panel">
-        <div class="panel-heading"><div><h2>管理员订单贡献</h2><p>按订单数量排序的运营表现</p></div></div>
-        <div v-if="adminRanking.length" class="ranking-list">
-          <div v-for="(item, index) in adminRanking" :key="item.name" class="ranking-row">
-            <span class="ranking-index">{{ String(index + 1).padStart(2, '0') }}</span>
-            <div class="ranking-main">
-              <div><strong>{{ item.name }}</strong><span>{{ formatNumber(item.count) }} 笔</span></div>
-              <div class="ranking-track"><i :style="{ width: `${item.percent}%` }"></i></div>
-            </div>
-          </div>
-        </div>
-        <el-empty v-else :image-size="54" description="暂无管理员订单数据" />
-        <button class="panel-link" @click="router.push('/dashboard/orders')">查看全部订单<el-icon><ArrowRight /></el-icon></button>
-      </article>
-    </section>
-
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
-import { ArrowRight, Calendar, DataBoard, Goods, Money, ShoppingCart } from '@element-plus/icons-vue'
-import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
-import { getCharts, getOverview, getRevenueSummary } from '@/api/dashboard'
+import { Calendar, DataBoard, Goods, Money, ShoppingCart } from '@element-plus/icons-vue'
+import { getOverview, getRevenueSummary } from '@/api/dashboard'
 import { useSiteGroups } from '@/composables/useSiteGroups'
 import RevenueRowDetails from '@/components/RevenueRowDetails.vue'
 
-use([CanvasRenderer, LineChart, GridComponent, LegendComponent, TooltipComponent])
-const router = useRouter()
 const userStore = useUserStore()
 const overview = ref({})
-const charts = ref({})
 const revenue = ref({})
 const revenueLoading = ref(false)
 const revenueTab = ref('personal')
@@ -223,18 +176,6 @@ const monthlyDetails = row => [
   { label: '本月有订单站点', value: formatNumber(row.ordered_site_count) },
   { label: '站点转化率', value: formatPercent(row.site_conversion_rate) },
 ]
-const orderTrend = computed(() => {
-  const source = new Map((charts.value.order_trend || []).map(item => [String(item.date || '').slice(0, 10), item]))
-  const today = new Date()
-  return Array.from({ length: 31 }, (_, index) => {
-    const date = new Date(today)
-    date.setHours(0, 0, 0, 0)
-    date.setDate(today.getDate() - 30 + index)
-    const key = dateKey(date)
-    const item = source.get(key) || {}
-    return { date: key, count: toNumber(item.count), amount: toNumber(item.amount) }
-  })
-})
 const todayOrders = computed(() => toNumber(overview.value.today_deduplicated_orders))
 const yesterdayOrders = computed(() => toNumber(overview.value.yesterday_deduplicated_orders))
 const todayOrderChange = computed(() => todayOrders.value - yesterdayOrders.value)
@@ -265,49 +206,18 @@ const stats = computed(() => [
   { label: '昨日成交金额', value: formatMoney(overview.value.yesterday_successful_amount), icon: Money, tone: 'green', trend: '昨日', trendTone: 'neutral', note: '已支付金额' },
 ])
 
-const forecastElapsedDays = computed(() => Math.max(1, toNumber(overview.value.month_forecast_elapsed_days)))
-const forecastDaysInMonth = computed(() => Math.max(forecastElapsedDays.value, toNumber(overview.value.month_forecast_days_in_month)))
-const monthProgress = computed(() => Math.min(100, (forecastElapsedDays.value / forecastDaysInMonth.value) * 100))
-const forecastMetrics = computed(() => [
-  { label: '本月去重订单预测', value: formatNumber(overview.value.month_forecast_deduplicated_orders), note: `当前已完成 ${formatNumber(overview.value.month_deduplicated_orders)} 笔`, icon: ShoppingCart, tone: 'violet' },
-  { label: '本月成交金额预测', value: formatMoney(overview.value.month_forecast_successful_amount), note: `当前已成交 ${formatMoney(overview.value.month_successful_amount)}`, icon: Money, tone: 'green' },
-])
-
-const adminRanking = computed(() => {
-  const source = [...(charts.value.orders_by_admin || [])].sort((a, b) => toNumber(b.count) - toNumber(a.count)).slice(0, 5)
-  const max = Math.max(...source.map(item => toNumber(item.count)), 1)
-  return source.map(item => ({ name: item.admin_name || '未分配', count: toNumber(item.count), percent: (toNumber(item.count) / max) * 100 }))
-})
 let dashboardRequestId = 0
-const orderTrendOption = computed(() => ({
-  animationDuration: 650,
-  grid: { left: 5, right: 8, top: 38, bottom: 4, containLabel: true },
-  legend: { top: 3, left: 0, itemWidth: 14, itemHeight: 4, textStyle: { color: '#7f8ba0', fontSize: 10 } },
-  tooltip: { trigger: 'axis', backgroundColor: '#17243b', borderWidth: 0, textStyle: { color: '#fff' } },
-  xAxis: { type: 'category', boundaryGap: false, data: orderTrend.value.map(item => item.date?.slice(5)), axisLine: { lineStyle: { color: '#edf1f7' } }, axisLabel: { color: '#9aa7ba', fontSize: 10, interval: 4 } },
-  yAxis: [
-    { type: 'value', splitLine: { lineStyle: { color: '#f0f3f8' } }, axisLabel: { color: '#9aa7ba', fontSize: 10 } },
-    { type: 'value', splitLine: { show: false }, axisLabel: { color: '#9aa7ba', fontSize: 10 } },
-  ],
-  series: [
-    { name: '去重订单', type: 'line', smooth: true, symbol: 'none', data: orderTrend.value.map(item => item.count), lineStyle: { width: 3, color: '#536ff1' }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#536ff12f' }, { offset: 1, color: '#536ff100' }] } } },
-    { name: '成功金额', type: 'line', yAxisIndex: 1, smooth: true, symbol: 'none', data: orderTrend.value.map(item => item.amount), lineStyle: { width: 2, color: '#45bc8d' } },
-  ],
-}))
-
 async function loadDashboard() {
   const requestId = ++dashboardRequestId
   revenueLoading.value = true
   const params = { userGroup: userGroup.value || undefined }
   const revenueParams = { ...params, startDate: revenueDateRange.value?.[0], endDate: revenueDateRange.value?.[1], siteCreatedMonth: siteCreatedMonth.value }
-  const [overviewResult, chartResult, revenueResult] = await Promise.allSettled([
+  const [overviewResult, revenueResult] = await Promise.allSettled([
     getOverview(params),
-    getCharts(params),
     getRevenueSummary(revenueParams),
   ])
   if (requestId !== dashboardRequestId) return
   if (overviewResult.status === 'fulfilled') overview.value = overviewResult.value.data || {}
-  if (chartResult.status === 'fulfilled') charts.value = chartResult.value.data || {}
   revenue.value = revenueResult.status === 'fulfilled' ? revenueResult.value.data || {} : {}
   revenueLoading.value = false
 }
@@ -333,15 +243,12 @@ h1, h2, p { margin: 0; } h1 { color: var(--cf-ink); font-size: 28px; letter-spac
 .brief-copy h2 { margin-top: 12px; font-size: 19px; font-weight: 550; line-height: 1.55; }.brief-copy h2 strong { color: #aab9ff; font-weight: 760; }.brief-copy p { max-width: 660px; margin-top: 8px; color: #8190ae; font-size: 10px; line-height: 1.7; }
 .brief-metrics { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, 1fr); }.brief-metric { min-width: 0; padding: 4px 18px; border-left: 1px solid #ffffff14; }.brief-metric span, .brief-metric small { display: block; color: #8392b0; font-size: 9px; }.brief-metric strong { display: block; margin: 8px 0 5px; overflow: hidden; color: #fff; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }.brief-metric small { color: #7383a4; }
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 15px; }
-.forecast-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 15px; }.forecast-card { padding: 20px 22px; border: 1px solid var(--cf-line); border-radius: 14px; background: linear-gradient(135deg, #fff, #f8faff); box-shadow: var(--cf-shadow-sm); }.forecast-heading { display: flex; align-items: flex-start; justify-content: space-between; }.forecast-heading span { color: #8d99ab; font-size: 9px; font-weight: 750; letter-spacing: .08em; }.forecast-heading h2 { margin-top: 5px; color: #3a4861; font-size: 13px; }.forecast-card > strong { display: block; margin-top: 16px; color: var(--cf-ink); font-size: 28px; letter-spacing: -.04em; }.forecast-card > p { margin-top: 6px; color: #8d99ab; font-size: 10px; }.forecast-progress { overflow: hidden; height: 5px; margin-top: 16px; border-radius: 999px; background: #e9edf5; }.forecast-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #536ff1, #45bc8d); }.forecast-card > small { display: block; margin-top: 7px; color: #9aa7b8; font-size: 9px; }
 .revenue-panel { margin-top: 15px; }.revenue-heading { gap: 18px; }.revenue-rules { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 7px; }.revenue-rules span { padding: 5px 9px; border-radius: 999px; color: #536ff1; background: #eef1ff; font-size: 9px; font-weight: 700; }.revenue-date-control { display: flex; align-items: center; gap: 5px; }.revenue-date-control > span { padding: 0; color: #8490a4; background: transparent; font-size: 9px; font-weight: 700; white-space: nowrap; }.revenue-tabs { margin-top: 16px; }.commission-breakdown { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; padding: 3px 0; }.commission-breakdown strong { color: #24956e; font-size: 14px; line-height: 1.2; white-space: nowrap; }.commission-breakdown small { display: flex; gap: 9px; color: #8a96a9; font-size: 9px; line-height: 1.2; white-space: nowrap; }.compact-revenue-table :deep(.el-table__expanded-cell) { padding: 0 !important; }
 .metric-card, .panel { border: 1px solid var(--cf-line); border-radius: 14px; background: #fff; box-shadow: var(--cf-shadow-sm); }
 .metric-card { padding: 18px 20px 16px; }.metric-top, .metric-foot, .panel-heading { display: flex; align-items: center; justify-content: space-between; }.metric-label { color: var(--cf-muted); font-size: 11px; }.metric-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; font-size: 16px; }.tone-blue { color: #536ff1; background: #eef1ff; }.tone-violet { color: #8a64e8; background: #f3edff; }.tone-amber { color: #d99a37; background: #fff6e3; }.tone-green { color: #36ad82; background: #eaf9f3; }
 .metric-value { margin: 14px 0 11px; color: var(--cf-ink); font-size: 25px; font-weight: 750; letter-spacing: -.04em; }.metric-foot { color: var(--cf-subtle); font-size: 10px; }.metric-trend { font-weight: 700; }.metric-trend.up { color: var(--cf-green); }.metric-trend.down { color: #df6577; }.metric-trend.neutral { color: var(--cf-blue); }
-.content-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, .7fr); gap: 15px; margin-top: 15px; }.panel { min-width: 0; padding: 21px; }.panel-heading { align-items: flex-start; }.panel-heading h2 { color: #263550; font-size: 14px; letter-spacing: -.02em; }.panel-heading p { margin-top: 5px; color: #9aa7b8; font-size: 10px; }.panel-chip { padding: 5px 9px; border-radius: 999px; font-size: 9px; font-weight: 700; }.panel-chip.blue { color: var(--cf-blue); background: #eef1ff; }
-.chart { width: 100%; height: 225px; margin-top: 12px; }.chart-large { height: 270px; }
-.ranking-list { display: grid; gap: 16px; margin-top: 23px; }.ranking-row { display: flex; align-items: center; gap: 11px; }.ranking-index { color: #b2bbc9; font-size: 9px; font-weight: 750; }.ranking-main { min-width: 0; flex: 1; }.ranking-main > div:first-child { display: flex; justify-content: space-between; margin-bottom: 7px; }.ranking-main strong { overflow: hidden; color: #4a5870; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.ranking-main span { color: #8d99ab; font-size: 10px; }.ranking-track { overflow: hidden; height: 5px; border-radius: 999px; background: #f0f2f7; }.ranking-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #536ff1, #8a75f1); }.panel-link { display: flex; align-items: center; gap: 5px; margin-top: 20px; padding: 0; border: 0; color: var(--cf-blue); background: transparent; font-size: 10px; cursor: pointer; }
-@media (max-width: 1120px) { .daily-brief { grid-template-columns: 1fr; }.content-grid { grid-template-columns: 1fr; }.revenue-heading { align-items: stretch; flex-direction: column; }.revenue-rules { justify-content: flex-start; } }
-@media (max-width: 760px) { .heading-controls { flex-wrap: wrap; }.revenue-date, .revenue-month { width: 100%; }.revenue-date-control { width: 100%; }.stats-grid { grid-template-columns: repeat(2, 1fr); }.forecast-grid { grid-template-columns: 1fr; }.daily-brief { padding: 21px; }.brief-metrics { gap: 8px; }.brief-metric { padding: 4px 8px; }.brief-copy h2 { font-size: 16px; } }
+.panel { min-width: 0; padding: 21px; }.panel-heading { align-items: flex-start; }.panel-heading h2 { color: #263550; font-size: 14px; letter-spacing: -.02em; }.panel-heading p { margin-top: 5px; color: #9aa7b8; font-size: 10px; }
+@media (max-width: 1120px) { .daily-brief { grid-template-columns: 1fr; }.revenue-heading { align-items: stretch; flex-direction: column; }.revenue-rules { justify-content: flex-start; } }
+@media (max-width: 760px) { .heading-controls { flex-wrap: wrap; }.revenue-date, .revenue-month { width: 100%; }.revenue-date-control { width: 100%; }.stats-grid { grid-template-columns: repeat(2, 1fr); }.daily-brief { padding: 21px; }.brief-metrics { gap: 8px; }.brief-metric { padding: 4px 8px; }.brief-copy h2 { font-size: 16px; } }
 @media (max-width: 560px) { .page-heading { align-items: flex-start; flex-direction: column; gap: 14px; }.heading-date { display: none; }.stats-grid { gap: 9px; }.metric-card { padding: 15px; }.metric-value { font-size: 20px; }.brief-metrics { grid-template-columns: 1fr; }.brief-metric { display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 9px 0; border-top: 1px solid #ffffff12; border-left: 0; }.brief-metric strong { margin: 0; font-size: 14px; }.brief-metric small { display: none; }.panel { padding: 17px; } }
 </style>
