@@ -53,20 +53,35 @@ public interface OrderMapper {
             "WHERE cursor_key LIKE 'order_crawler%'")
     int resetOrderCursors();
 
+    String FILTER_ORDER_HOST_SQL = "LOWER(CASE WHEN LEFT(TRIM(o.product_host), 4) = 'www.' " +
+            "THEN SUBSTRING(TRIM(o.product_host), 5) ELSE TRIM(o.product_host) END) COLLATE utf8mb4_unicode_ci";
+
+    // Resolve the same active/retired/snapshot build type used by the displayed order row.
+    // Only join before pagination when a build-type filter is present.
+    String FILTER_FROM_SQL = " FROM orders o " +
+            "<if test='siteTag != null'>" +
+            "LEFT JOIN site_info filter_site ON LOWER(CASE WHEN LEFT(TRIM(filter_site.site_domain), 4) = 'www.' " +
+            "THEN SUBSTRING(TRIM(filter_site.site_domain), 5) ELSE TRIM(filter_site.site_domain) END) COLLATE utf8mb4_unicode_ci = " +
+            FILTER_ORDER_HOST_SQL + " " +
+            "LEFT JOIN retired_site_info filter_retired ON filter_site.site_domain IS NULL " +
+            "AND filter_retired.site_domain COLLATE utf8mb4_unicode_ci = " + FILTER_ORDER_HOST_SQL + " " +
+            "</if>";
+
     String FILTER_SQL = "<where>" +
-            "<if test='orderId != null and orderId != &quot;&quot;'> AND CAST(id AS CHAR) LIKE CONCAT('%', #{orderId}, '%')</if>" +
-            "<if test='adminName != null and adminName != &quot;&quot;'> AND admin_name LIKE CONCAT('%', #{adminName}, '%')</if>" +
-            "<if test='userGroup != null and userGroup != &quot;&quot;'> AND user_group = #{userGroup}</if>" +
-            "<if test='ownerName != null'> AND FIND_IN_SET(admin_name, #{ownerName}) &gt; 0</if>" +
-            "<if test='domain != null and domain != &quot;&quot;'> AND product_host LIKE CONCAT('%', #{domain}, '%')</if>" +
-            "<if test='payStatus != null and payStatus != &quot;&quot;'> AND pay_status_text = #{payStatus}</if>" +
-            "<if test='currency != null and currency != &quot;&quot;'> AND currency = #{currency}</if>" +
-            "<if test='country != null and country != &quot;&quot;'> AND customer_ip_country LIKE CONCAT('%', #{country}, '%')</if>" +
-            "<if test='startDate != null and startDate != &quot;&quot;'> AND create_time &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>" +
-            "<if test='endDate != null and endDate != &quot;&quot;'> AND create_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>" +
+            "<if test='orderId != null and orderId != &quot;&quot;'> AND CAST(o.id AS CHAR) LIKE CONCAT('%', #{orderId}, '%')</if>" +
+            "<if test='adminName != null and adminName != &quot;&quot;'> AND o.admin_name LIKE CONCAT('%', #{adminName}, '%')</if>" +
+            "<if test='userGroup != null and userGroup != &quot;&quot;'> AND o.user_group = #{userGroup}</if>" +
+            "<if test='ownerName != null'> AND FIND_IN_SET(o.admin_name, #{ownerName}) &gt; 0</if>" +
+            "<if test='domain != null and domain != &quot;&quot;'> AND o.product_host LIKE CONCAT('%', #{domain}, '%')</if>" +
+            "<if test='payStatus != null and payStatus != &quot;&quot;'> AND o.pay_status_text = #{payStatus}</if>" +
+            "<if test='currency != null and currency != &quot;&quot;'> AND o.currency = #{currency}</if>" +
+            "<if test='country != null and country != &quot;&quot;'> AND o.customer_ip_country LIKE CONCAT('%', #{country}, '%')</if>" +
+            "<if test='startDate != null and startDate != &quot;&quot;'> AND o.create_time &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>" +
+            "<if test='endDate != null and endDate != &quot;&quot;'> AND o.create_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>" +
+            "<if test='siteTag != null'> AND COALESCE(filter_site.site_tag, filter_retired.site_tag, o.site_tag) = #{siteTag}</if>" +
             "</where>";
 
-    @Select({"<script>", "SELECT COUNT(*) FROM orders", FILTER_SQL, "</script>"})
+    @Select({"<script>", "SELECT COUNT(*)", FILTER_FROM_SQL, FILTER_SQL, "</script>"})
     long countOrdersFiltered(@Param("orderId") String orderId,
                              @Param("adminName") String adminName,
                              @Param("userGroup") String userGroup,
@@ -76,15 +91,16 @@ public interface OrderMapper {
                              @Param("country") String country,
                              @Param("ownerName") String ownerName,
                              @Param("startDate") String startDate,
-                             @Param("endDate") String endDate);
+                             @Param("endDate") String endDate,
+                             @Param("siteTag") Integer siteTag);
 
     @Select({"<script>",
             "SELECT o.id, o.amount, o.currency, o.create_time, o.product_host, o.pay_status_text,",
             "o.customer_ip_country, o.shipping_email, o.shipping_address, o.admin_name, o.user_group,",
             "o.theme_name, o.product_category, COALESCE(s.site_tag, r.site_tag, o.site_tag) AS site_tag,",
             "o.product_info, COALESCE(s.cat_names, r.cat_names) AS cat_names FROM",
-            "(SELECT * FROM orders", FILTER_SQL,
-            "ORDER BY create_time DESC LIMIT #{offset}, #{size}) o",
+            "(SELECT o.*", FILTER_FROM_SQL, FILTER_SQL,
+            "ORDER BY o.create_time DESC, o.id DESC LIMIT #{offset}, #{size}) o",
             "LEFT JOIN site_info s ON LOWER(CASE WHEN LEFT(TRIM(s.site_domain), 4) = 'www.'",
             "THEN SUBSTRING(TRIM(s.site_domain), 5) ELSE TRIM(s.site_domain) END) COLLATE utf8mb4_unicode_ci =",
             "LOWER(CASE WHEN LEFT(TRIM(o.product_host), 4) = 'www.'",
@@ -104,13 +120,14 @@ public interface OrderMapper {
                                                  @Param("startDate") String startDate,
                                                  @Param("endDate") String endDate,
                                                  @Param("offset") int offset,
-                                                 @Param("size") int size);
+                                                 @Param("size") int size,
+                                                 @Param("siteTag") Integer siteTag);
 
     @Select({"<script>",
-            "SELECT COUNT(*) AS total_count, COALESCE(SUM(amount), 0) AS total_amount,",
-            "COUNT(CASE WHEN pay_status_text = '已支付' THEN 1 END) AS paid_count,",
-            "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS paid_amount",
-            "FROM orders", FILTER_SQL, "</script>"})
+            "SELECT COUNT(*) AS total_count, COALESCE(SUM(o.amount), 0) AS total_amount,",
+            "COUNT(CASE WHEN o.pay_status_text = '已支付' THEN 1 END) AS paid_count,",
+            "COALESCE(SUM(CASE WHEN o.pay_status_text = '已支付' THEN o.amount ELSE 0 END), 0) AS paid_amount",
+            FILTER_FROM_SQL, FILTER_SQL, "</script>"})
     Map<String, Object> summarizeOrdersFiltered(@Param("orderId") String orderId,
                                                 @Param("adminName") String adminName,
                                                 @Param("userGroup") String userGroup,
@@ -120,7 +137,8 @@ public interface OrderMapper {
                                                 @Param("country") String country,
                                                 @Param("ownerName") String ownerName,
                                                 @Param("startDate") String startDate,
-                                                @Param("endDate") String endDate);
+                                                @Param("endDate") String endDate,
+                                                @Param("siteTag") Integer siteTag);
 
     /** Overview metrics use the shared business deduplication fingerprint. */
     @Select("SELECT COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS deduplicated_orders, " +

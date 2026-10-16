@@ -11,6 +11,16 @@ import java.util.Map;
 @Mapper
 public interface RevenueMapper {
 
+    String ORDER_CATEGORIES_JOIN_SQL = " LEFT JOIN site_info s ON " +
+            "LOWER(CASE WHEN LEFT(TRIM(s.site_domain), 4) = 'www.' " +
+            "THEN SUBSTRING(TRIM(s.site_domain), 5) ELSE TRIM(s.site_domain) END) = filtered_orders.normalized_host " +
+            "LEFT JOIN retired_site_info r ON s.site_domain IS NULL AND r.site_domain = filtered_orders.normalized_host " +
+            "JOIN JSON_TABLE(CASE WHEN COALESCE(s.cat_names, r.cat_names) IS NULL " +
+            "OR JSON_LENGTH(COALESCE(s.cat_names, r.cat_names)) = 0 " +
+            "THEN JSON_ARRAY(COALESCE(NULLIF(TRIM(COALESCE(s.product_category, r.product_category)), ''), '未分类')) " +
+            "ELSE COALESCE(s.cat_names, r.cat_names) END, " +
+            "'$[*]' COLUMNS(category_name VARCHAR(100) PATH '$')) categories ";
+
     /** Active sites plus retired sites whose domain has not been reactivated. */
     String HISTORICAL_SITES_SQL = "(SELECT site_domain, admin_name, user_group, site_tag, " +
             "CAST(cat_names AS CHAR CHARACTER SET utf8mb4) AS cat_names, " +
@@ -121,7 +131,8 @@ public interface RevenueMapper {
     @Select({"<script>",
             "SELECT filtered_orders.admin_name, filtered_orders.user_group,",
             "COALESCE(NULLIF(TRIM(categories.category_name), ''), '未分类') AS category_name,",
-            "COUNT(*) AS order_count",
+            "COUNT(DISTINCT filtered_orders.order_identity) AS order_count,",
+            "COUNT(DISTINCT NULLIF(filtered_orders.normalized_host, '')) AS ordered_site_count",
             "FROM (SELECT DISTINCT admin_name, user_group,",
             OrderMapper.NORMALIZED_PRODUCT_HOST_SQL + " AS normalized_host,",
             OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " AS order_identity",
@@ -133,15 +144,7 @@ public interface RevenueMapper {
             "</if>)",
             "<if test='startDate != null and startDate != &quot;&quot;'> AND create_time &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>",
             "<if test='endDate != null and endDate != &quot;&quot;'> AND create_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>",
-            ") filtered_orders LEFT JOIN site_info s ON",
-            "LOWER(CASE WHEN LEFT(TRIM(s.site_domain), 4) = 'www.'",
-            "THEN SUBSTRING(TRIM(s.site_domain), 5) ELSE TRIM(s.site_domain) END) = filtered_orders.normalized_host",
-            "LEFT JOIN retired_site_info r ON s.site_domain IS NULL AND r.site_domain = filtered_orders.normalized_host",
-            "JOIN JSON_TABLE(CASE WHEN COALESCE(s.cat_names, r.cat_names) IS NULL",
-            "OR JSON_LENGTH(COALESCE(s.cat_names, r.cat_names)) = 0",
-            "THEN JSON_ARRAY(COALESCE(NULLIF(TRIM(COALESCE(s.product_category, r.product_category)), ''), '未分类'))",
-            "ELSE COALESCE(s.cat_names, r.cat_names) END,",
-            "'$[*]' COLUMNS(category_name VARCHAR(100) PATH '$')) categories",
+            ") filtered_orders", ORDER_CATEGORIES_JOIN_SQL,
             "GROUP BY filtered_orders.admin_name, filtered_orders.user_group, category_name", "</script>"})
     List<Map<String, Object>> adminOrderCategoryStats(@Param("userGroup") String userGroup,
                                                        @Param("ownerName") String ownerName,
@@ -149,16 +152,35 @@ public interface RevenueMapper {
                                                        @Param("startDate") String startDate,
                                                        @Param("endDate") String endDate);
 
-    @Select({"<script>", "SELECT s.site_domain, s.admin_name, s.user_group, s.site_tag, s.cat_names, DATE_FORMAT(COALESCE(s.domain_applied_at, s.created_at), '%Y-%m') AS site_month",
+    @Select({"<script>",
+            "SELECT filtered_orders.user_group,",
+            "COALESCE(NULLIF(TRIM(categories.category_name), ''), '未分类') AS category_name,",
+            "COUNT(DISTINCT filtered_orders.order_identity) AS order_count,",
+            "COUNT(DISTINCT NULLIF(filtered_orders.normalized_host, '')) AS ordered_site_count",
+            "FROM (SELECT DISTINCT user_group,",
+            OrderMapper.NORMALIZED_PRODUCT_HOST_SQL + " AS normalized_host,",
+            OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " AS order_identity",
+            "FROM orders WHERE TRIM(COALESCE(user_group, '')) &lt;&gt; ''",
+            "AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
+            "<if test='startDate != null and startDate != &quot;&quot;'> AND create_time &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>",
+            "<if test='endDate != null and endDate != &quot;&quot;'> AND create_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>",
+            ") filtered_orders", ORDER_CATEGORIES_JOIN_SQL,
+            "GROUP BY filtered_orders.user_group, category_name", "</script>"})
+    List<Map<String, Object>> groupOrderCategoryStats(@Param("userGroup") String userGroup,
+                                                     @Param("startDate") String startDate,
+                                                     @Param("endDate") String endDate);
+
+    @Select({"<script>", "SELECT s.site_domain, s.admin_name, s.user_group, s.site_tag, s.cat_names, DATE_FORMAT(s.domain_applied_at, '%Y-%m') AS site_month",
             "FROM " + HISTORICAL_SITES_SQL + " s WHERE TRIM(COALESCE(s.admin_name, '')) &lt;&gt; ''",
+            "AND s.domain_applied_at IS NOT NULL",
             "AND TRIM(COALESCE(s.user_group, '')) &lt;&gt; '' AND (#{userGroup} IS NULL OR s.user_group = #{userGroup})",
             "AND (#{ownerName} IS NULL OR FIND_IN_SET(s.admin_name, #{ownerName}) &gt; 0 " +
             "<if test='teacherSuffixes != null and !teacherSuffixes.isEmpty()'> OR " +
             "<foreach collection='teacherSuffixes' item='suffix' separator=' OR '>s.admin_name LIKE CONCAT('%', #{suffix})</foreach>" +
             "</if>)",
             "<if test='siteCreatedMonth != null and siteCreatedMonth != &quot;&quot;'> " +
-            "AND (DATE_FORMAT(COALESCE(s.domain_applied_at, s.created_at), '%Y-%m') = #{siteCreatedMonth} " +
-            "OR (s.domain_applied_at IS NULL AND s.created_at IS NULL))</if>",
+            "AND s.domain_applied_at &gt;= CONCAT(#{siteCreatedMonth}, '-01') " +
+            "AND s.domain_applied_at &lt; DATE_ADD(CONCAT(#{siteCreatedMonth}, '-01'), INTERVAL 1 MONTH)</if>",
             "ORDER BY site_month DESC, s.user_group, s.admin_name", "</script>"})
     List<Map<String, Object>> revenueSites(@Param("userGroup") String userGroup,
                                            @Param("ownerName") String ownerName,

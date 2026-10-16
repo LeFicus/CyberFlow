@@ -43,6 +43,7 @@ class RevenueLeaderVisibilityTest {
         Map<?, ?> parameters = (Map<?, ?>) result.get("parameters");
         assertFalse(parameters.containsKey("leader_commission_rate"));
         verify(mapper, never()).groupOrderStats(any(), any(), any());
+        verify(mapper, never()).groupOrderCategoryStats(any(), any(), any());
         verify(mapper, never()).groupOrderCountryStats(any(), any(), any());
     }
 }

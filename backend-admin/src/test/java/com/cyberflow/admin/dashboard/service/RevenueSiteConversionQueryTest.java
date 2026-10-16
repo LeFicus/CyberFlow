@@ -41,7 +41,9 @@ class RevenueSiteConversionQueryTest {
                 RevenueMapper.class.getName() + ".revenueSites"
         ).getBoundSql(parameters).getSql();
         assertTrue(cohortSql.contains("FROM retired_site_info r"));
-        assertTrue(cohortSql.contains("DATE_FORMAT(COALESCE(s.domain_applied_at, s.created_at), '%Y-%m') = ?"));
-        assertTrue(cohortSql.contains("OR (s.domain_applied_at IS NULL AND s.created_at IS NULL)"));
+        assertTrue(cohortSql.contains("DATE_FORMAT(s.domain_applied_at, '%Y-%m') AS site_month"));
+        assertTrue(cohortSql.contains("AND s.domain_applied_at IS NOT NULL"));
+        assertFalse(cohortSql.contains("OR s.domain_applied_at IS NULL"));
+        assertFalse(cohortSql.contains("COALESCE(s.domain_applied_at, s.created_at)"));
     }
 }

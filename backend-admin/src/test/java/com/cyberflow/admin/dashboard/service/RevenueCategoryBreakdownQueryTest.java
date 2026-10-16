@@ -31,7 +31,8 @@ class RevenueCategoryBreakdownQueryTest {
         assertTrue(sql.contains("AS order_identity"));
         assertTrue(sql.contains("create_time >= CONCAT(?, ' 00:00:00')"));
         assertTrue(sql.contains("create_time < DATE_ADD(?, INTERVAL 1 DAY)"));
-        assertTrue(sql.contains("COUNT(*) AS order_count"));
+        assertTrue(sql.contains("COUNT(DISTINCT filtered_orders.order_identity) AS order_count"));
+        assertTrue(sql.contains("COUNT(DISTINCT NULLIF(filtered_orders.normalized_host, '')) AS ordered_site_count"));
         assertTrue(sql.contains("JOIN JSON_TABLE"));
         assertTrue(sql.contains("LEFT JOIN retired_site_info r"));
         assertTrue(sql.contains("COALESCE(s.cat_names, r.cat_names)"));

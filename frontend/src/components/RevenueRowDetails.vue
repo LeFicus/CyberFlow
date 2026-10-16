@@ -7,42 +7,6 @@
       </div>
     </div>
 
-    <section class="category-section">
-      <div class="classification-heading">
-        <strong>站点商品分类明细</strong>
-        <span>按当前筛选范围内的去重订单占比</span>
-      </div>
-      <div v-if="categoryItems.length" class="category-content">
-        <VChart :option="categoryChartOption" autoresize class="category-chart" />
-        <div class="category-legend">
-          <div v-for="(item, index) in categoryItems" :key="item.category" class="category-legend-item">
-            <i :style="{ background: chartColors[index % chartColors.length] }"></i>
-            <span :title="item.category">{{ item.category }}</span>
-            <strong>{{ formatNumber(item.order_count) }} 笔 · {{ formatRatio(item.ratio) }}</strong>
-          </div>
-        </div>
-      </div>
-      <el-empty v-else :image-size="46" description="暂无商品分类数据" />
-    </section>
-
-    <section class="category-section">
-      <div class="classification-heading">
-        <strong>客户国家占比</strong>
-        <span>按去重订单占比</span>
-      </div>
-      <div v-if="countryItems.length" class="category-content">
-        <VChart :option="countryChartOption" autoresize class="category-chart" />
-        <div class="category-legend">
-          <div v-for="(item, index) in countryItems" :key="item.country" class="category-legend-item">
-            <i :style="{ background: countryColors[index % countryColors.length] }"></i>
-            <span :title="item.country">{{ item.country }}</span>
-            <strong>{{ formatNumber(item.order_count) }} 笔 · {{ formatRatio(item.ratio) }}</strong>
-          </div>
-        </div>
-      </div>
-      <el-empty v-else :image-size="46" description="暂无客户国家数据" />
-    </section>
-
     <section class="classification-section">
       <div class="classification-heading">
         <strong>订单站点归属</strong>
@@ -57,6 +21,33 @@
           <div class="classification-track"><i :style="{ width: `${clampRatio(item.ratio)}%` }"></i></div>
         </div>
       </div>
+    </section>
+
+    <section class="category-section">
+      <div class="classification-heading">
+        <strong>{{ showCategorySites ? '产品类型订单分布' : '站点商品分类明细' }}</strong>
+        <span>按当前筛选范围内的去重订单占比</span>
+      </div>
+      <template v-if="showCategorySites && categoryItems.length">
+        <el-table :data="categoryItems" stripe class="category-orders-table">
+          <el-table-column prop="category" label="产品类型" min-width="160" />
+          <el-table-column label="订单数量" min-width="110" align="right"><template #default="{ row }">{{ formatNumber(row.order_count) }}</template></el-table-column>
+          <el-table-column label="出单站点数量" min-width="120" align="right"><template #default="{ row }">{{ formatNumber(row.ordered_site_count) }}</template></el-table-column>
+          <el-table-column :label="`占${categoryScope}总订单`" min-width="140" align="right"><template #default="{ row }">{{ formatRatio(row.ratio) }}</template></el-table-column>
+        </el-table>
+        <p class="category-note">出单站点按域名去重；占比 = 该类型去重订单数 ÷ {{ categoryScope }}去重总订单数。多分类站点分别计入各类型，占比合计可能超过 100%。</p>
+      </template>
+      <div v-else-if="categoryItems.length" class="category-content">
+        <VChart :option="categoryChartOption" autoresize class="category-chart" />
+        <div class="category-legend">
+          <div v-for="(item, index) in categoryItems" :key="item.category" class="category-legend-item">
+            <i :style="{ background: chartColors[index % chartColors.length] }"></i>
+            <span :title="item.category">{{ item.category }}</span>
+            <strong>{{ formatNumber(item.order_count) }} 笔 · {{ formatRatio(item.ratio) }}</strong>
+          </div>
+        </div>
+      </div>
+      <el-empty v-else :image-size="46" description="暂无商品分类数据" />
     </section>
   </div>
 </template>
@@ -76,15 +67,16 @@ const props = defineProps({
   details: { type: Array, default: () => [] },
   breakdown: { type: Array, default: () => [] },
   categoryBreakdown: { type: Array, default: () => [] },
-  countryBreakdown: { type: Array, default: () => [] },
+  showCategorySites: { type: Boolean, default: false },
+  categoryScope: { type: String, default: '个人' },
 })
 
 const chartColors = ['#536ff1', '#45b98c', '#f0a44b', '#8a64e8', '#e06f83', '#47a7cf', '#8cac48', '#d58449', '#697a9c', '#b46dac']
-const countryColors = ['#3f78d7', '#e89b43', '#43ad88', '#8d66d9', '#dc687e', '#4da3bb', '#9aaf4e', '#c77a4d', '#65758e', '#aa699b']
 const categoryItems = computed(() => props.categoryBreakdown
   .map(item => ({
     category: String(item?.category || '未分类'),
     order_count: Number(item?.order_count || 0),
+    ordered_site_count: Number(item?.ordered_site_count || 0),
     ratio: Number(item?.ratio || 0),
   }))
   .filter(item => item.order_count > 0))
@@ -107,33 +99,6 @@ const categoryChartOption = computed(() => ({
     data: categoryItems.value.map(item => ({ name: item.category, value: item.order_count })),
   }],
 }))
-const countryItems = computed(() => props.countryBreakdown
-  .map(item => ({
-    country: String(item?.country || '未知'),
-    order_count: Number(item?.order_count || 0),
-    ratio: Number(item?.ratio || 0),
-  }))
-  .filter(item => item.order_count > 0))
-const countryChartOption = computed(() => ({
-  color: countryColors,
-  tooltip: {
-    trigger: 'item',
-    renderMode: 'richText',
-    formatter: params => `${params.name}\n${formatNumber(params.value)} 笔 · ${Number(params.percent || 0).toFixed(2)}%`,
-  },
-  series: [{
-    type: 'pie',
-    radius: ['48%', '74%'],
-    center: ['50%', '50%'],
-    minAngle: 2,
-    avoidLabelOverlap: true,
-    itemStyle: { borderColor: '#fff', borderWidth: 2, borderRadius: 4 },
-    label: { show: false },
-    emphasis: { scaleSize: 7 },
-    data: countryItems.value.map(item => ({ name: item.country, value: item.order_count })),
-  }],
-}))
-
 const normalizedBreakdown = computed(() => [0, 1, 2].map(type => {
   const item = props.breakdown.find(entry => Number(entry?.type) === type) || {}
   return { type, label: item.label || siteTagLabel(type), orders: Number(item.orders || 0), ratio: Number(item.ratio || 0) }
@@ -145,12 +110,13 @@ const formatRatio = value => `${Number(value || 0).toFixed(2)}%`
 </script>
 
 <style scoped>
-.revenue-row-details { padding: 18px 22px 20px; background: #f8faff; }
+.revenue-row-details { box-sizing: border-box; width: 100cqw; max-width: 100%; padding: 18px 22px 20px; background: #f8faff; }
 .detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .detail-item { min-width: 0; padding: 11px 13px; border: 1px solid #e8edf6; border-radius: 9px; background: #fff; }
 .detail-item span { display: block; color: #8a96a8; font-size: 11px; }
 .detail-item strong { display: block; margin-top: 5px; overflow: hidden; color: #30405c; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .category-section { margin-top: 14px; padding: 14px 16px; border: 1px solid #e8edf6; border-radius: 10px; background: #fff; }
+.category-note { margin: 10px 0 0; color: #7d899e; font-size: 11px; line-height: 1.6; }
 .category-content { display: grid; grid-template-columns: minmax(210px, .7fr) minmax(280px, 1.3fr); gap: 18px; align-items: center; }
 .category-chart { width: 100%; height: 220px; }
 .category-legend { display: grid; max-height: 210px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; overflow: auto; padding-right: 5px; }

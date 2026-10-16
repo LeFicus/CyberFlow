@@ -44,7 +44,7 @@ public class AuthController {
     /** 密码编码器，用于验证登录密码 */
     private final PasswordEncoder passwordEncoder;
 
-    /** Builds an employee-scoped reminder at most once per Beijing calendar day. */
+    /** Builds an administrator's personal reminder at most once per Beijing calendar day. */
     private final SiteHealthPersonalAlertService siteHealthPersonalAlertService;
 
     /**
@@ -90,8 +90,10 @@ public class AuthController {
         userInfo.put("roles", roles);
         userInfo.put("permissions", perms);
         result.put("userInfo", userInfo);
-        var siteHealthAlert = siteHealthPersonalAlertService.claimForLogin(user);
-        if (siteHealthAlert != null) result.put("siteHealthAlert", siteHealthAlert);
+        if (roles.contains("ROLE_ADMIN")) {
+            var siteHealthAlert = siteHealthPersonalAlertService.claimForLogin(user);
+            if (siteHealthAlert != null) result.put("siteHealthAlert", siteHealthAlert);
+        }
 
         return Result.ok(result);
     }

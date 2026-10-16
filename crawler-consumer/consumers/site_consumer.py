@@ -474,8 +474,16 @@ class SiteConsumer(BaseConsumer):
                     owner = canonical_account(record.get("admin_name"), merge_lookup)
                     if not owner:
                         continue
+                    categories = _json_array(record.get("cat_names"))
+                    # MySQL can invalidate VALUES(cat_names)'s binary JSON after
+                    # a self-assignment, so do not read it twice in update clauses.
+                    # Empty upstream categories must preserve both existing fields.
+                    category_updates = (
+                        "cat_names=VALUES(cat_names), site_tag=VALUES(site_tag),"
+                        if json.loads(categories) else ""
+                    )
                     await cur.execute(
-                        """INSERT INTO retired_site_info
+                        f"""INSERT INTO retired_site_info
                            (site_domain, admin_name, user_group, theme_name,
                             product_category, cat_names, site_tag, domain_applied_at, created_at)
                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -484,15 +492,12 @@ class SiteConsumer(BaseConsumer):
                                user_group=COALESCE(NULLIF(VALUES(user_group), ''), user_group),
                                theme_name=COALESCE(NULLIF(VALUES(theme_name), ''), theme_name),
                                product_category=COALESCE(NULLIF(VALUES(product_category), ''), product_category),
-                               cat_names=CASE WHEN JSON_LENGTH(VALUES(cat_names)) > 0
-                                   THEN VALUES(cat_names) ELSE cat_names END,
-                               site_tag=CASE WHEN JSON_LENGTH(VALUES(cat_names)) > 0
-                                   THEN VALUES(site_tag) ELSE site_tag END,
+                               {category_updates}
                                domain_applied_at=COALESCE(VALUES(domain_applied_at), domain_applied_at),
                                created_at=COALESCE(VALUES(created_at), created_at)""",
                         (domain, owner, account_group(owner) or record.get("user_group"),
                          record.get("theme_name"), record.get("product_category"),
-                         _json_array(record.get("cat_names")), record.get("site_tag", 0),
+                         categories, record.get("site_tag", 0),
                          record.get("domain_applied_at"), record.get("created_at")),
                     )
                 if retired_records:

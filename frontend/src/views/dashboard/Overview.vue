@@ -52,7 +52,7 @@
         <el-tab-pane label="个人绩效" name="personal">
           <el-table :data="personalPerformance" stripe max-height="390" empty-text="暂无绩效数据" class="compact-revenue-table">
             <el-table-column type="expand" label="详情" width="62">
-              <template #default="{ row }"><RevenueRowDetails :details="personalDetails(row)" :breakdown="row.classification_breakdown" :category-breakdown="row.category_breakdown" :country-breakdown="row.customer_country_breakdown" /></template>
+              <template #default="{ row }"><RevenueRowDetails :details="personalDetails(row)" :breakdown="row.classification_breakdown" :category-breakdown="row.category_breakdown" show-category-sites /></template>
             </el-table-column>
             <el-table-column prop="user_group" label="组别" width="70" />
             <el-table-column prop="real_name" label="姓名" min-width="120" />
@@ -68,7 +68,7 @@
         <el-tab-pane v-if="canViewLeaderSummary" label="组长汇总" name="leaders">
           <el-table :data="leaderSummary" stripe empty-text="暂无组长汇总" class="compact-revenue-table">
             <el-table-column type="expand" label="详情" width="62">
-              <template #default="{ row }"><RevenueRowDetails :details="leaderDetails(row)" :breakdown="row.classification_breakdown" :category-breakdown="row.category_breakdown" :country-breakdown="row.customer_country_breakdown" /></template>
+              <template #default="{ row }"><RevenueRowDetails :details="leaderDetails(row)" :breakdown="row.classification_breakdown" :category-breakdown="row.category_breakdown" show-category-sites category-scope="小组" /></template>
             </el-table-column>
             <el-table-column prop="user_group" label="组别" width="70" />
             <el-table-column prop="leader_name" label="组长" min-width="120" />
@@ -83,10 +83,9 @@
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="月度转化" name="monthly">
-          <el-alert v-if="monthlyConversion.some(row => row.site_month === '待补齐')" title="申请月份未知的历史站点单独列示，未归入所选月份" type="info" :closable="false" class="mb-3" />
           <el-table :data="monthlyConversion" stripe max-height="390" empty-text="暂无月度数据" class="compact-revenue-table">
             <el-table-column type="expand" label="详情" width="62">
-              <template #default="{ row }"><RevenueRowDetails :details="monthlyDetails(row)" :breakdown="row.classification_breakdown" :category-breakdown="row.category_breakdown" :country-breakdown="row.customer_country_breakdown" /></template>
+              <template #default="{ row }"><RevenueRowDetails :details="monthlyDetails(row)" :breakdown="row.classification_breakdown" :category-breakdown="row.category_breakdown" /></template>
             </el-table-column>
             <el-table-column prop="site_month" label="申请月份" width="105" />
             <el-table-column prop="user_group" label="组别" width="70" />
@@ -243,7 +242,7 @@ h1, h2, p { margin: 0; } h1 { color: var(--cf-ink); font-size: 28px; letter-spac
 .brief-copy h2 { margin-top: 12px; font-size: 19px; font-weight: 550; line-height: 1.55; }.brief-copy h2 strong { color: #aab9ff; font-weight: 760; }.brief-copy p { max-width: 660px; margin-top: 8px; color: #8190ae; font-size: 10px; line-height: 1.7; }
 .brief-metrics { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, 1fr); }.brief-metric { min-width: 0; padding: 4px 18px; border-left: 1px solid #ffffff14; }.brief-metric span, .brief-metric small { display: block; color: #8392b0; font-size: 9px; }.brief-metric strong { display: block; margin: 8px 0 5px; overflow: hidden; color: #fff; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }.brief-metric small { color: #7383a4; }
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 15px; }
-.revenue-panel { margin-top: 15px; }.revenue-heading { gap: 18px; }.revenue-rules { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 7px; }.revenue-rules span { padding: 5px 9px; border-radius: 999px; color: #536ff1; background: #eef1ff; font-size: 9px; font-weight: 700; }.revenue-date-control { display: flex; align-items: center; gap: 5px; }.revenue-date-control > span { padding: 0; color: #8490a4; background: transparent; font-size: 9px; font-weight: 700; white-space: nowrap; }.revenue-tabs { margin-top: 16px; }.commission-breakdown { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; padding: 3px 0; }.commission-breakdown strong { color: #24956e; font-size: 14px; line-height: 1.2; white-space: nowrap; }.commission-breakdown small { display: flex; gap: 9px; color: #8a96a9; font-size: 9px; line-height: 1.2; white-space: nowrap; }.compact-revenue-table :deep(.el-table__expanded-cell) { padding: 0 !important; }
+.revenue-panel { margin-top: 15px; }.revenue-heading { gap: 18px; }.revenue-rules { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 7px; }.revenue-rules span { padding: 5px 9px; border-radius: 999px; color: #536ff1; background: #eef1ff; font-size: 9px; font-weight: 700; }.revenue-date-control { display: flex; align-items: center; gap: 5px; }.revenue-date-control > span { padding: 0; color: #8490a4; background: transparent; font-size: 9px; font-weight: 700; white-space: nowrap; }.revenue-tabs { margin-top: 16px; }.commission-breakdown { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; padding: 3px 0; }.commission-breakdown strong { color: #24956e; font-size: 14px; line-height: 1.2; white-space: nowrap; }.commission-breakdown small { display: flex; gap: 9px; color: #8a96a9; font-size: 9px; line-height: 1.2; white-space: nowrap; }.compact-revenue-table { container-type: inline-size; }.compact-revenue-table :deep(.el-table__expanded-cell) { padding: 0 !important; }
 .metric-card, .panel { border: 1px solid var(--cf-line); border-radius: 14px; background: #fff; box-shadow: var(--cf-shadow-sm); }
 .metric-card { padding: 18px 20px 16px; }.metric-top, .metric-foot, .panel-heading { display: flex; align-items: center; justify-content: space-between; }.metric-label { color: var(--cf-muted); font-size: 11px; }.metric-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; font-size: 16px; }.tone-blue { color: #536ff1; background: #eef1ff; }.tone-violet { color: #8a64e8; background: #f3edff; }.tone-amber { color: #d99a37; background: #fff6e3; }.tone-green { color: #36ad82; background: #eaf9f3; }
 .metric-value { margin: 14px 0 11px; color: var(--cf-ink); font-size: 25px; font-weight: 750; letter-spacing: -.04em; }.metric-foot { color: var(--cf-subtle); font-size: 10px; }.metric-trend { font-weight: 700; }.metric-trend.up { color: var(--cf-green); }.metric-trend.down { color: #df6577; }.metric-trend.neutral { color: var(--cf-blue); }

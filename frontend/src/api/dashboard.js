@@ -48,7 +48,7 @@ export function clearAllSites() {
 
 /**
  * 获取订单列表（分页）
- * @param {Object} params - 查询参数 { page, size, orderId, domain, adminName, payStatus, currency, country, startDate, endDate }
+ * @param {Object} params - 查询参数 { page, size, orderId, domain, adminName, siteTag, payStatus, currency, country, startDate, endDate }
  * @returns {Promise<Object>} 返回 { total, list } 分页结果
  */
 export function getOrders(params) {

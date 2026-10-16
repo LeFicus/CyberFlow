@@ -67,7 +67,9 @@ async function handleLogin() {
     await userStore.refreshUserInfo()
     ElMessage.success('登录成功，欢迎回来')
     await router.push('/dashboard/overview')
-    if (response.data.siteHealthAlert) await showSiteHealthAlert(response.data.siteHealthAlert)
+    if ((response.data.userInfo?.roles || []).includes('ROLE_ADMIN') && response.data.siteHealthAlert) {
+      await showSiteHealthAlert(response.data.siteHealthAlert)
+    }
   } catch {
     // request 拦截器负责统一展示接口错误。
   } finally {

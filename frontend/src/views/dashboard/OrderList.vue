@@ -19,6 +19,11 @@
       <el-form-item label="管理员">
         <el-input v-model="filters.adminName" placeholder="输入管理员" clearable @keyup.enter="handleSearch" />
       </el-form-item>
+      <el-form-item label="建站类型">
+        <el-select v-model="filters.siteTag" placeholder="全部类型" clearable @change="handleSearch">
+          <el-option v-for="type in [0, 1, 2]" :key="type" :label="siteTagLabel(type)" :value="type" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="支付状态">
         <el-select v-model="filters.payStatus" placeholder="全部状态" clearable>
           <el-option v-for="status in payStatusOptions" :key="status" :label="status" :value="status" />
@@ -184,7 +189,7 @@ const userStore = useUserStore()
 const summary = ref({})
 const { groupOptions, loadSiteGroups } = useSiteGroups()
 const isAdmin = computed(() => (userStore.userInfo?.roles || []).some(role => String(role).toUpperCase() === 'ROLE_ADMIN'))
-const filters = reactive({ userGroup: '', orderId: '', domain: '', adminName: '', payStatus: '', currency: '', country: '', dateRange: [] })
+const filters = reactive({ userGroup: '', orderId: '', domain: '', adminName: '', siteTag: '', payStatus: '', currency: '', country: '', dateRange: [] })
 const payStatusOptions = ['已支付', '支付异常', '支付失败', '待支付', '退款', '已取消']
 const currencyOptions = ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'AUD', 'CAD']
 const formatAmount = value => value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -213,6 +218,7 @@ async function fetchData() {
       domain: filters.domain.trim() || undefined,
       adminName: filters.adminName.trim() || undefined,
       userGroup: filters.userGroup || undefined,
+      siteTag: [0, 1, 2].includes(filters.siteTag) ? filters.siteTag : undefined,
       payStatus: filters.payStatus || undefined,
       currency: filters.currency || undefined,
       country: filters.country.trim() || undefined,
@@ -243,7 +249,7 @@ function handleSizeChange(value) {
  * 重置筛选条件并重新加载数据
  */
 function resetFilters() {
-  Object.assign(filters, { userGroup: '', orderId: '', domain: '', adminName: '', payStatus: '', currency: '', country: '', dateRange: [] })
+  Object.assign(filters, { userGroup: '', orderId: '', domain: '', adminName: '', siteTag: '', payStatus: '', currency: '', country: '', dateRange: [] })
   page.value = 1
   fetchData()
 }

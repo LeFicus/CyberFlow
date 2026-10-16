@@ -82,6 +82,7 @@ public class RevenueSummaryService {
             person.batchSiteCount += account.batchSiteCount;
             person.validOrderedSiteCount += account.validOrderedSiteCount;
             mergeCounts(person.categoryOrders, account.categoryOrders);
+            mergeCounts(person.categoryOrderedSites, account.categoryOrderedSites);
             mergeCounts(person.countryOrders, account.countryOrders);
             person.originalAmount = person.originalAmount.add(account.originalAmount);
             person.batchSiteAmount = person.batchSiteAmount.add(account.batchSiteAmount);
@@ -153,7 +154,8 @@ public class RevenueSummaryService {
             item.put("total_member_commission_rmb", person.commissionEligible ? money(totalCommission) : null);
             item.put("classification_breakdown", classificationBreakdown(
                     person.standaloneOrders, person.batchOrders, person.copyOrders));
-            item.put("category_breakdown", categoryBreakdown(person.categoryOrders));
+            item.put("category_breakdown", categoryOrderBreakdown(
+                    person.categoryOrders, person.categoryOrderedSites, person.totalOrders));
             item.put("customer_country_breakdown", countryBreakdown(person.countryOrders));
             if (person.commissionEligible) personalCommissionByName.put(person.realName, money(totalCommission));
             personal.add(item);
@@ -173,7 +175,7 @@ public class RevenueSummaryService {
                 .map(row -> number(row.get("total_member_commission_rmb")))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         personal.removeIf(departedRows::contains);
-        sortByDeduplicatedOrders(personal);
+        sortByValidDeduplicatedOrders(personal);
 
         List<Map<String, Object>> leaders = new ArrayList<>();
         if (scope.administrator()) {
@@ -183,6 +185,17 @@ public class RevenueSummaryService {
             for (Map<String, Object> row : revenueMapper.groupOrderStats(
                     leaderTotalsGroup, effectiveStart, effectiveEnd)) {
                 groupOrderTotals.put(text(row, "user_group"), row);
+            }
+            Map<String, Map<String, Long>> groupCategoryOrders = new HashMap<>();
+            Map<String, Map<String, Long>> groupCategorySites = new HashMap<>();
+            for (Map<String, Object> row : revenueMapper.groupOrderCategoryStats(
+                    leaderTotalsGroup, effectiveStart, effectiveEnd)) {
+                String group = text(row, "user_group");
+                String category = categoryName(row.get("category_name"));
+                groupCategoryOrders.computeIfAbsent(group, ignored -> new LinkedHashMap<>())
+                        .put(category, number(row.get("order_count")).longValue());
+                groupCategorySites.computeIfAbsent(group, ignored -> new LinkedHashMap<>())
+                        .put(category, number(row.get("ordered_site_count")).longValue());
             }
             Map<String, Map<String, Long>> groupCountryTotals = new HashMap<>();
             for (Map<String, Object> row : revenueMapper.groupOrderCountryStats(
@@ -236,9 +249,9 @@ public class RevenueSummaryService {
                         number(groupTotals.get("standalone_orders")).longValue(),
                         number(groupTotals.get("batch_orders")).longValue(),
                         number(groupTotals.get("copy_orders")).longValue()));
-                Map<String, Long> groupCategoryOrders = new LinkedHashMap<>();
-                members.forEach(member -> mergeCounts(groupCategoryOrders, member.categoryOrders));
-                item.put("category_breakdown", categoryBreakdown(groupCategoryOrders));
+                item.put("category_breakdown", categoryOrderBreakdown(
+                        groupCategoryOrders.getOrDefault(group, Map.of()),
+                        groupCategorySites.getOrDefault(group, Map.of()), orders));
                 item.put("customer_country_breakdown", countryBreakdown(
                         groupCountryTotals.getOrDefault(group, Map.of())));
                 leaders.add(item);
@@ -273,8 +286,8 @@ public class RevenueSummaryService {
         for (Map<String, Object> site : revenueMapper.revenueSites(userGroup, ownerName, teacherSuffixes, effectiveSiteCreatedMonth)) {
             String admin = text(site, "admin_name");
             String group = text(site, "user_group");
-            String rawMonth = text(site, "site_month");
-            String month = rawMonth.isBlank() ? "待补齐" : rawMonth;
+            String month = text(site, "site_month");
+            if (!effectiveSiteCreatedMonth.equals(month)) continue;
             MonthlyStats stats = monthlyStats.computeIfAbsent(group + "|" + month + "|" + admin,
                     ignored -> new MonthlyStats(group, month, admin));
             stats.siteCount++;
@@ -355,6 +368,14 @@ public class RevenueSummaryService {
                 .thenComparing(row -> text(row, "real_name")));
     }
 
+    static void sortByValidDeduplicatedOrders(List<Map<String, Object>> rows) {
+        rows.sort(Comparator
+                .comparing((Map<String, Object> row) -> number(row.get("valid_deduplicated_orders")), Comparator.reverseOrder())
+                .thenComparing(row -> number(row.get("deduplicated_orders")), Comparator.reverseOrder())
+                .thenComparing(row -> text(row, "user_group"))
+                .thenComparing(row -> text(row, "real_name")));
+    }
+
     private Map<String, AccountStats> loadAccounts(String userGroup, String ownerName,
                                                     List<String> teacherSuffixes,
                                                     String startDate, String endDate) {
@@ -392,6 +413,8 @@ public class RevenueSummaryService {
             stats.group = text(row, "user_group");
             stats.categoryOrders.merge(categoryName(row.get("category_name")),
                     number(row.get("order_count")).longValue(), Long::sum);
+            stats.categoryOrderedSites.merge(categoryName(row.get("category_name")),
+                    number(row.get("ordered_site_count")).longValue(), Long::sum);
         }
         return accounts;
     }
@@ -513,6 +536,21 @@ public class RevenueSummaryService {
                         "category", categoryName(entry.getKey()),
                         "order_count", entry.getValue(),
                         "ratio", percent(entry.getValue(), total)))
+                .toList();
+    }
+
+    /** Multi-category orders contribute to each type, with one denominator for the reporting scope. */
+    static List<Map<String, Object>> categoryOrderBreakdown(Map<String, Long> categories,
+                                                               Map<String, Long> orderedSites,
+                                                               long totalOrders) {
+        return categories.entrySet().stream()
+                .filter(entry -> entry.getValue() != null && entry.getValue() > 0)
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
+                .map(entry -> Map.<String, Object>of(
+                        "category", categoryName(entry.getKey()),
+                        "order_count", entry.getValue(),
+                        "ordered_site_count", orderedSites.getOrDefault(entry.getKey(), 0L),
+                        "ratio", percent(entry.getValue(), totalOrders)))
                 .toList();
     }
 
@@ -645,6 +683,7 @@ public class RevenueSummaryService {
         long batchSiteCount;
         long validOrderedSiteCount;
         final Map<String, Long> categoryOrders = new LinkedHashMap<>();
+        final Map<String, Long> categoryOrderedSites = new LinkedHashMap<>();
         final Map<String, Long> countryOrders = new LinkedHashMap<>();
         BigDecimal originalAmount = BigDecimal.ZERO;
         BigDecimal batchSiteAmount = BigDecimal.ZERO;
@@ -665,6 +704,7 @@ public class RevenueSummaryService {
         long batchSiteCount;
         long validOrderedSiteCount;
         final Map<String, Long> categoryOrders = new LinkedHashMap<>();
+        final Map<String, Long> categoryOrderedSites = new LinkedHashMap<>();
         final Map<String, Long> countryOrders = new LinkedHashMap<>();
         BigDecimal originalAmount = BigDecimal.ZERO;
         BigDecimal syncedAmount = BigDecimal.ZERO;

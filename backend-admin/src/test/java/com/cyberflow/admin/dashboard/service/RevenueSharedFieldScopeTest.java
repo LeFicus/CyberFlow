@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
 class RevenueSharedFieldScopeTest {
     @Test
     @SuppressWarnings("unchecked")
-    void retiredSiteWithoutApplicationDateRemainsVisibleAsUnknownCohort() {
+    void retiredSiteWithoutApplicationDateIsExcludedFromMonthlyConversion() {
         RevenueMapper mapper = mock(RevenueMapper.class);
         CrawlerConfigService config = mock(CrawlerConfigService.class);
         DataScopeService scopes = mock(DataScopeService.class);
@@ -41,11 +41,7 @@ class RevenueSharedFieldScopeTest {
 
         var service = new RevenueSummaryService(mapper, config, scopes, new ObjectMapper());
         Map<String, Object> result = service.summarize("A", "2026-09-01", "2026-09-30", "2026-09");
-        Map<String, Object> unknown = ((List<Map<String, Object>>) result.get("monthly_conversion")).get(0);
-
-        assertEquals("待补齐", unknown.get("site_month"));
-        assertEquals(2L, unknown.get("total_orders"));
-        assertEquals(1L, unknown.get("site_count"));
+        assertEquals(List.of(), result.get("monthly_conversion"));
     }
 
     @Test

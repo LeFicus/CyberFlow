@@ -88,7 +88,7 @@ class RevenueSummarySortingTest {
     }
 
     @Test
-    void personalAndMonthlyRowsUseDeduplicatedOrderDescendingOrder() {
+    void monthlyRowsUseDeduplicatedOrderDescendingOrder() {
         List<Map<String, Object>> rows = new ArrayList<>(List.of(
                 row("A", "three", 3),
                 row("B", "twelve", 12),
@@ -99,6 +99,22 @@ class RevenueSummarySortingTest {
 
         assertEquals(List.of("twelve", "seven", "three"),
                 rows.stream().map(value -> value.get("real_name")).toList());
+    }
+
+    @Test
+    void personalRowsPrioritizeValidOrdersOverTotalDeduplicatedOrders() {
+        List<Map<String, Object>> rows = new ArrayList<>(List.of(
+                new LinkedHashMap<>(Map.of("real_name", "more attempts", "deduplicated_orders", 100,
+                        "valid_deduplicated_orders", 2)),
+                new LinkedHashMap<>(Map.of("real_name", "most valid", "deduplicated_orders", 40,
+                        "valid_deduplicated_orders", 30)),
+                new LinkedHashMap<>(Map.of("real_name", "tie with fewer attempts", "deduplicated_orders", 35,
+                        "valid_deduplicated_orders", 30))));
+
+        RevenueSummaryService.sortByValidDeduplicatedOrders(rows);
+
+        assertEquals(List.of("most valid", "tie with fewer attempts", "more attempts"),
+                rows.stream().map(row -> row.get("real_name")).toList());
     }
 
     private static Map<String, Object> row(String group, String name, int orders) {
