@@ -55,6 +55,14 @@ export function getOrders(params) {
   return request.get('/admin/dashboard/orders', { params })
 }
 
+export function getOrderFraudReviews(group, id) {
+  return request.get(`/admin/dashboard/orders/${encodeURIComponent(group)}/${id}/fraud-reviews`)
+}
+
+export function reviewOrderFraud(group, id, data) {
+  return request.post(`/admin/dashboard/orders/${encodeURIComponent(group)}/${id}/fraud-reviews`, data)
+}
+
 /** 管理员清空全部订单（包含当前数据库中的全部站点分组）。 */
 export function clearAllOrders() {
   return request.delete('/admin/dashboard/orders/clear')

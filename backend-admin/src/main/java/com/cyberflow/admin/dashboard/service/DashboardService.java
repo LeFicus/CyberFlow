@@ -215,25 +215,29 @@ public class DashboardService {
      */
     public Map<String, Object> getOrders(int page, int size, String orderId, String startDate,
                                           String endDate, String adminName, String rawUserGroup, String domain,
-                                          String payStatus, String currency, String country, Integer siteTag) {
+                                          String payStatus, String currency, String country, Integer siteTag, String fraudStatus) {
         if (siteTag != null && (siteTag < 0 || siteTag > 2)) {
             throw new IllegalArgumentException("建站类型必须为单独建站、批量建站或复制站");
+        }
+        if (fraudStatus != null && fraudStatus.isBlank()) fraudStatus = null;
+        if (fraudStatus != null && !Set.of("NORMAL", "PENDING", "APPROVED", "REJECTED").contains(fraudStatus)) {
+            throw new IllegalArgumentException("疑似刷单审核状态无效");
         }
         String userGroup = normalizeUserGroup(rawUserGroup);
         var scope = dataScopeService.current();
         boolean includeShared = scope.administrator() || sharedOrderFiltersAllowed(
-                scope, orderId, startDate, endDate, adminName, userGroup, domain, payStatus, currency, country, siteTag);
+                scope, orderId, startDate, endDate, adminName, userGroup, domain, payStatus, currency, country, siteTag, fraudStatus);
         String ownerName = scope.administrator() ? null
                 : includeShared ? scope.ownerFilterFor("order.") : scope.ownOwnerFilter();
         int offset = (page - 1) * size;
         long total = orderMapper.countOrdersFiltered(orderId, adminName, userGroup, domain, payStatus,
-                currency, country, ownerName, startDate, endDate, siteTag);
+                currency, country, ownerName, startDate, endDate, siteTag, fraudStatus);
         List<Map<String, Object>> list = new ArrayList<>(orderMapper.listOrdersFiltered(
                 orderId, adminName, userGroup, domain, payStatus, currency, country,
-                ownerName, startDate, endDate, offset, size, siteTag));
+                ownerName, startDate, endDate, offset, size, siteTag, fraudStatus));
         Map<String, Object> summary = new LinkedHashMap<>(orderMapper.summarizeOrdersFiltered(
                 orderId, adminName, userGroup, domain, payStatus, currency, country,
-                ownerName, startDate, endDate, siteTag));
+                ownerName, startDate, endDate, siteTag, fraudStatus));
         if (!scope.administrator()) {
             list.forEach(row -> {
                 if (!scope.owns(Objects.toString(row.get("admin_name"), ""))) {
@@ -262,7 +266,7 @@ public class DashboardService {
     private static boolean sharedOrderFiltersAllowed(
             DataScope scope, String orderId, String startDate, String endDate,
             String adminName, String userGroup, String domain, String payStatus, String currency, String country,
-            Integer siteTag) {
+            Integer siteTag, String fraudStatus) {
         if (!scope.includesSharedOwners("order.")) return false;
         return permittedFilter(scope, orderId, "order.id")
                 && permittedFilter(scope, adminName, "order.admin_name")
@@ -272,6 +276,7 @@ public class DashboardService {
                 && permittedFilter(scope, currency, "order.currency")
                 && permittedFilter(scope, country, "order.country")
                 && (siteTag == null || scope.canViewSharedField("order.site_tag"))
+                && (fraudStatus == null || scope.canViewSharedField("order.fraud_status"))
                 && permittedFilter(scope, startDate, "order.create_time")
                 && permittedFilter(scope, endDate, "order.create_time");
     }

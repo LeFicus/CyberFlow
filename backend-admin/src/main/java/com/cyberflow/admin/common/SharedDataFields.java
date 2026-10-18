@@ -39,6 +39,7 @@ public final class SharedDataFields {
             entry("order.category", "product_category", "cat_names", "theme_name"),
             entry("order.site_tag", "site_tag"),
             entry("order.pay_status", "pay_status_text"),
+            entry("order.fraud_status", "fraud_status", "is_valid", "effective_valid"),
             entry("order.country", "customer_ip_country"),
             entry("order.shipping_email", "shipping_email"),
             entry("order.shipping_address", "shipping_address"),

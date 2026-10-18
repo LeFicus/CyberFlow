@@ -79,6 +79,12 @@ python main.py
 
 主要技术：Vue 3、Vite 6、Element Plus、Pinia、ECharts、Tailwind CSS 4；Spring Boot 3.4、Java 17、MyBatis-Plus、Spring Security、Quartz；Python 3.12、Scrapy；MySQL 8.0、RabbitMQ 3.13、Redis 7。
 
+### 疑似刷单审核
+
+邮箱符合 `英文名.英文名.5位数字@gmail.com` 的历史及新增订单默认进入“疑似刷单 · 待审核”，不计入概览、个人和小组绩效、月度转化中的有效去重订单及有效出单站点。原始订单及订单总数保留。
+
+管理员在订单列表按“刷单审核”筛选，点击“审核 / 记录”，填写核查意见后选择确认无异常、确认刷单或重新待审核。审核通过解除刷单限制，仍须满足平台有效条件；确认刷单和待审核继续排除。审核记录保留审核人、时间和意见，订单重新同步不会覆盖。审核只适用于对应订单及审核时的邮箱，其他邮箱不复用该审核结果。
+
 ## 配置
 
 以 [`.env.docker.example`](.env.docker.example) 为 Docker 配置模板。该文件列出了可覆盖的环境变量；不要将填有真实凭据的 `.env` 提交到仓库。

@@ -37,15 +37,30 @@ class OrderSharedFieldScopeTest {
                 mock(SiteInfoMapper.class), orders, mock(SiteIndexingHistoryMapper.class),
                 mock(EcommerceProductMapper.class), mock(StringRedisTemplate.class), scopes);
 
-        service.getOrders(1, 20, null, null, null, null, null, null, null, null, null, 1);
+        service.getOrders(1, 20, null, null, null, null, null, null, null, null, null, 1, null);
 
         String expectedOwner = typeGranted ? "A-本人,A-成员" : "A-本人";
         verify(orders).countOrdersFiltered(any(), any(), any(), any(), any(), any(), any(),
-                eq(expectedOwner), any(), any(), eq(1));
+                eq(expectedOwner), any(), any(), eq(1), org.mockito.ArgumentMatchers.isNull());
         verify(orders).listOrdersFiltered(any(), any(), any(), any(), any(), any(), any(),
-                eq(expectedOwner), any(), any(), eq(0), eq(20), eq(1));
+                eq(expectedOwner), any(), any(), eq(0), eq(20), eq(1), org.mockito.ArgumentMatchers.isNull());
         verify(orders).summarizeOrdersFiltered(any(), any(), any(), any(), any(), any(), any(),
-                eq(expectedOwner), any(), any(), eq(1));
+                eq(expectedOwner), any(), any(), eq(1), org.mockito.ArgumentMatchers.isNull());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void fraudFilteringCannotInferSharedRowsWithoutTheReviewStatusGrant(boolean granted) {
+        OrderMapper orders = mock(OrderMapper.class);
+        DataScopeService scopes = mock(DataScopeService.class);
+        Set<String> fields = granted ? Set.of("order.amount", "order.fraud_status") : Set.of("order.amount");
+        when(scopes.current()).thenReturn(new DataScope(false, false, "A-本人", List.of("A-成员"), fields));
+        DashboardService service = new DashboardService(
+                mock(SiteInfoMapper.class), orders, mock(SiteIndexingHistoryMapper.class),
+                mock(EcommerceProductMapper.class), mock(StringRedisTemplate.class), scopes);
+        service.getOrders(1, 20, null, null, null, null, null, null, null, null, null, null, "PENDING");
+        verify(orders).countOrdersFiltered(any(), any(), any(), any(), any(), any(), any(),
+                eq(granted ? "A-本人,A-成员" : "A-本人"), any(), any(), any(), eq("PENDING"));
     }
 
     @Test
@@ -56,7 +71,7 @@ class OrderSharedFieldScopeTest {
         when(scopes.current()).thenReturn(new DataScope(false, false, "A-本人", List.of("A-成员"),
                 Set.of("order.amount", "order.currency")));
         when(orders.countOrdersFiltered(any(), any(), any(), any(), any(), any(), any(),
-                eq("A-本人,A-成员"), any(), any(), any())).thenReturn(1L);
+                eq("A-本人,A-成员"), any(), any(), any(), org.mockito.ArgumentMatchers.isNull())).thenReturn(1L);
         Map<String, Object> sharedRow = new LinkedHashMap<>();
         sharedRow.put("id", 99L);
         sharedRow.put("amount", 12.34);
@@ -64,9 +79,9 @@ class OrderSharedFieldScopeTest {
         sharedRow.put("shipping_email", "secret@example.com");
         sharedRow.put("admin_name", "A-成员");
         when(orders.listOrdersFiltered(any(), any(), any(), any(), any(), any(), any(),
-                eq("A-本人,A-成员"), any(), any(), anyInt(), anyInt(), any())).thenReturn(List.of(sharedRow));
+                eq("A-本人,A-成员"), any(), any(), anyInt(), anyInt(), any(), org.mockito.ArgumentMatchers.isNull())).thenReturn(List.of(sharedRow));
         when(orders.summarizeOrdersFiltered(any(), any(), any(), any(), any(), any(), any(),
-                eq("A-本人,A-成员"), any(), any(), any())).thenReturn(new LinkedHashMap<>(Map.of(
+                eq("A-本人,A-成员"), any(), any(), any(), org.mockito.ArgumentMatchers.isNull())).thenReturn(new LinkedHashMap<>(Map.of(
                         "total_count", 1L, "total_amount", 12.34,
                         "paid_count", 1L, "paid_amount", 12.34)));
         DashboardService service = new DashboardService(
@@ -74,7 +89,7 @@ class OrderSharedFieldScopeTest {
                 mock(EcommerceProductMapper.class), mock(StringRedisTemplate.class), scopes);
 
         Map<String, Object> result = service.getOrders(
-                1, 20, null, null, null, null, null, null, null, null, null, null);
+                1, 20, null, null, null, null, null, null, null, null, null, null, null);
 
         Map<?, ?> row = ((List<Map<String, Object>>) result.get("list")).get(0);
         assertEquals(Set.of("amount", "currency"), row.keySet());

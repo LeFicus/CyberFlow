@@ -36,7 +36,7 @@ public interface RevenueMapper {
     /** Whole-group totals, including paid orders whose administrator is not yet assigned. */
     @Select({"<script>",
             "SELECT user_group, COUNT(DISTINCT " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + ") AS total_orders,",
-            "COUNT(DISTINCT CASE WHEN is_valid = 0 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
+            "COUNT(DISTINCT CASE WHEN " + OrderFraudSql.VALID_SQL + " THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders,",
             "COUNT(DISTINCT CASE WHEN site_tag = 0 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS standalone_orders,",
             "COUNT(DISTINCT CASE WHEN site_tag = 1 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS batch_orders,",
@@ -65,7 +65,7 @@ public interface RevenueMapper {
 
     @Select({"<script>",
             "SELECT admin_name, user_group, COUNT(DISTINCT " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + ") AS total_orders,",
-            "COUNT(DISTINCT CASE WHEN is_valid = 0 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
+            "COUNT(DISTINCT CASE WHEN " + OrderFraudSql.VALID_SQL + " THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders,",
             "COUNT(DISTINCT CASE WHEN site_tag = 0 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS standalone_orders,",
             "COUNT(DISTINCT CASE WHEN site_tag = 1 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS batch_orders,",
@@ -110,7 +110,7 @@ public interface RevenueMapper {
             "COUNT(valid_sites.product_host) AS valid_ordered_site_count",
             "FROM " + HISTORICAL_SITES_SQL + " s LEFT JOIN (",
             "SELECT DISTINCT " + OrderMapper.NORMALIZED_PRODUCT_HOST_SQL + " AS product_host FROM orders",
-            "WHERE is_valid = 0 AND TRIM(COALESCE(product_host, '')) &lt;&gt; ''",
+            "WHERE " + OrderFraudSql.VALID_SQL + " AND TRIM(COALESCE(product_host, '')) &lt;&gt; ''",
             "<if test='startDate != null and startDate != &quot;&quot;'> AND create_time &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>",
             "<if test='endDate != null and endDate != &quot;&quot;'> AND create_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>",
             ") valid_sites ON LOWER(CASE WHEN LEFT(TRIM(s.site_domain), 4) = 'www.'",
@@ -189,7 +189,7 @@ public interface RevenueMapper {
 
     @Select({"<script>", "SELECT " + OrderMapper.NORMALIZED_PRODUCT_HOST_SQL + " AS product_host,",
             "COUNT(DISTINCT " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + ") AS total_orders,",
-            "COUNT(DISTINCT CASE WHEN is_valid = 0 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
+            "COUNT(DISTINCT CASE WHEN " + OrderFraudSql.VALID_SQL + " THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders,",
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount",
             "FROM orders WHERE TRIM(COALESCE(product_host, '')) &lt;&gt; ''",

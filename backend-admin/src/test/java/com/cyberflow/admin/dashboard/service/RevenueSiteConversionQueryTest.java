@@ -30,7 +30,7 @@ class RevenueSiteConversionQueryTest {
         assertTrue(sql.contains("COUNT(*) AS site_count"));
         assertTrue(sql.contains("COUNT(valid_sites.product_host) AS valid_ordered_site_count"));
         assertTrue(sql.contains("FROM retired_site_info r"));
-        assertTrue(sql.contains("WHERE is_valid = 0"));
+        assertTrue(sql.contains("WHERE " + com.cyberflow.admin.dashboard.mapper.OrderFraudSql.VALID_SQL));
         assertTrue(sql.contains("create_time >= CONCAT(?, ' 00:00:00')"));
         assertTrue(sql.contains("create_time < DATE_ADD(?, INTERVAL 1 DAY)"));
         assertFalse(sql.contains("site_created_before"));

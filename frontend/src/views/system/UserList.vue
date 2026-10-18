@@ -165,7 +165,7 @@ const sharedFieldGroups = [
     ['订单号', 'order.id'], ['商品信息 / 图片', 'order.product_info'], ['金额', 'order.amount'],
     ['币种', 'order.currency'], ['订单站点', 'order.product_host'], ['分类明细', 'order.category'],
     ['建站类型', 'order.site_tag'], ['支付状态', 'order.pay_status'], ['国家 / 地区', 'order.country'],
-    ['收货邮箱', 'order.shipping_email'], ['收货地址', 'order.shipping_address'],
+    ['疑似刷单审核状态', 'order.fraud_status'], ['收货邮箱', 'order.shipping_email'], ['收货地址', 'order.shipping_address'],
     ['管理员', 'order.admin_name'], ['用户组', 'order.user_group'], ['创建时间', 'order.create_time'],
   ].map(([label, value]) => ({ label, value })) },
 ]

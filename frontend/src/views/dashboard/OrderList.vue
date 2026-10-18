@@ -29,6 +29,11 @@
           <el-option v-for="status in payStatusOptions" :key="status" :label="status" :value="status" />
         </el-select>
       </el-form-item>
+      <el-form-item label="刷单审核">
+        <el-select v-model="filters.fraudStatus" placeholder="全部订单" clearable @change="handleSearch">
+          <el-option v-for="(label, status) in fraudLabels" :key="status" :label="label" :value="status" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="币种">
         <el-select v-model="filters.currency" placeholder="全部币种" clearable filterable>
           <el-option v-for="currency in currencyOptions" :key="currency" :label="currency" :value="currency" />
@@ -68,6 +73,8 @@
         <small>{{ item.note }}</small>
       </article>
     </div>
+    <el-alert class="fraud-notice" type="warning" :closable="false" show-icon
+      title="命中“英文名.英文名.5位数字@gmail.com”的订单默认待审核，不计入有效去重订单；管理员确认无异常并审核通过后，按平台有效条件恢复统计。" />
     <!-- 订单表格：每条订单可展开查看订单爬取结果中的商品详情 -->
     <el-table :data="tableData" v-loading="loading" class="order-table" stripe row-key="orderKey">
       <el-table-column type="expand">
@@ -146,6 +153,20 @@
       <el-table-column prop="pay_status_text" label="支付状态" width="90" />
       <el-table-column prop="customer_ip_country" label="国家" width="70" />
       <el-table-column prop="shipping_email" label="收货邮箱" width="180" />
+      <el-table-column label="刷单审核" width="150">
+        <template #default="{ row }">
+          <el-tag v-if="row.fraud_status" :type="fraudTagType(row.fraud_status)">{{ fraudLabels[row.fraud_status] }}</el-tag>
+          <span v-else>—</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="有效统计" width="100">
+        <template #default="{ row }">{{ row.effective_valid === undefined ? '—' : Number(row.effective_valid) === 1 ? '计入' : '不计入' }}</template>
+      </el-table-column>
+      <el-table-column v-if="isAdmin" label="审核操作" width="100" fixed="right">
+        <template #default="{ row }">
+          <el-button v-if="row.fraud_status && row.fraud_status !== 'NORMAL'" link type="primary" @click="openFraudReview(row)">审核 / 记录</el-button>
+        </template>
+      </el-table-column>
       <el-table-column prop="admin_name" label="管理员" width="90" />
       <el-table-column label="用户组" width="86" align="center">
         <template #default="{ row }"><el-tag v-if="row.user_group" effect="light" :style="groupTagStyle(row.user_group)">{{ row.user_group }}组</el-tag><span v-else>—</span></template>
@@ -161,13 +182,44 @@
       @current-change="fetchData"
       @size-change="handleSizeChange"
     />
+    <el-dialog v-model="fraudDialog" title="疑似刷单审核" width="680px" :close-on-click-modal="false" :before-close="closeFraudReview">
+      <template v-if="reviewOrder">
+        <p>订单 {{ reviewOrder.id }} · {{ reviewOrder.product_host }}</p>
+        <p>{{ reviewOrder.shipping_email }}</p>
+        <el-tag :type="fraudTagType(reviewOrder.fraud_status)">{{ fraudLabels[reviewOrder.fraud_status] }}</el-tag>
+        <el-alert type="info" :closable="false" title="审核通过仅解除疑似刷单限制；订单仍须满足平台有效条件。重新同步不会覆盖审核记录。" />
+        <el-form label-width="80px" style="margin-top: 18px">
+          <el-form-item label="审核结果">
+            <el-radio-group v-model="reviewForm.decision" :disabled="reviewSaving">
+              <el-radio value="APPROVED">确认无异常</el-radio>
+              <el-radio value="REJECTED">确认刷单</el-radio>
+              <el-radio value="PENDING">重新待审核</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item label="审核意见">
+            <el-input v-model="reviewForm.note" type="textarea" :rows="3" maxlength="500" show-word-limit :disabled="reviewSaving" placeholder="请填写核查依据或审核意见" />
+          </el-form-item>
+        </el-form>
+        <el-table :data="reviewHistory" v-loading="reviewLoading" size="small" max-height="260">
+          <el-table-column label="结果" width="120"><template #default="{ row }">{{ fraudLabels[row.decision] }}</template></el-table-column>
+          <el-table-column prop="email" label="审核邮箱" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="reviewer" label="审核人" width="90" />
+          <el-table-column prop="note" label="意见" min-width="130" />
+          <el-table-column prop="reviewed_at" label="时间" width="165" />
+        </el-table>
+      </template>
+      <template #footer>
+        <el-button :disabled="reviewSaving" @click="fraudDialog = false">取消</el-button>
+        <el-button type="primary" :loading="reviewSaving" :disabled="reviewLoading || !reviewForm.decision || !reviewForm.note.trim()" @click="submitFraudReview">提交审核</el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getOrders, clearAllOrders } from '@/api/dashboard'
+import { getOrders, clearAllOrders, getOrderFraudReviews, reviewOrderFraud } from '@/api/dashboard'
 import { useUserStore } from '@/store/user'
 import { normalizeOrder } from '@/utils/orderProducts'
 import { formatSiteCategories, groupTagStyle, siteTagLabel, siteTagType } from '@/utils/sitePresentation'
@@ -189,7 +241,53 @@ const userStore = useUserStore()
 const summary = ref({})
 const { groupOptions, loadSiteGroups } = useSiteGroups()
 const isAdmin = computed(() => (userStore.userInfo?.roles || []).some(role => String(role).toUpperCase() === 'ROLE_ADMIN'))
-const filters = reactive({ userGroup: '', orderId: '', domain: '', adminName: '', siteTag: '', payStatus: '', currency: '', country: '', dateRange: [] })
+const filters = reactive({ userGroup: '', orderId: '', domain: '', adminName: '', siteTag: '', fraudStatus: '', payStatus: '', currency: '', country: '', dateRange: [] })
+const fraudLabels = { NORMAL: '未命中规则', PENDING: '疑似刷单 · 待审核', APPROVED: '审核通过', REJECTED: '确认刷单' }
+const fraudTagType = status => ({ NORMAL: 'info', PENDING: 'warning', APPROVED: 'success', REJECTED: 'danger' })[status] || 'info'
+const fraudDialog = ref(false)
+const reviewOrder = ref(null)
+const reviewForm = reactive({ decision: '', note: '' })
+const reviewHistory = ref([])
+const reviewLoading = ref(false)
+const reviewSaving = ref(false)
+let reviewSequence = 0
+
+function closeFraudReview(done) {
+  if (!reviewSaving.value) done()
+}
+
+async function openFraudReview(row) {
+  if (!isAdmin.value || reviewSaving.value) return
+  const sequence = ++reviewSequence
+  reviewOrder.value = { ...row }
+  reviewForm.decision = ''
+  reviewForm.note = ''
+  reviewHistory.value = []
+  fraudDialog.value = true
+  reviewLoading.value = true
+  try {
+    const response = await getOrderFraudReviews(row.user_group, row.id)
+    if (sequence === reviewSequence) reviewHistory.value = response.data || []
+  } finally {
+    if (sequence === reviewSequence) reviewLoading.value = false
+  }
+}
+
+async function submitFraudReview() {
+  if (!isAdmin.value || reviewSaving.value || reviewLoading.value || !reviewOrder.value || !reviewForm.decision || !reviewForm.note.trim()) return
+  reviewSaving.value = true
+  const order = reviewOrder.value
+  try {
+    await reviewOrderFraud(order.user_group, order.id, {
+      email: order.shipping_email, decision: reviewForm.decision, note: reviewForm.note.trim(),
+    })
+    ElMessage.success('审核结果已保存，相关统计已更新')
+    fraudDialog.value = false
+    await fetchData()
+  } finally {
+    reviewSaving.value = false
+  }
+}
 const payStatusOptions = ['已支付', '支付异常', '支付失败', '待支付', '退款', '已取消']
 const currencyOptions = ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'AUD', 'CAD']
 const formatAmount = value => value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -219,6 +317,7 @@ async function fetchData() {
       adminName: filters.adminName.trim() || undefined,
       userGroup: filters.userGroup || undefined,
       siteTag: [0, 1, 2].includes(filters.siteTag) ? filters.siteTag : undefined,
+      fraudStatus: filters.fraudStatus || undefined,
       payStatus: filters.payStatus || undefined,
       currency: filters.currency || undefined,
       country: filters.country.trim() || undefined,
@@ -249,7 +348,7 @@ function handleSizeChange(value) {
  * 重置筛选条件并重新加载数据
  */
 function resetFilters() {
-  Object.assign(filters, { userGroup: '', orderId: '', domain: '', adminName: '', siteTag: '', payStatus: '', currency: '', country: '', dateRange: [] })
+  Object.assign(filters, { userGroup: '', orderId: '', domain: '', adminName: '', siteTag: '', fraudStatus: '', payStatus: '', currency: '', country: '', dateRange: [] })
   page.value = 1
   fetchData()
 }
@@ -286,6 +385,7 @@ onMounted(async () => {
 </script>
 <style scoped>
 .order-filter { margin-bottom: 18px; }
+.fraud-notice { margin-bottom: 16px; }
 .order-filter :deep(.el-input), .order-filter :deep(.el-select) { width: 170px; }
 .order-filter .date-filter :deep(.el-date-editor) { width: 280px; }
 .order-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; margin: 18px 0; }
