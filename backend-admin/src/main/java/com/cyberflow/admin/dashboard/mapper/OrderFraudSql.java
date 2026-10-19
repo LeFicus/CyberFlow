@@ -4,7 +4,7 @@ package com.cyberflow.admin.dashboard.mapper;
 public final class OrderFraudSql {
     private OrderFraudSql() {}
 
-    public static final String EMAIL_PATTERN = "^[a-z]+[.][a-z]+[.][0-9]{5}@gmail[.]com$";
+    public static final String EMAIL_PATTERN = "^[a-z]+[.][a-z]+[.][0-9]+@gmail[.]com$";
     public static final String SUSPECT_SQL = "REGEXP_LIKE(LOWER(TRIM(COALESCE(shipping_email, ''))), '" + EMAIL_PATTERN + "', 'c')";
     public static final String REVIEW_SQL = "COALESCE((SELECT fr.decision FROM order_fraud_reviews fr " +
             "WHERE fr.user_group = orders.user_group COLLATE utf8mb4_unicode_ci AND fr.order_id = orders.id " +

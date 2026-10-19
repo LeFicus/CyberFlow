@@ -164,7 +164,7 @@ class RevenueOrderFiltersDatabaseTest {
                     "shipping_email,admin_name,user_group,site_tag,is_valid,dedupe_key) VALUES " +
                     "(101,10,'USD','2026-10-12','live.test','支付失败',' Alice.Smith.12345@GMAIL.COM ','alice','A',1,0,'risk')," +
                     "(102,10,'USD','2026-10-12','live.test','支付失败','alice.smith.12345@gmail.com','alice','A',1,0,'risk')," +
-                    "(103,10,'USD','2026-10-12','plain.test','支付失败','alice.smith.1234@gmail.com','alice','A',0,0,'normal')," +
+                    "(103,10,'USD','2026-10-12','plain.test','支付失败','alice.smith@gmail.com','alice','A',0,0,'normal')," +
                     "(104,10,'USD','2026-10-12','live.test','已支付','alice.smith.98765@gmail.com','alice','A',1,1,'invalid')," +
                     "(101,10,'USD','2026-10-12','live.test','支付失败','alice.smith.12345@gmail.com','alice','B',1,0,'other-group')," +
                     "(106,10,'USD','2026-10-12','plain.test','已支付',NULL,'alice','A',0,1,'invalid-normal')," +
@@ -296,6 +296,53 @@ class RevenueOrderFiltersDatabaseTest {
             service.review("A", 102, "alice.smith.12345@gmail.com", "REJECTED", "确认异常", "admin");
             assertEquals(10L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
             assertEquals(14L, orders.countOrders());
+        }
+    }
+
+    @Test
+    void numericEmailSuffixHasNoFixedLengthAndUsesTheSameReviewAndStatisticsPolicy() throws Exception {
+        try (var fixture = fixture()) {
+            var orders = fixture.getMapper(OrderMapper.class);
+            var service = new OrderFraudReviewService(fixture.getMapper(OrderFraudReviewMapper.class));
+            long initialDeduplicated = ((Number) orders.businessSummary().get("deduplicated_orders")).longValue();
+            long initialValid = ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue();
+            var suspicious = List.of("first.last.1@gmail.com", "first.last.12@gmail.com",
+                    "first.last.1234@gmail.com", "first.last.12345@gmail.com", "first.last.123456@gmail.com",
+                    "first.last.123456789012@gmail.com", "first.last." + "1".repeat(64) + "@gmail.com",
+                    " First.Last.007@GMAIL.COM ");
+            var normal = List.of("first.last@gmail.com", "first.last.@gmail.com", "first.last.12a@gmail.com",
+                    "first.last.12@hotmail.com", "first.last.12@gmail.com.example", "first.middle.last.12@gmail.com");
+            var samples = new ArrayList<>(suspicious);
+            samples.addAll(normal);
+            try (var insert = fixture.session().getConnection().prepareStatement(
+                    "INSERT INTO orders (id,user_group,admin_name,product_host,shipping_email,is_valid,dedupe_key,create_time) " +
+                            "VALUES (?,'A','alice','pattern.test',?,0,?,'2026-10-12')")) {
+                for (int index = 0; index < samples.size(); index++) {
+                    insert.setInt(1, 200 + index);
+                    insert.setString(2, samples.get(index));
+                    insert.setString(3, "variable-digits-" + index);
+                    insert.executeUpdate();
+                }
+            }
+            fixture.session().clearCache();
+            var rows = orders.listOrdersFiltered(null, null, "A", "pattern.test", null, null, null,
+                    null, null, null, 0, 50, null, null);
+            assertEquals(samples.size(), rows.size());
+            for (var row : rows) {
+                boolean hit = suspicious.contains(row.get("shipping_email"));
+                assertEquals(hit ? "PENDING" : "NORMAL", row.get("fraud_status"));
+                assertEquals(hit ? 0 : 1, ((Number) row.get("effective_valid")).intValue());
+            }
+            assertEquals(suspicious.size(), orders.countOrdersFiltered(null, null, "A", "pattern.test", null, null, null,
+                    null, null, null, null, "PENDING"));
+            assertEquals(initialDeduplicated + normal.size(), ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
+            assertEquals(initialValid + normal.size(), ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue());
+            service.review("A", 200, suspicious.get(0), "APPROVED", "一位数字邮箱已核实", "admin");
+            service.review("A", 206, suspicious.get(6), "APPROVED", "长数字邮箱已核实", "admin");
+            assertEquals(initialDeduplicated + normal.size() + 2, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
+            assertEquals(initialValid + normal.size() + 2, ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue());
+            service.review("A", 200, suspicious.get(0), "REJECTED", "重新核实为异常", "admin");
+            assertEquals(initialDeduplicated + normal.size() + 1, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
         }
     }
 

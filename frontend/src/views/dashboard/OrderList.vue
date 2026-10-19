@@ -74,7 +74,7 @@
       </article>
     </div>
     <el-alert class="fraud-notice" type="warning" :closable="false" show-icon
-      title="命中“英文名.英文名.5位数字@gmail.com”的订单默认待审核，不计入去重订单和有效去重订单；管理员确认无异常并审核通过后恢复参与统计，有效去重仍须满足平台有效条件。" />
+      title="命中“英文名.英文名.数字@gmail.com（数字位数不限）”的订单默认待审核，不计入去重订单和有效去重订单；管理员确认无异常并审核通过后恢复参与统计，有效去重仍须满足平台有效条件。" />
     <!-- 订单表格：每条订单可展开查看订单爬取结果中的商品详情 -->
     <el-table :data="tableData" v-loading="loading" class="order-table" stripe row-key="orderKey">
       <el-table-column type="expand">
