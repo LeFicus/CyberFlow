@@ -9,7 +9,9 @@ public final class OrderFraudSql {
     public static final String REVIEW_SQL = "COALESCE((SELECT fr.decision FROM order_fraud_reviews fr " +
             "WHERE fr.user_group = orders.user_group COLLATE utf8mb4_unicode_ci AND fr.order_id = orders.id " +
             "AND fr.email = LOWER(TRIM(orders.shipping_email)) COLLATE utf8mb4_unicode_ci ORDER BY fr.id DESC LIMIT 1), 'PENDING')";
-    public static final String VALID_SQL = "(is_valid = 0 AND (NOT " + SUSPECT_SQL + " OR " + REVIEW_SQL + " = 'APPROVED'))";
+    /** Suspected orders enter deduplicated reports only after explicit approval. */
+    public static final String ELIGIBLE_SQL = "(NOT " + SUSPECT_SQL + " OR " + REVIEW_SQL + " = 'APPROVED')";
+    public static final String VALID_SQL = "(is_valid = 0 AND " + ELIGIBLE_SQL + ")";
 
     /** The list and all of its filters use the same alias and latest review. */
     public static final String LIST_STATUS_SQL = "CASE WHEN REGEXP_LIKE(LOWER(TRIM(COALESCE(o.shipping_email, ''))), '" +

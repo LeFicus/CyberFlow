@@ -74,7 +74,7 @@
       </article>
     </div>
     <el-alert class="fraud-notice" type="warning" :closable="false" show-icon
-      title="命中“英文名.英文名.5位数字@gmail.com”的订单默认待审核，不计入有效去重订单；管理员确认无异常并审核通过后，按平台有效条件恢复统计。" />
+      title="命中“英文名.英文名.5位数字@gmail.com”的订单默认待审核，不计入去重订单和有效去重订单；管理员确认无异常并审核通过后恢复参与统计，有效去重仍须满足平台有效条件。" />
     <!-- 订单表格：每条订单可展开查看订单爬取结果中的商品详情 -->
     <el-table :data="tableData" v-loading="loading" class="order-table" stripe row-key="orderKey">
       <el-table-column type="expand">
@@ -187,7 +187,7 @@
         <p>订单 {{ reviewOrder.id }} · {{ reviewOrder.product_host }}</p>
         <p>{{ reviewOrder.shipping_email }}</p>
         <el-tag :type="fraudTagType(reviewOrder.fraud_status)">{{ fraudLabels[reviewOrder.fraud_status] }}</el-tag>
-        <el-alert type="info" :closable="false" title="审核通过仅解除疑似刷单限制；订单仍须满足平台有效条件。重新同步不会覆盖审核记录。" />
+        <el-alert type="info" :closable="false" title="审核通过后恢复参与去重订单统计；有效去重仍须满足平台有效条件。重新同步不会覆盖审核记录。" />
         <el-form label-width="80px" style="margin-top: 18px">
           <el-form-item label="审核结果">
             <el-radio-group v-model="reviewForm.decision" :disabled="reviewSaving">

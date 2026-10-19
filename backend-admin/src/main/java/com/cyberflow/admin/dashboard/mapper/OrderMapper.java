@@ -44,6 +44,10 @@ public interface OrderMapper {
     String DEDUPLICATED_ORDER_KEY_SQL =
             "COALESCE(NULLIF(TRIM(dedupe_key), ''), " + LEGACY_DEDUPLICATED_ORDER_KEY_SQL + ")";
 
+    /** Keep the raw identity stable; exclude unapproved suspicious rows from report counts. */
+    String REPORTABLE_ORDER_KEY_SQL = "CASE WHEN " + OrderFraudSql.ELIGIBLE_SQL +
+            " THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END";
+
     /** Delete every order across both user groups. This endpoint is admin-only. */
     @Delete("DELETE FROM orders")
     int deleteAllOrders();
@@ -147,19 +151,19 @@ public interface OrderMapper {
                                                  @Param("fraudStatus") String fraudStatus);
 
     /** Overview metrics use the shared business deduplication fingerprint. */
-    @Select("SELECT COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS deduplicated_orders, " +
+    @Select("SELECT COUNT(DISTINCT " + REPORTABLE_ORDER_KEY_SQL + ") AS deduplicated_orders, " +
             "COUNT(DISTINCT CASE WHEN " + OrderFraudSql.VALID_SQL + " THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_deduplicated_orders, " +
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' " +
-            "THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders, " +
+            "THEN " + REPORTABLE_ORDER_KEY_SQL + " END) AS successful_orders, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount " +
             "FROM orders")
     Map<String, Object> businessSummary();
 
     @Select({"<script>",
-            "SELECT COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS deduplicated_orders, " +
+            "SELECT COUNT(DISTINCT " + REPORTABLE_ORDER_KEY_SQL + ") AS deduplicated_orders, " +
             "COUNT(DISTINCT CASE WHEN " + OrderFraudSql.VALID_SQL + " THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_deduplicated_orders, " +
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' " +
-            "THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders, " +
+            "THEN " + REPORTABLE_ORDER_KEY_SQL + " END) AS successful_orders, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount " +
             "FROM orders WHERE create_time &gt;= #{startDateTime} AND create_time &lt; #{endDateTime} " +
             "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
@@ -211,7 +215,7 @@ public interface OrderMapper {
      * @param endDate   结束日期（年月日格式）
      * @return 每日订单趋势列表，每组包含 date（日期）、count（订单数）、amount（金额）
      */
-    @Select("SELECT DATE(create_time) as date, COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") as count, " +
+    @Select("SELECT DATE(create_time) as date, COUNT(DISTINCT " + REPORTABLE_ORDER_KEY_SQL + ") as count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) as amount " +
             "FROM orders WHERE create_time >= #{startDateTime} AND create_time < #{endDateTime} " +
             "GROUP BY DATE(create_time) ORDER BY date")
@@ -219,7 +223,7 @@ public interface OrderMapper {
                                          @Param("endDateTime") String endDateTime);
 
     @Select("SELECT DATE(create_time) AS date, " +
-            "COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS count, " +
+            "COUNT(DISTINCT " + REPORTABLE_ORDER_KEY_SQL + ") AS count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS amount " +
             "FROM orders WHERE create_time >= #{startDateTime} AND create_time < #{endDateTime} " +
             "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
@@ -241,7 +245,7 @@ public interface OrderMapper {
     List<Map<String, Object>> countByAdmin();
 
     @Select("SELECT admin_name, " +
-            "COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS count, " +
+            "COUNT(DISTINCT " + REPORTABLE_ORDER_KEY_SQL + ") AS count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS amount " +
             "FROM orders WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
             "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) > 0) " +

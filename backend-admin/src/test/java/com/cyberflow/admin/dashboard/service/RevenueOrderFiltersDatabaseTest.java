@@ -238,4 +238,65 @@ class RevenueOrderFiltersDatabaseTest {
         }
     }
 
+    @Test
+    void suspectedOrdersAreExcludedFromDeduplicatedTotalsTrendsTypesAndCategorySitesUntilApproved() throws Exception {
+        try (var fixture = fixture()) {
+            fraudFixtures(fixture);
+            var orders = fixture.getMapper(OrderMapper.class);
+            var revenue = fixture.getMapper(RevenueMapper.class);
+            var service = new OrderFraudReviewService(fixture.getMapper(OrderFraudReviewMapper.class));
+            try (var sql = fixture.session().getConnection().createStatement()) {
+                sql.executeUpdate("INSERT INTO site_info VALUES ('pending.test','alice','A',2,JSON_ARRAY('待审专属分类'),NULL,'2026-10-01','2026-10-01')");
+                sql.executeUpdate("INSERT INTO orders (id,user_group,admin_name,product_host,shipping_email,is_valid,dedupe_key,create_time,site_tag) " +
+                        "VALUES (108,'A','alice','pending.test','pending.person.12345@gmail.com',0,'pending-only','2026-10-12',2)");
+            }
+            assertEquals(14L, orders.countOrders());
+            assertEquals(9L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
+            assertEquals(8L, ((Number) orders.businessSummaryByGroup("2026-10-01", "2026-11-01", "A", null)
+                    .get("deduplicated_orders")).longValue());
+            assertEquals(9L, orders.orderTrend("2026-10-01", "2026-11-01").stream()
+                    .mapToLong(row -> ((Number) row.get("count")).longValue()).sum());
+            assertEquals(8L, orders.orderTrendByGroup("2026-10-01", "2026-11-01", "A", "alice").stream()
+                    .mapToLong(row -> ((Number) row.get("count")).longValue()).sum());
+            assertEquals(9L, orders.countByAdminForGroup(null, null).stream()
+                    .mapToLong(row -> ((Number) row.get("count")).longValue()).sum());
+            var group = revenue.groupOrderStats("A", null, null).get(0);
+            assertEquals(8L, ((Number) group.get("total_orders")).longValue());
+            assertEquals(8L, List.of("standalone_orders", "batch_orders", "copy_orders").stream()
+                    .mapToLong(key -> ((Number) group.get(key)).longValue()).sum());
+            assertEquals(8L, ((Number) revenue.adminOrderStats("A", null, List.of(), null, null).get(0).get("total_orders")).longValue());
+            assertTrue(revenue.groupOrderCategoryStats("A", null, null).stream().noneMatch(row -> row.get("category_name").equals("待审专属分类")));
+            assertTrue(revenue.adminOrderCategoryStats("A", null, List.of(), null, null).stream().noneMatch(row -> row.get("category_name").equals("待审专属分类")));
+            assertEquals(0L, ((Number) revenue.revenueOrdersByDomain(null, null, null, List.of()).stream()
+                    .filter(row -> row.get("product_host").equals("pending.test")).findFirst().orElseThrow().get("total_orders")).longValue());
+            assertEquals(9L, revenue.groupOrderCountryStats(null, null, null).stream()
+                    .mapToLong(row -> ((Number) row.get("order_count")).longValue()).sum());
+            assertEquals(8L, revenue.adminOrderCountryStats("A", null, List.of(), null, null).stream()
+                    .mapToLong(row -> ((Number) row.get("order_count")).longValue()).sum());
+            assertEquals(9L, revenue.revenueOrderCountriesByDomain(null, null, null, List.of()).stream()
+                    .mapToLong(row -> ((Number) row.get("order_count")).longValue()).sum());
+
+            service.review("A", 101, "alice.smith.12345@gmail.com", "APPROVED", "核实无异常", "admin");
+            assertEquals(10L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
+            service.review("A", 102, "alice.smith.12345@gmail.com", "APPROVED", "重复订单已核实", "admin");
+            assertEquals(10L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
+            // Approval restores ordinary deduplication even if the upstream validity flag is invalid.
+            service.review("A", 104, "alice.smith.98765@gmail.com", "APPROVED", "解除刷单限制", "admin");
+            assertEquals(11L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
+            assertEquals(3L, ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue());
+            service.review("A", 108, "pending.person.12345@gmail.com", "APPROVED", "分类站点已核实", "admin");
+            var category = revenue.groupOrderCategoryStats("A", null, null).stream()
+                    .filter(row -> row.get("category_name").equals("待审专属分类")).findFirst().orElseThrow();
+            assertEquals(1L, ((Number) category.get("order_count")).longValue());
+            assertEquals(1L, ((Number) category.get("ordered_site_count")).longValue());
+            service.review("A", 108, "pending.person.12345@gmail.com", "REJECTED", "复核确认异常", "admin");
+            assertEquals(11L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
+            assertTrue(revenue.groupOrderCategoryStats("A", null, null).stream().noneMatch(row -> row.get("category_name").equals("待审专属分类")));
+            service.review("A", 101, "alice.smith.12345@gmail.com", "PENDING", "复核", "admin");
+            service.review("A", 102, "alice.smith.12345@gmail.com", "REJECTED", "确认异常", "admin");
+            assertEquals(10L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
+            assertEquals(14L, orders.countOrders());
+        }
+    }
+
 }
