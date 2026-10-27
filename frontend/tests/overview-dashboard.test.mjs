@@ -30,6 +30,9 @@ test('a zero previous period is reported without a misleading percentage', () =>
 test('overview keeps daily metrics without forecasts, order trend or admin ranking', async () => {
   const overview = await readFile(new URL('../src/views/dashboard/Overview.vue', import.meta.url), 'utf8')
   assert.doesNotMatch(overview, /站点收录趋势|快捷任务/)
+  assert.match(overview, /今日风控订单/)
+  assert.match(overview, /overview\.value\.today_risk_orders/)
+  assert.doesNotMatch(overview, /今日新增站点/)
   assert.match(overview, /今日去重订单/)
   assert.match(overview, /今日有效去重/)
   assert.match(overview, /昨日去重订单/)

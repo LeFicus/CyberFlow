@@ -15,6 +15,11 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 import App from './App.vue'
 import router from './router'
+import PageHeader from '@/components/PageHeader.vue'
+import StatCard from '@/components/StatCard.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import DataPanel from '@/components/DataPanel.vue'
+import EmptyState from '@/components/EmptyState.vue'
 
 const app = createApp(App)
 
@@ -23,8 +28,49 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
 
+// 共享布局组件全局注册：页面模板可直接使用，业务脚本无需重复 import。
+for (const [name, component] of Object.entries({ PageHeader, StatCard, FilterBar, DataPanel, EmptyState })) {
+  app.component(name, component)
+}
+
 app.use(createPinia())
 app.use(router)
 // 使用 Element Plus 并设置中文语言包
 app.use(ElementPlus, { locale: zhCn })
 app.mount('#app')
+
+/**
+ * Accessibility bridge for Element Plus internals.
+ * - pagination page-size selects get a name
+ * - selects/switches inside el-form-item inherit the visible label
+ * - table scroll containers become keyboard focusable
+ * Element Plus renders these nodes dynamically, so patch after DOM updates.
+ */
+function patchAccessibility() {
+  document.querySelectorAll('.el-pagination .el-select__input:not([aria-label])').forEach(input => {
+    input.setAttribute('aria-label', '每页条数')
+  })
+
+  document.querySelectorAll('.el-select__input:not([aria-label]), .el-switch__input:not([aria-label])').forEach(input => {
+    const item = input.closest('.el-form-item')
+    const label = item?.querySelector('.el-form-item__label')?.textContent?.trim()
+    if (label) input.setAttribute('aria-label', label)
+  })
+
+  document.querySelectorAll('.el-table__body-wrapper .el-scrollbar__wrap:not([tabindex])').forEach(scroller => {
+    scroller.setAttribute('tabindex', '0')
+  })
+}
+
+let a11yPatchScheduled = false
+const scheduleA11yPatch = () => {
+  if (a11yPatchScheduled) return
+  a11yPatchScheduled = true
+  requestAnimationFrame(() => {
+    a11yPatchScheduled = false
+    patchAccessibility()
+  })
+}
+
+new MutationObserver(scheduleA11yPatch).observe(document.body, { childList: true, subtree: true })
+scheduleA11yPatch()

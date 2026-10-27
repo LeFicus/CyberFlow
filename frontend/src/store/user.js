@@ -7,6 +7,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { getUserInfo } from '@/api/auth'
+import { clearAuth, readToken, readUserInfo, writeAuth } from '@/utils/authStorage'
 
 /**
  * 用户 Store
@@ -14,27 +15,31 @@ import { getUserInfo } from '@/api/auth'
  * @description 管理用户 Token、用户基本信息、权限信息，支持本地持久化与退出登录
  */
 export const useUserStore = defineStore('user', () => {
-  /** @type {import('vue').Ref<string>} JWT 认证令牌（从 localStorage 恢复） */
-  const token = ref(localStorage.getItem('token') || '')
+  /** @type {import('vue').Ref<string>} JWT 认证令牌（localStorage 或 sessionStorage） */
+  const token = ref(readToken())
   /** @type {import('vue').Ref<Object>} 当前登录用户信息（角色、权限、菜单等） */
-  const userInfo = ref(JSON.parse(localStorage.getItem('userInfo') || '{}'))
+  const userInfo = ref(JSON.parse(readUserInfo() || '{}'))
+  /** 当前会话是否跨浏览器重启保留 */
+  const persistent = ref(Boolean(localStorage.getItem('token')))
 
   /**
-   * 设置 Token 并持久化到 localStorage
+   * 设置 Token 并按“记住登录状态”选择存储位置
    * @param {string} t - JWT 令牌字符串
+   * @param {boolean} remember - true 写入 localStorage，false 只写入 sessionStorage
    */
-  function setToken(t) {
+  function setToken(t, remember = true) {
     token.value = t
-    localStorage.setItem('token', t)
+    persistent.value = remember
+    writeAuth({ token: t, persist: remember })
   }
 
   /**
-   * 设置用户信息并持久化到 localStorage
+   * 设置用户信息，并写入当前会话所属的存储位置
    * @param {Object} info - 用户信息对象（id, username, nickname, roles, permissions, menus 等）
    */
   function setUserInfo(info) {
     userInfo.value = info
-    localStorage.setItem('userInfo', JSON.stringify(info))
+    writeAuth({ token: token.value, userInfo: info, persist: persistent.value })
   }
 
   /**
@@ -53,8 +58,8 @@ export const useUserStore = defineStore('user', () => {
   function logout() {
     token.value = ''
     userInfo.value = {}
-    localStorage.removeItem('token')
-    localStorage.removeItem('userInfo')
+    persistent.value = false
+    clearAuth()
   }
 
   /**

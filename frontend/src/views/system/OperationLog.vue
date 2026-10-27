@@ -4,11 +4,16 @@
   日志包含操作类型、模块、操作对象、请求路径、IP、耗时、状态和时间等字段。
 -->
 <template>
-  <el-card>
-    <template #header>操作日志</template>
+  <div class="log-page">
+    <PageHeader
+      eyebrow="SYSTEM"
+      title="操作日志"
+      description="审计用户操作与系统访问记录，支持按操作人和模块筛选"
+    />
 
+    <DataPanel>
     <!-- 筛选栏 -->
-    <el-form :inline="true" :model="filters" style="margin-bottom: 16px;">
+    <el-form :inline="true" :model="filters" class="log-filter">
       <el-form-item label="操作人">
         <el-input v-model="filters.username" placeholder="按操作人筛选" clearable />
       </el-form-item>
@@ -29,6 +34,7 @@
     </el-form>
 
     <!-- 日志表格 -->
+    <p class="cf-table-hint">左右滑动表格查看更多列</p>
     <el-table :data="tableData" v-loading="loading" stripe>
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="username" label="操作人" width="100" />
@@ -56,14 +62,15 @@
     </el-table>
 
     <el-pagination
-      style="margin-top: 16px; justify-content: flex-end;"
+      class="log-pagination"
       v-model:current-page="page" :page-size="size"
       :page-sizes="[10, 20, 50, 100]"
       :total="total" layout="total, sizes, prev, pager, next"
       @current-change="fetchData"
       @size-change="handleSizeChange"
     />
-  </el-card>
+    </DataPanel>
+  </div>
 </template>
 
 <script setup>
@@ -120,3 +127,21 @@ function handleSizeChange(value) {
 
 onMounted(fetchData)
 </script>
+
+
+<style scoped>
+.log-page {
+  max-width: var(--cf-page-max);
+  margin: 0 auto;
+}
+
+.log-filter {
+  margin-bottom: var(--cf-space-5);
+}
+
+.log-pagination {
+  margin-top: var(--cf-space-4);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+</style>

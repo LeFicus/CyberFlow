@@ -3,12 +3,19 @@
   提供角色 CRUD 和角色菜单/按钮权限分配。
 -->
 <template>
-  <el-card>
-    <template #header>
-      <span>角色管理</span>
-      <el-button v-if="canCreate" type="primary" size="small" style="float: right" @click="openDialog()">新增角色</el-button>
-    </template>
+  <div class="role-page">
+    <PageHeader
+      eyebrow="SYSTEM"
+      title="角色管理"
+      description="配置角色、功能权限与菜单访问范围"
+    >
+      <template #actions>
+        <el-button v-if="canCreate" type="primary" @click="openDialog()">新增角色</el-button>
+      </template>
+    </PageHeader>
 
+    <DataPanel>
+    <p class="cf-table-hint">左右滑动表格查看操作列</p>
     <el-table :data="tableData" v-loading="loading" stripe>
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="roleName" label="角色名称" width="150" />
@@ -19,7 +26,7 @@
           <el-tag :type="row.status === 1 ? 'success' : 'danger'">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column v-if="canManage" label="操作" width="250" fixed="right">
+      <el-table-column v-if="canManage" label="操作" width="250" :fixed="isNarrow ? false : 'right'">
         <template #default="{ row }">
           <el-button v-if="canUpdate" size="small" @click="openDialog(row)">编辑</el-button>
           <el-button v-if="canAssign" size="small" type="primary" :disabled="row.roleCode === 'ROLE_ADMIN'" @click="openMenuDialog(row)">分配菜单</el-button>
@@ -29,7 +36,7 @@
     </el-table>
 
     <el-pagination
-      style="margin-top: 16px; justify-content: flex-end;"
+      class="role-pagination"
       v-model:current-page="page" :page-size="size"
       :page-sizes="[10, 20, 50, 100]"
       :total="total" layout="total, sizes, prev, pager, next"
@@ -37,7 +44,7 @@
       @size-change="handleSizeChange"
     />
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑角色' : '新增角色'" width="460px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑角色' : '新增角色'" width="min(460px, 94vw)">
       <el-form :model="form" label-width="90px">
         <el-form-item label="角色名称" required>
           <el-input v-model="form.roleName" />
@@ -58,7 +65,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="menuDialogVisible" title="分配菜单权限" width="460px">
+    <el-dialog v-model="menuDialogVisible" title="分配菜单权限" width="min(460px, 94vw)">
       <el-tree
         ref="treeRef"
         :data="menuTree"
@@ -72,11 +79,13 @@
         <el-button type="primary" :loading="assigning" @click="handleAssignMenus">保存</el-button>
       </template>
     </el-dialog>
-  </el-card>
+    </DataPanel>
+  </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import {
@@ -90,6 +99,7 @@ import {
 } from '@/api/system'
 
 const userStore = useUserStore()
+const isNarrow = useMediaQuery('(max-width: 900px)')
 const canCreate = computed(() => userStore.hasPermission('system:role:create'))
 const canUpdate = computed(() => userStore.hasPermission('system:role:update'))
 const canDelete = computed(() => userStore.hasPermission('system:role:delete'))
@@ -198,3 +208,17 @@ async function handleAssignMenus() {
 
 onMounted(fetchData)
 </script>
+
+
+<style scoped>
+.role-page {
+  max-width: var(--cf-page-max);
+  margin: 0 auto;
+}
+
+.role-pagination {
+  margin-top: var(--cf-space-4);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+</style>

@@ -1,24 +1,24 @@
 <template>
   <div class="sync-page">
-    <section class="sync-toolbar">
-      <div class="sync-intro">
-        <strong>手动同步</strong>
-        <span>建议按站点、收录、订单的顺序更新，也可以按需单独执行。</span>
-      </div>
-      <div class="toolbar-actions">
-        <span class="activity-summary" :class="{ active: syncActiveCount }"><i></i>{{ activityLabel }}</span>
+    <PageHeader
+      eyebrow="DATA SYNC"
+      title="站点、收录与订单同步"
+      description="手动同步：建议按站点、收录、订单的顺序更新，也可以按需单独执行"
+    >
+      <template #actions>
+        <span class="activity-summary" :class="{ active: syncActiveCount }"><i aria-hidden="true"></i>{{ activityLabel }}</span>
         <el-button v-if="canViewConfig" :type="canSaveConfig && configDirty ? 'warning' : 'default'" @click="configOpen = !configOpen">
           {{ canSaveConfig && configDirty ? '配置待保存' : configOpen ? '收起配置' : '同步配置' }}
         </el-button>
-      </div>
-    </section>
+      </template>
+    </PageHeader>
 
     <div class="sync-sequence" aria-label="建议同步顺序">
       <span><b>1</b>站点资料</span><i></i><span><b>2</b>收录数据</span><i></i><span><b>3</b>订单数据</span>
     </div>
 
     <section class="sync-grid">
-      <el-card class="sync-card site-card" shadow="never">
+      <DataPanel class="sync-card site-card">
         <div class="sync-card-top">
           <div class="sync-card-heading">
             <span class="sync-icon blue"><el-icon><Connection /></el-icon></span>
@@ -32,9 +32,9 @@
           <el-alert v-else title="当前账号没有站点同步权限" type="info" :closable="false" />
         </div>
         <TaskProgress :task="siteTask" />
-      </el-card>
+      </DataPanel>
 
-      <el-card class="sync-card index-card" shadow="never">
+      <DataPanel class="sync-card index-card">
         <div class="sync-card-top">
           <div class="sync-card-heading">
             <span class="sync-icon green"><el-icon><TrendCharts /></el-icon></span>
@@ -48,9 +48,9 @@
           <el-alert v-else title="当前账号没有收录更新权限" type="info" :closable="false" />
         </div>
         <TaskProgress :task="indexTask" />
-      </el-card>
+      </DataPanel>
 
-      <el-card v-if="canUseOrder" class="sync-card order-card" shadow="never">
+      <DataPanel v-if="canUseOrder" class="sync-card order-card">
         <div class="order-layout">
           <div class="order-summary">
             <div class="sync-card-heading">
@@ -71,16 +71,13 @@
           </div>
         </div>
         <TaskProgress :task="orderTask" />
-      </el-card>
+      </DataPanel>
     </section>
 
     <el-collapse-transition>
-      <el-card v-show="configOpen && canViewConfig" shadow="never" class="config-card">
-        <template #header>
-          <div class="config-heading">
-            <div><strong>同步配置</strong><span>站点、收录与订单任务所需的连接和增量规则</span></div>
-            <el-tag v-if="canSaveConfig && configDirty" type="warning">有未保存修改</el-tag>
-          </div>
+      <DataPanel v-show="configOpen && canViewConfig" class="config-card" title="同步配置" description="站点、收录与订单任务所需的连接和增量规则">
+        <template #actions>
+          <el-tag v-if="canSaveConfig && configDirty" type="warning">有未保存修改</el-tag>
         </template>
         <el-form :model="form" label-position="top">
           <template v-if="canUseSite">
@@ -126,7 +123,7 @@
           </div>
           <el-alert v-else title="当前为只读配置，敏感信息已脱敏" type="info" :closable="false" />
         </el-form>
-      </el-card>
+      </DataPanel>
     </el-collapse-transition>
   </div>
 </template>
@@ -257,8 +254,396 @@ onUnmounted(() => { if (activityTimer) window.clearTimeout(activityTimer) })
 </script>
 
 <style scoped>
-.sync-page { display: grid; max-width: 1180px; gap: 16px; margin: 0 auto; }.sync-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 2px 2px 4px; }.sync-intro strong, .sync-intro span { display: block; }.sync-intro strong { color: var(--cf-ink); font-size: 16px; }.sync-intro span { margin-top: 5px; color: var(--cf-muted); font-size: 11px; }.toolbar-actions { display: flex; flex-shrink: 0; align-items: center; gap: 12px; }.activity-summary { display: flex; align-items: center; gap: 7px; color: var(--cf-muted); font-size: 10px; }.activity-summary i { width: 7px; height: 7px; border-radius: 50%; background: #aab4c3; box-shadow: 0 0 0 4px #aab4c31f; }.activity-summary.active { color: #b2741b; }.activity-summary.active i { background: #e5a13b; box-shadow: 0 0 0 4px #e5a13b22; }.sync-sequence { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 12px 18px; border: 1px solid #e6eaf1; border-radius: 12px; background: #f8faff; }.sync-sequence span { display: flex; align-items: center; gap: 7px; color: #536178; font-size: 11px; font-weight: 650; }.sync-sequence span b { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 50%; color: #fff; background: #657cf0; font-size: 10px; }.sync-sequence > i { width: 54px; height: 1px; background: linear-gradient(90deg, #cfd6e5, #9ca9c1); }.sync-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }.sync-card { min-width: 0; border-radius: 14px; }.sync-card.site-card { border-top: 3px solid #6379ef; }.sync-card.index-card { border-top: 3px solid #42b78c; }.sync-card.order-card { grid-column: 1 / -1; border-top: 3px solid #dda04b; }.sync-card :deep(.el-card__body) { padding: 20px; }.sync-card-top { display: flex; min-height: 82px; align-items: flex-start; justify-content: space-between; gap: 18px; }.sync-card-heading { display: flex; min-width: 0; align-items: flex-start; gap: 14px; }.sync-card-heading h2 { margin: 3px 0 7px; color: var(--cf-ink); font-size: 17px; }.sync-card-heading p { max-width: 420px; margin: 0; color: var(--cf-muted); font-size: 11px; line-height: 1.7; }.sync-card-heading small { color: #8c99ad; font-size: 9px; font-weight: 750; letter-spacing: .08em; }.sync-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 12px; font-size: 19px; }.sync-icon.blue { color: #536ff1; background: #eef1ff; }.sync-icon.green { color: #2aa77a; background: #eaf9f3; }.sync-icon.amber { color: #cb8522; background: #fff5e5; }.sync-card-actions { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 16px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--cf-line); }.sync-card-actions > span { max-width: 310px; color: var(--cf-muted); font-size: 10px; line-height: 1.6; }.sync-card-actions > .el-button { flex: 0 0 auto; min-width: 132px; }.sync-card-actions > .el-alert { flex: 1; }.order-layout { display: grid; grid-template-columns: minmax(260px, .8fr) minmax(360px, 1.2fr); gap: 28px; }.order-summary { padding-right: 28px; border-right: 1px solid var(--cf-line); }.order-status { display: flex; align-items: center; justify-content: space-between; margin-top: 20px; }.order-status > span { color: var(--cf-muted); font-size: 10px; }.order-groups { min-width: 0; }.group-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }.group-heading strong { color: var(--cf-ink); font-size: 13px; }.group-heading span { color: var(--cf-muted); font-size: 10px; }.group-actions { display: grid; grid-template-columns: repeat(3, minmax(110px, 1fr)); gap: 9px; }.group-actions .el-button { width: 100%; margin: 0; }.sync-card :deep(.task-progress) { margin-top: 18px; border-color: #e8ebf1; background: #fafbfe; }.config-card { border-radius: 14px; }.config-heading { display: flex; align-items: center; justify-content: space-between; }.config-heading strong, .config-heading span { display: block; }.config-heading span, .section-title span { margin-top: 4px; color: var(--cf-muted); font-size: 10px; }.section-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 15px; }.section-title strong { color: var(--cf-ink); font-size: 15px; }.order-title { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--cf-line); }.config-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 0 14px; }.config-grid :deep(.el-input-number), .order-strategy :deep(.el-input-number) { width: 100%; }.switch-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 14px 16px 0; border-radius: 10px; background: #f8f9fc; }.payment-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }.payment-panel { padding: 16px; border: 1px solid var(--cf-line); border-radius: 12px; background: #fbfcff; }.payment-panel > strong { display: block; margin-bottom: 14px; color: var(--cf-ink); font-size: 12px; }.order-strategy { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 14px; margin-top: 16px; }.config-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
-@media (max-width: 1050px) { .config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.group-actions { grid-template-columns: repeat(2, minmax(110px, 1fr)); } }
-@media (max-width: 760px) { .sync-grid, .payment-grid, .order-strategy, .order-layout { grid-template-columns: 1fr; }.sync-card.order-card { grid-column: auto; }.order-summary { padding: 0 0 18px; border-right: 0; border-bottom: 1px solid var(--cf-line); } }
-@media (max-width: 560px) { .sync-toolbar { align-items: stretch; flex-direction: column; }.toolbar-actions { justify-content: space-between; }.sync-sequence { justify-content: space-between; gap: 6px; padding: 10px; }.sync-sequence > i { width: 18px; }.sync-sequence span { gap: 4px; font-size: 10px; }.sync-card-top, .sync-card-actions { align-items: stretch; flex-direction: column; }.sync-card-top { min-height: 0; }.sync-card-actions > span { max-width: none; }.sync-card-actions > .el-button { width: 100%; }.group-actions, .config-grid, .switch-grid { grid-template-columns: 1fr; } }
+.sync-page {
+  display: grid;
+  max-width: 1240px;
+  margin: 0 auto;
+  gap: var(--cf-space-4);
+}
+
+.activity-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.activity-summary i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cf-line-strong);
+  box-shadow: 0 0 0 4px rgb(170 180 195 / 12%);
+}
+
+.activity-summary.active {
+  color: var(--cf-warning-text);
+}
+
+.activity-summary.active i {
+  background: var(--cf-warning);
+  box-shadow: 0 0 0 4px rgb(201 138 43 / 16%);
+}
+
+.sync-sequence {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cf-space-3);
+  padding: 12px 18px;
+  border: 1px solid var(--cf-line);
+  border-radius: var(--cf-radius);
+  background: var(--cf-surface-sunken);
+}
+
+.sync-sequence span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--cf-ink-2);
+  font-size: var(--cf-text-small);
+  font-weight: 600;
+}
+
+.sync-sequence span b {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--cf-on-primary);
+  background: var(--cf-primary);
+  font-size: var(--cf-text-small);
+}
+
+.sync-sequence > i {
+  width: 54px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--cf-line-strong), var(--cf-subtle));
+}
+
+.sync-grid {
+  display: grid;
+  align-items: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--cf-space-4);
+}
+
+.sync-card {
+  min-width: 0;
+}
+
+.sync-card.site-card {
+  border-top: 3px solid var(--cf-primary);
+}
+
+.sync-card.index-card {
+  border-top: 3px solid var(--cf-success);
+}
+
+.sync-card.order-card {
+  grid-column: 1 / -1;
+  border-top: 3px solid var(--cf-warning);
+}
+
+.sync-card-top {
+  display: flex;
+  min-height: 82px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.sync-card-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.sync-card-heading h2 {
+  margin: 3px 0 7px;
+  color: var(--cf-ink);
+  font-size: var(--cf-text-h2);
+  font-weight: 600;
+}
+
+.sync-card-heading p {
+  max-width: 440px;
+  margin: 0;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+  line-height: 1.7;
+}
+
+.sync-card-heading small {
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+
+.sync-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--cf-radius);
+  font-size: 19px;
+}
+
+.sync-icon.blue {
+  color: var(--cf-primary);
+  background: var(--cf-primary-soft);
+}
+
+.sync-icon.green {
+  color: var(--cf-success-text);
+  background: var(--cf-success-soft);
+}
+
+.sync-icon.amber {
+  color: var(--cf-warning-text);
+  background: var(--cf-warning-soft);
+}
+
+.sync-card-actions {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--cf-line);
+}
+
+.sync-card-actions > span {
+  max-width: 330px;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+  line-height: 1.6;
+}
+
+.sync-card-actions > .el-button {
+  flex: 0 0 auto;
+  min-width: 132px;
+}
+
+.sync-card-actions > .el-alert {
+  flex: 1;
+}
+
+.order-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, .8fr) minmax(360px, 1.2fr);
+  gap: 28px;
+}
+
+.order-summary {
+  padding-right: 28px;
+  border-right: 1px solid var(--cf-line);
+}
+
+.order-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20px;
+}
+
+.order-status > span {
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.order-groups {
+  min-width: 0;
+}
+
+.group-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.group-heading strong {
+  color: var(--cf-ink);
+  font-size: var(--cf-text-body);
+  font-weight: 600;
+}
+
+.group-heading span {
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.group-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(110px, 1fr));
+  gap: 9px;
+}
+
+.group-actions .el-button {
+  width: 100%;
+  margin: 0;
+}
+
+.sync-card :deep(.task-progress) {
+  margin-top: 18px;
+  border-color: var(--cf-line);
+  background: var(--cf-surface-sunken);
+}
+
+.config-card {
+  margin-top: 0;
+}
+
+.section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.section-title strong {
+  color: var(--cf-ink);
+  font-size: var(--cf-text-h3);
+  font-weight: 600;
+}
+
+.section-title span {
+  margin-top: 4px;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.order-title {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--cf-line);
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 0 14px;
+}
+
+.config-grid :deep(.el-input-number),
+.order-strategy :deep(.el-input-number) {
+  width: 100%;
+}
+
+.switch-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px 16px 0;
+  border-radius: var(--cf-radius);
+  background: var(--cf-surface-sunken);
+}
+
+.payment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.payment-panel {
+  padding: 16px;
+  border: 1px solid var(--cf-line);
+  border-radius: var(--cf-radius);
+  background: var(--cf-surface-sunken);
+}
+
+.payment-panel > strong {
+  display: block;
+  margin-bottom: 14px;
+  color: var(--cf-ink);
+  font-size: var(--cf-text-small);
+  font-weight: 600;
+}
+
+.order-strategy {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.config-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+@media (max-width: 1050px) {
+  .config-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .group-actions {
+    grid-template-columns: repeat(2, minmax(110px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .sync-grid,
+  .payment-grid,
+  .order-strategy,
+  .order-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sync-card.order-card {
+    grid-column: auto;
+  }
+
+  .order-summary {
+    padding: 0 0 18px;
+    border-right: 0;
+    border-bottom: 1px solid var(--cf-line);
+  }
+}
+
+@media (max-width: 560px) {
+  .sync-sequence {
+    justify-content: space-between;
+    gap: 6px;
+    padding: 10px;
+  }
+
+  .sync-sequence > i {
+    width: 18px;
+  }
+
+  .sync-card-top,
+  .sync-card-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sync-card-top {
+    min-height: 0;
+  }
+
+  .sync-card-actions > span {
+    max-width: none;
+  }
+
+  .sync-card-actions > .el-button {
+    width: 100%;
+  }
+
+  .group-actions,
+  .config-grid,
+  .switch-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

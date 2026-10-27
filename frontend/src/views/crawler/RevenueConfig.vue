@@ -1,12 +1,17 @@
 <template>
   <div class="crawler-page">
-    <div class="page-actions">
-      <el-tag v-if="hasChanges" type="warning">有未保存修改</el-tag>
-      <el-button v-if="canEditConfig" type="primary" :disabled="!hasChanges" :loading="saving" @click="handleSave">保存参数</el-button>
-    </div>
+    <PageHeader
+      eyebrow="DATA SYNC"
+      title="收入参数"
+      description="维护订单金额核算、人员归属与提成计算所需的参数"
+    >
+      <template #actions>
+        <el-tag v-if="hasChanges" type="warning">有未保存修改</el-tag>
+        <el-button v-if="canEditConfig" type="primary" :disabled="!hasChanges" :loading="saving" @click="handleSave">保存参数</el-button>
+      </template>
+    </PageHeader>
 
-    <el-card class="config-section">
-      <template #header><div class="card-header"><span>订单相关</span></div></template>
+    <DataPanel class="config-section" title="订单相关">
       <el-alert
         title="提成比例采用固定业务规则，无需配置；此处维护订单金额核算参数。"
         type="info"
@@ -30,10 +35,9 @@
           <el-input-number v-model="form.rateFactor" :disabled="!canEditConfig" :min="0" :max="1" :precision="4" :step="0.01" />
         </el-form-item>
       </el-form>
-    </el-card>
+    </DataPanel>
 
-    <el-card class="config-section">
-      <template #header><div class="card-header"><span>人员相关</span></div></template>
+    <DataPanel class="config-section" title="人员相关">
       <el-form :model="form" label-width="150px" class="config-form">
         <el-form-item label="组长配置">
           <el-input v-model="leaderConfigText" :disabled="!canEditConfig" type="textarea" :rows="3" placeholder='{"业务一组":"组长账号"}' />
@@ -62,7 +66,7 @@
           <div class="help-text">按合并后的主账号精确匹配，仅从个人绩效列表隐藏，不改变历史订单、月度转化、组长汇总和金额。</div>
         </el-form-item>
       </el-form>
-    </el-card>
+    </DataPanel>
   </div>
 </template>
 
@@ -163,15 +167,89 @@ onMounted(loadConfig)
 </script>
 
 <style scoped>
-.crawler-page { max-width: 900px; }
-.page-actions { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-bottom: 14px; }
-.config-section + .config-section { margin-top: 16px; }
-.card-header { display: flex; align-items: center; justify-content: space-between; }
-.config-form { max-width: 720px; }
-.config-tip { margin-bottom: 16px; }.rate-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 20px; }.rate-summary > div { padding: 13px 15px; border: 1px solid #edf0f5; border-radius: 8px; background: #fafbfd; }.rate-summary span { display: block; color: #8b98ad; font-size: 12px; }.rate-summary strong { display: block; margin-top: 7px; color: #2f4262; font-size: 20px; }.rate-summary small { display: block; margin-top: 4px; color: #9aa5b5; font-size: 11px; white-space: nowrap; }
-.help-text { margin-top: 5px; color: #8b97aa; font-size: 12px; line-height: 1.5; }
-.full-width { width: 100%; }
-.fixed-rule { font-size: 16px !important; }
-@media (max-width: 1000px) { .rate-summary { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 700px) { .rate-summary { grid-template-columns: repeat(2, 1fr); } }
+.crawler-page {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.config-section + .config-section {
+  margin-top: var(--cf-space-4);
+}
+
+.config-form {
+  max-width: 760px;
+}
+
+.config-tip {
+  margin-bottom: var(--cf-space-4);
+}
+
+.rate-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--cf-space-3);
+  margin-bottom: var(--cf-space-5);
+}
+
+.rate-summary > div {
+  padding: 14px 16px;
+  border: 1px solid var(--cf-line);
+  border-radius: var(--cf-radius);
+  background: var(--cf-surface-sunken);
+}
+
+.rate-summary span {
+  display: block;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.rate-summary strong {
+  display: block;
+  margin-top: 7px;
+  color: var(--cf-ink);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.rate-summary small {
+  display: block;
+  margin-top: 4px;
+  color: var(--cf-subtle);
+  font-size: var(--cf-text-small);
+  white-space: nowrap;
+}
+
+.help-text {
+  margin-top: 6px;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+  line-height: 1.6;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.fixed-rule {
+  font-size: var(--cf-text-h3) !important;
+}
+
+@media (max-width: 1200px) {
+  .rate-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .rate-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .rate-summary {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

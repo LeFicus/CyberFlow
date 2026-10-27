@@ -5,16 +5,20 @@
   系统内置模板（isSystem=1）不可删除但可克隆，防止误删基础配置。
 -->
 <template>
-  <el-card>
-    <template #header>
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <span>选择器模板库</span>
-        <el-button type="primary" size="small" @click="handleCreate">新建模板</el-button>
-      </div>
-    </template>
+  <div class="selector-page">
+    <PageHeader
+      eyebrow="PRODUCT"
+      title="选择器模板"
+      description="维护不同电商平台的商品字段提取规则，供数据源站点复用"
+    >
+      <template #actions>
+        <el-button type="primary" @click="handleCreate">新建模板</el-button>
+      </template>
+    </PageHeader>
 
+    <DataPanel>
     <el-alert
-      style="margin-bottom:12px;"
+      class="selector-tip"
       type="info"
       :closable="false"
       title="除 Shopify 外，BigCommerce、OpenCart、Magento 等商城引擎暂统一复用 WooCommerce 选择器模板。"
@@ -22,9 +26,9 @@
     />
 
     <!-- 平台筛选 -->
-    <el-form inline style="margin-bottom:12px;">
+    <el-form inline class="selector-filter">
       <el-form-item label="平台">
-        <el-select v-model="filterPlatform" clearable placeholder="全部" @change="fetchList" style="width:160px;">
+        <el-select v-model="filterPlatform" aria-label="平台筛选" clearable placeholder="全部" @change="fetchList" style="width:160px;">
           <el-option label="Shopify" value="shopify" />
           <el-option label="WooCommerce（非 Shopify 通用）" value="woocommerce" />
         </el-select>
@@ -32,24 +36,25 @@
     </el-form>
 
     <!-- 模板列表 -->
-    <el-table :data="templates" border stripe v-loading="loading" style="width:100%;">
+    <p class="cf-table-hint">左右滑动表格查看更多选择器字段</p>
+    <el-table :data="templates" border stripe v-loading="loading" class="selector-table">
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="name" label="模板名" min-width="160" />
-      <el-table-column prop="platform" label="平台" width="100">
+      <el-table-column prop="platform" label="平台" width="130">
         <template #default="{ row }">
           <el-tag size="small">{{ row.platform }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="titleSelector" label="标题选择器" min-width="200" show-overflow-tooltip />
-      <el-table-column prop="priceSelector" label="价格选择器" min-width="200" show-overflow-tooltip />
+      <el-table-column prop="titleSelector" label="标题选择器" min-width="170" show-overflow-tooltip />
+      <el-table-column prop="priceSelector" label="价格选择器" min-width="170" show-overflow-tooltip />
       <el-table-column prop="currency" label="币种" width="80" />
-      <el-table-column label="系统" width="70">
+      <el-table-column label="系统" width="90">
         <template #default="{ row }">
           <el-tag v-if="row.isSystem === 1" type="info" size="small">系统</el-tag>
           <el-tag v-else type="success" size="small">自定义</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="240" fixed="right">
+      <el-table-column label="操作" width="200" :fixed="isNarrow ? false : 'right'">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="handleEdit(row)">编辑</el-button>
           <el-button link type="success" size="small" @click="handleClone(row)">克隆</el-button>
@@ -61,7 +66,7 @@
     </el-table>
 
     <el-pagination
-      style="margin-top: 16px; justify-content: flex-end;"
+      class="selector-pagination"
       v-model:current-page="page"
       :page-size="size"
       :page-sizes="[10, 20, 50, 100]"
@@ -75,7 +80,7 @@
     <el-dialog
       v-model="dialogVisible"
       :title="isEditing ? '编辑模板' : '新建模板'"
-      width="700px"
+      width="min(700px, 94vw)"
       :close-on-click-modal="false"
     >
       <el-form :model="form" label-width="140px" size="small">
@@ -129,11 +134,13 @@
         </el-button>
       </template>
     </el-dialog>
-  </el-card>
+    </DataPanel>
+  </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { listTemplates, createTemplate, updateTemplate, deleteTemplate, cloneTemplate } from '@/api/selector'
 
@@ -152,6 +159,7 @@ const filterPlatform = ref('')
 const page = ref(1)
 const size = ref(10)
 const total = ref(0)
+const isNarrow = useMediaQuery('(max-width: 900px)')
 
 /** 模板表单数据 */
 const form = reactive({
@@ -283,3 +291,29 @@ async function handleDelete(row) {
 
 onMounted(fetchList)
 </script>
+
+
+<style scoped>
+.selector-page {
+  max-width: var(--cf-page-max);
+  margin: 0 auto;
+}
+
+.selector-tip {
+  margin-bottom: var(--cf-space-3);
+}
+
+.selector-filter {
+  margin-bottom: var(--cf-space-3);
+}
+
+.selector-table {
+  width: 100%;
+}
+
+.selector-pagination {
+  margin-top: var(--cf-space-4);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+</style>

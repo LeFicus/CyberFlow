@@ -1,22 +1,30 @@
 <template>
   <div class="site-workspace">
-    <section class="workspace-heading">
-      <div class="heading-actions">
+    <PageHeader
+      eyebrow="DATA BOARD"
+      title="站点与收录"
+      description="统一查看站点信息、收录状态与归属汇总"
+    >
+      <template #actions>
         <el-button :loading="loading" @click="load">刷新</el-button>
         <el-button type="primary" :icon="Download" :loading="exporting" :disabled="loading || !total" @click="exportData">导出当前视图</el-button>
         <el-button v-if="isAdmin && dimension === 'site'" type="danger" plain :loading="clearingSites" @click="handleClearAllSites">清空站点</el-button>
-      </div>
+      </template>
+    </PageHeader>
+
+    <section class="summary-grid" aria-label="收录统计">
+      <StatCard
+        v-for="item in metrics"
+        :key="item.label"
+        :label="item.label"
+        :value="item.value"
+        :note="item.note"
+        :tone="item.tone"
+        :icon="item.icon"
+      />
     </section>
 
-    <section class="summary-grid">
-      <article v-for="item in metrics" :key="item.label" class="summary-card" :class="item.tone">
-        <span>{{ item.label }}</span>
-        <strong>{{ item.value }}</strong>
-        <small>{{ item.note }}</small>
-      </article>
-    </section>
-
-    <el-card shadow="never" class="control-card">
+    <DataPanel class="control-card">
       <div class="view-switch">
         <el-segmented :model-value="dimension" :options="viewOptions" @change="changeDimension" />
         <span>{{ viewDescription }}</span>
@@ -50,13 +58,16 @@
           <span v-if="activeFilterCount">已启用 {{ activeFilterCount }} 项筛选</span>
         </div>
       </el-form>
-    </el-card>
+    </DataPanel>
 
-    <el-card shadow="never" class="table-card">
-      <div class="table-heading"><strong>{{ viewTitle }}</strong><span>共 {{ number(total) }} 条</span></div>
+    <DataPanel class="table-card">
+      <template #header>
+        <div class="table-heading"><strong>{{ viewTitle }}</strong><span>共 {{ number(total) }} 条</span></div>
+      </template>
+      <p class="cf-table-hint">左右滑动表格查看更多列</p>
       <el-table :data="rows" v-loading="loading" :max-height="640" stripe empty-text="暂无匹配的站点数据">
         <template v-if="dimension === 'site'">
-          <el-table-column prop="site_domain" label="站点域名" min-width="220" fixed show-overflow-tooltip />
+          <el-table-column prop="site_domain" label="站点域名" min-width="220" :fixed="isNarrow ? false : true" show-overflow-tooltip />
           <el-table-column label="收录状态" width="160" align="right">
             <template #default="{ row }"><div class="index-value"><strong>{{ row.index_updated_at ? number(row.index_count) : '未采集' }}</strong><el-tag v-if="row.index_updated_at" :type="changeTone(row.index_change)" effect="plain" size="small">{{ signed(row.index_change) }}</el-tag></div></template>
           </el-table-column>
@@ -76,19 +87,19 @@
               <div class="credential-password"><span>{{ passwordText(row) }}</span><el-button v-if="row.wp_admin_user_pwd" link type="primary" @click="togglePassword(row)">{{ passwordVisible(row) ? '隐藏' : '显示' }}</el-button></div>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="95" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">查看详情</el-button></template></el-table-column>
+          <el-table-column label="操作" width="95" :fixed="isNarrow ? false : 'right'"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">查看详情</el-button></template></el-table-column>
         </template>
         <template v-else>
-          <el-table-column :label="dimension === 'builder' ? '建站者' : '服务器'" min-width="230" fixed><template #default="{ row }"><div class="stack"><strong>{{ row.dimension_name }}</strong><small>{{ dimension === 'builder' ? row.builder_username : row.server_ip || '未分配 IP' }}</small></div></template></el-table-column>
+          <el-table-column :label="dimension === 'builder' ? '建站者' : '服务器'" min-width="230" :fixed="isNarrow ? false : true"><template #default="{ row }"><div class="stack"><strong>{{ row.dimension_name }}</strong><small>{{ dimension === 'builder' ? row.builder_username : row.server_ip || '未分配 IP' }}</small></div></template></el-table-column>
           <el-table-column prop="site_count" label="站点数" width="110" align="right" />
           <el-table-column label="收录表现" min-width="230" align="right"><template #default="{ row }"><div class="aggregate-index"><strong>{{ number(row.index_count) }}</strong><span>平均 {{ number(row.average_index_count) }}</span><el-tag :type="changeTone(row.index_change)" effect="plain" size="small">{{ signed(row.index_change) }}</el-tag></div></template></el-table-column>
           <el-table-column label="商品数" width="120" align="right"><template #default="{ row }">{{ number(row.product_count) }}</template></el-table-column>
           <el-table-column label="最近收录日期" min-width="160"><template #default="{ row }">{{ dateOnly(row.index_updated_at) }}</template></el-table-column>
-          <el-table-column label="操作" width="105" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="drill(row)">查看站点</el-button></template></el-table-column>
+          <el-table-column label="操作" width="105" :fixed="isNarrow ? false : 'right'"><template #default="{ row }"><el-button link type="primary" @click="drill(row)">查看站点</el-button></template></el-table-column>
         </template>
       </el-table>
-      <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" :page-sizes="[20, 50, 100, 200]" layout="total, sizes, prev, pager, next" @current-change="load" @size-change="search" />
-    </el-card>
+      <el-pagination class="table-pagination" v-model:current-page="page" v-model:page-size="size" :total="total" :page-sizes="[20, 50, 100, 200]" layout="total, sizes, prev, pager, next" @current-change="load" @size-change="search" />
+    </DataPanel>
 
     <el-drawer v-model="drawerVisible" :title="drawerSite?.site_domain || '站点详情'" size="min(760px, 92%)">
       <el-tabs v-if="drawerSite" v-model="detailTab" @tab-change="handleDetailTab">
@@ -134,6 +145,7 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download } from '@element-plus/icons-vue'
@@ -151,6 +163,7 @@ use([CanvasRenderer, LineChart, GridComponent, LegendComponent, TooltipComponent
 const route = useRoute()
 const router = useRouter()
 const user = useUserStore()
+const isNarrow = useMediaQuery('(max-width: 900px)')
 const isAdmin = computed(() => user.userInfo?.roles?.includes('ROLE_ADMIN'))
 const canViewOrders = computed(() => user.hasPermission('dashboard:order:view'))
 const { groupOptions, loadSiteGroups } = useSiteGroups()
@@ -194,10 +207,10 @@ function loginHref(value, siteDomain) {
   return `https://${login.replace(/^\/\//, '')}`
 }
 const metrics = computed(() => [
-  { label: '站点数', value: number(summary.value.site_count), note: '当前筛选范围', tone: 'blue' },
-  { label: 'Google 收录', value: number(summary.value.index_count), note: `本次变化 ${signed(summary.value.index_change)}`, tone: Number(summary.value.index_change) < 0 ? 'red' : 'green' },
-  { label: '商品数', value: number(summary.value.product_count), note: '最新快照合计', tone: 'violet' },
-  { label: '平均收录', value: number(summary.value.average_index_count), note: '每个站点平均值', tone: 'amber' },
+  { label: '站点数', value: number(summary.value.site_count), note: '当前筛选范围', tone: 'blue', icon: 'Monitor' },
+  { label: 'Google 收录', value: number(summary.value.index_count), note: `本次变化 ${signed(summary.value.index_change)}`, tone: Number(summary.value.index_change) < 0 ? 'red' : 'green', icon: 'Search' },
+  { label: '商品数', value: number(summary.value.product_count), note: '最新快照合计', tone: 'violet', icon: 'Goods' },
+  { label: '平均收录', value: number(summary.value.average_index_count), note: '每个站点平均值', tone: 'amber', icon: 'TrendCharts' },
 ])
 
 let sequence = 0
@@ -345,9 +358,211 @@ watch(() => route.fullPath, () => {
 </script>
 
 <style scoped>
-.site-workspace { display: grid; gap: 16px; }.workspace-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }.workspace-heading h1 { margin: 0; color: var(--cf-ink); font-size: 27px; letter-spacing: -.04em; }.workspace-heading p { margin: 7px 0 0; color: var(--cf-muted); font-size: 12px; }.workspace-heading .eyebrow { margin: 0 0 6px; color: var(--cf-blue); font-size: 9px; font-weight: 800; letter-spacing: .15em; }.heading-actions { display: flex; flex-shrink: 0; }.summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }.summary-card { padding: 17px 18px; border: 1px solid var(--cf-line); border-radius: 13px; background: #fff; box-shadow: var(--cf-shadow-sm); }.summary-card span, .summary-card small { display: block; color: var(--cf-muted); font-size: 10px; }.summary-card strong { display: block; margin: 8px 0 5px; color: var(--cf-ink); font-size: 24px; }.summary-card.blue { border-top: 3px solid #536ff1; }.summary-card.green { border-top: 3px solid #36ad82; }.summary-card.red { border-top: 3px solid #df6577; }.summary-card.violet { border-top: 3px solid #8a64e8; }.summary-card.amber { border-top: 3px solid #d99a37; }.control-card, .table-card { min-width: 0; border-radius: 14px; }.view-switch { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }.view-switch > span { color: var(--cf-muted); font-size: 11px; }.filter-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 14px; }.filter-grid :deep(.el-date-editor), .filter-grid :deep(.el-input-number), .filter-grid :deep(.el-select) { width: 100%; min-width: 0; }.advanced-grid { padding-top: 2px; border-top: 1px dashed var(--cf-line); }.filter-actions { display: flex; align-items: center; gap: 2px; }.filter-actions > span { margin-left: auto; color: var(--cf-muted); font-size: 10px; }.scope-alert { margin-bottom: 16px; }.table-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }.table-heading strong { color: var(--cf-ink); font-size: 14px; }.table-heading span { color: var(--cf-muted); font-size: 11px; }.stack { display: flex; min-width: 0; flex-direction: column; gap: 4px; }.stack strong, .stack span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.stack small { color: var(--cf-muted); font-size: 10px; }.index-value { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }.index-value strong { color: #2d3c55; font-size: 14px; }.aggregate-index { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }.aggregate-index strong { color: #2d3c55; font-size: 14px; }.aggregate-index span { color: var(--cf-muted); font-size: 9px; }.credential-password { display: flex; min-width: 0; align-items: center; gap: 7px; }.credential-password span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.credential-password .el-button { flex: 0 0 auto; }.el-pagination { justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }.detail-descriptions { margin-top: 8px; }.trend-wrap { min-height: 380px; }.trend-chart { height: 400px; }.order-toolbar { display: flex; gap: 10px; margin-bottom: 14px; }
-.aggregate-index { min-width: 0; flex-wrap: wrap; row-gap: 4px; }.aggregate-index strong, .aggregate-index span, .aggregate-index .el-tag { max-width: 100%; white-space: nowrap; }
-@media (max-width: 1050px) { .summary-grid, .filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 680px) { .workspace-heading { align-items: flex-start; flex-direction: column; }.heading-actions { width: 100%; }.heading-actions .el-button { flex: 1; }.summary-grid, .filter-grid { grid-template-columns: 1fr 1fr; }.view-switch { align-items: flex-start; flex-direction: column; }.view-switch > span { display: none; }.order-toolbar { align-items: stretch; flex-direction: column; } }
-@media (max-width: 480px) { .summary-grid, .filter-grid { grid-template-columns: 1fr; } }
+.site-workspace {
+  display: grid;
+  gap: var(--cf-space-4);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--cf-space-4);
+}
+
+.control-card,
+.table-card {
+  min-width: 0;
+}
+
+.view-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-space-3);
+  margin-bottom: var(--cf-space-4);
+}
+
+.view-switch > span {
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0 var(--cf-space-3);
+}
+
+.filter-grid :deep(.el-date-editor),
+.filter-grid :deep(.el-input-number),
+.filter-grid :deep(.el-select) {
+  width: 100%;
+  min-width: 0;
+}
+
+.advanced-grid {
+  padding-top: 2px;
+  border-top: 1px dashed var(--cf-line);
+}
+
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-space-1);
+  flex-wrap: wrap;
+}
+
+.filter-actions > span {
+  margin-left: auto;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.scope-alert {
+  margin-bottom: var(--cf-space-4);
+}
+
+.table-heading {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cf-space-3);
+}
+
+.table-heading strong {
+  color: var(--cf-ink);
+  font-size: var(--cf-text-h3);
+  font-weight: 600;
+}
+
+.table-heading span {
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.table-pagination {
+  justify-content: flex-end;
+  margin-top: var(--cf-space-4);
+  flex-wrap: wrap;
+}
+
+.stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stack strong,
+.stack span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack small {
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.index-value {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.index-value strong {
+  color: var(--cf-ink);
+  font-size: var(--cf-text-body);
+}
+
+.aggregate-index {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.aggregate-index strong {
+  color: var(--cf-ink);
+  font-size: var(--cf-text-body);
+}
+
+.aggregate-index span {
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.aggregate-index { min-width: 0; flex-wrap: wrap; row-gap: 4px; }
+.aggregate-index strong, .aggregate-index span, .aggregate-index .el-tag { max-width: 100%; white-space: nowrap; }
+
+.credential-password {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.credential-password span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.credential-password .el-button {
+  flex: 0 0 auto;
+}
+
+.detail-descriptions {
+  margin-top: 8px;
+}
+
+.trend-wrap {
+  min-height: 380px;
+}
+
+.trend-chart {
+  height: 400px;
+}
+
+.order-toolbar {
+  display: flex;
+  gap: var(--cf-space-2);
+  margin-bottom: var(--cf-space-3);
+}
+
+@media (max-width: 1200px) {
+  .summary-grid,
+  .filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .summary-grid,
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .view-switch {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .view-switch > span {
+    display: none;
+  }
+
+  .order-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+@media (min-width: 561px) and (max-width: 900px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 </style>

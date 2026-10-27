@@ -4,23 +4,26 @@
   功能包括：批量添加、编辑、删除、单个运行和批量运行数据源。
 -->
 <template>
-  <el-card>
-    <template #header>
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <span>数据源站点</span>
-        <div>
-          <el-button type="primary" size="small" @click="handleCreate">添加数据源</el-button>
-          <el-button type="success" size="small" @click="handleBatchCreate">批量添加</el-button>
-          <el-button
-            type="warning"
-            size="small"
-            :disabled="selectedRows.length === 0"
-            :loading="batchRunning"
-            @click="handleBatchTrigger"
-          >批量运行<span v-if="selectedRows.length">（{{ selectedRows.length }}）</span></el-button>
-        </div>
-      </div>
-    </template>
+  <div class="site-config-page">
+    <PageHeader
+      eyebrow="PRODUCT"
+      title="数据源站点"
+      description="添加商品来源数据源、绑定选择器模板并批量运行采集"
+    >
+      <template #actions>
+        <el-button type="primary" @click="handleCreate">添加数据源</el-button>
+        <el-button type="success" plain @click="handleBatchCreate">批量添加</el-button>
+        <el-button
+          type="warning"
+          plain
+          :disabled="selectedRows.length === 0"
+          :loading="batchRunning"
+          @click="handleBatchTrigger"
+        >批量运行<span v-if="selectedRows.length">（{{ selectedRows.length }}）</span></el-button>
+      </template>
+    </PageHeader>
+
+    <DataPanel>
 
     <el-alert
       class="engine-tip"
@@ -51,7 +54,8 @@
       </el-collapse-item>
     </el-collapse>
 
-    <el-table :data="configs" border stripe v-loading="loading" style="width:100%;" @selection-change="handleSelectionChange">
+    <p class="cf-table-hint">左右滑动表格查看操作列</p>
+    <el-table :data="configs" border stripe v-loading="loading" class="config-table" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="52" align="center" />
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="domain" label="域名" min-width="200" />
@@ -78,7 +82,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="170" />
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="200" :fixed="isNarrow ? false : 'right'">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="handleTrigger(row)">运行</el-button>
           <el-button link type="success" size="small" @click="handleEdit(row)">编辑</el-button>
@@ -87,7 +91,7 @@
       </el-table-column>
     </el-table>
     <el-pagination
-      style="margin-top: 16px; justify-content: flex-end;"
+      class="config-pagination"
       v-model:current-page="page"
       :page-size="size"
       :page-sizes="[10, 20, 50, 100]"
@@ -102,7 +106,7 @@
     <el-dialog
       v-model="dialogVisible"
       :title="isEditing ? '编辑数据源' : (batchMode ? '批量添加数据源' : '添加数据源')"
-      width="680px"
+      width="min(680px, 94vw)"
       :close-on-click-modal="false"
     >
       <el-form :model="form" label-width="100px" size="small">
@@ -160,7 +164,8 @@
         </el-button>
       </template>
     </el-dialog>
-  </el-card>
+    </DataPanel>
+  </div>
 </template>
 
 <script setup>
@@ -169,6 +174,7 @@
  * @description 管理商品数据源的添加、编辑、删除和任务下发。
  */
 import { ref, reactive, onMounted } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listSiteConfigs,
@@ -229,6 +235,7 @@ const editingMappings = ref([])
 const templates = ref([])
 const templateLoading = ref(false)
 const userStore = useUserStore()
+const isNarrow = useMediaQuery('(max-width: 900px)')
 const { task, track } = useTaskProgress()
 
 /** 站点配置表单数据 */
@@ -487,6 +494,28 @@ function engineLabel(type) {
 </script>
 
 <style scoped>
-.engine-tip { margin-bottom: 16px; }
-.selector-hint { margin-left: 10px; color: var(--el-text-color-secondary); font-size: 12px; }
+.site-config-page {
+  max-width: var(--cf-page-max);
+  margin: 0 auto;
+}
+
+.engine-tip {
+  margin-bottom: var(--cf-space-4);
+}
+
+.selector-hint {
+  margin-left: 10px;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.config-table {
+  width: 100%;
+}
+
+.config-pagination {
+  margin-top: var(--cf-space-4);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
 </style>

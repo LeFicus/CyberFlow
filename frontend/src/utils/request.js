@@ -8,12 +8,12 @@
 
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import { clearAuth, readToken } from './authStorage'
 
 let redirectingToLogin = false
 
 function handleSessionExpired() {
-  localStorage.removeItem('token')
-  localStorage.removeItem('userInfo')
+  clearAuth()
   if (window.location.pathname === '/login' || redirectingToLogin) return
   redirectingToLogin = true
   ElMessage.error('登录已过期，请重新登录')
@@ -39,7 +39,7 @@ const service = axios.create({
  * @returns {Object} 更新后的请求配置
  */
 service.interceptors.request.use(config => {
-  const token = localStorage.getItem('token')
+  const token = readToken()
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`
   }

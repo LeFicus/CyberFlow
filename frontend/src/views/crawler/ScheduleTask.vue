@@ -1,40 +1,45 @@
 <template>
   <div class="schedule-page">
-    <div class="overview-grid">
-      <div class="metric-card metric-running">
-        <span>正在执行</span>
-        <strong>{{ overview.active }}</strong>
-        <small>{{ overview.active ? '状态自动刷新中' : '当前队列空闲' }}</small>
-      </div>
-      <div class="metric-card metric-success">
-        <span>今日成功</span>
-        <strong>{{ overview.successToday }}</strong>
-        <small>已完成的同步任务</small>
-      </div>
-      <div class="metric-card metric-failed">
-        <span>今日失败</span>
-        <strong>{{ overview.failedToday }}</strong>
-        <small>{{ overview.failedToday ? '请到任务历史查看日志' : '今日运行正常' }}</small>
-      </div>
-      <div class="metric-card">
-        <span>最近同步完成</span>
-        <strong class="metric-time">{{ formatBeijingDateTime(overview.latestSuccessAt, '暂无记录') }}</strong>
-        <small>所有数据源最近成功时间（北京时间）</small>
-      </div>
-    </div>
+    <PageHeader
+      eyebrow="DATA SYNC"
+      title="计划任务"
+      description="统一管理站点、订单和收录数据的自动执行计划"
+    />
 
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <div>
-            <span>同步控制台</span>
-            <small>统一查看站点、订单和收录数据的计划与最近执行结果</small>
-          </div>
-          <div class="header-actions">
-            <el-button @click="goHistory">查看任务历史</el-button>
-            <el-button :loading="loading" @click="refreshAll">刷新</el-button>
-          </div>
-        </div>
+    <section class="overview-grid" aria-label="任务概览">
+      <StatCard
+        label="正在执行"
+        :value="overview.active"
+        :note="overview.active ? '状态自动刷新中' : '当前队列空闲'"
+        tone="blue"
+        icon="VideoPlay"
+      />
+      <StatCard
+        label="今日成功"
+        :value="overview.successToday"
+        note="已完成的同步任务"
+        tone="green"
+        icon="CircleCheck"
+      />
+      <StatCard
+        label="今日失败"
+        :value="overview.failedToday"
+        :note="overview.failedToday ? '请到任务历史查看日志' : '今日运行正常'"
+        tone="red"
+        icon="WarningFilled"
+      />
+      <StatCard label="最近同步完成" tone="neutral" icon="Clock">
+        <template #value>
+          <span class="metric-time">{{ formatBeijingDateTime(overview.latestSuccessAt, '暂无记录') }}</span>
+        </template>
+        <template #note>所有数据源最近成功时间（北京时间）</template>
+      </StatCard>
+    </section>
+
+    <DataPanel title="同步控制台" description="统一查看站点、订单和收录数据的计划与最近执行结果">
+      <template #actions>
+        <el-button @click="goHistory">查看任务历史</el-button>
+        <el-button :loading="loading" @click="refreshAll">刷新</el-button>
       </template>
 
       <el-alert
@@ -45,6 +50,7 @@
         class="schedule-tip"
       />
 
+      <p class="cf-table-hint">左右滑动表格查看更多列</p>
       <el-table :data="schedules" v-loading="loading" stripe empty-text="暂无计划任务">
         <el-table-column label="数据源" min-width="180">
           <template #default="{ row }">
@@ -60,7 +66,7 @@
         </el-table-column>
         <el-table-column label="自动同步" width="110" align="center">
           <template #default="{ row }">
-            <el-switch v-model="row.enabled" :active-value="1" :inactive-value="0" :disabled="!canEdit" />
+            <el-switch v-model="row.enabled" :active-value="1" :inactive-value="0" :disabled="!canEdit" :aria-label="`${taskName(row.taskType)}自动同步`" />
           </template>
         </el-table-column>
         <el-table-column label="最近执行" min-width="230">
@@ -77,7 +83,7 @@
             <span v-else class="muted">尚无执行记录</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" width="190" :fixed="isNarrow ? false : 'right'">
           <template #default="{ row }">
             <el-button
               v-if="canEdit"
@@ -99,13 +105,14 @@
           </template>
         </el-table-column>
       </el-table>
-    </el-card>
+    </DataPanel>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useMediaQuery } from '@vueuse/core'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { taskStatus } from '@/data/taskPresentation'
@@ -114,6 +121,7 @@ import { formatBeijingDateTime } from '@/utils/dateTime'
 
 const router = useRouter()
 const userStore = useUserStore()
+const isNarrow = useMediaQuery('(max-width: 900px)')
 const loading = ref(false)
 const overviewLoading = ref(false)
 const schedules = ref([])
@@ -254,26 +262,76 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.schedule-page { max-width: 1240px; }
-.overview-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
-.metric-card { min-height: 112px; box-sizing: border-box; padding: 18px 20px; border: 1px solid #e8edf5; border-radius: 10px; background: #fff; box-shadow: 0 4px 16px rgb(37 52 79 / 4%); }
-.metric-card span, .metric-card small { display: block; color: #8793a5; }
-.metric-card strong { display: block; margin: 8px 0 5px; color: #25344f; font-size: 30px; line-height: 1; }
-.metric-card small { font-size: 12px; }
-.metric-running strong { color: #409eff; }
-.metric-success strong { color: #16a085; }
-.metric-failed strong { color: #f56c6c; }
-.metric-time { padding-top: 4px; font-size: 17px !important; line-height: 1.25 !important; }
-.card-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.card-header > div:first-child { display: grid; gap: 4px; }
-.card-header small { color: #8b98ad; font-size: 12px; }
-.header-actions { display: flex; gap: 8px; }
-.schedule-tip { margin-bottom: 18px; }
-.task-name { color: #25344f; font-weight: 700; }
-.task-description, .cron-description, .latest-result { margin-top: 5px; color: #8b98ad; font-size: 12px; }
-.latest-status { display: flex; align-items: center; gap: 8px; color: #606c80; font-size: 12px; }
-.latest-result { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.muted { color: #a7b0bf; }
-@media (max-width: 900px) { .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 600px) { .overview-grid { grid-template-columns: 1fr; } .card-header { align-items: flex-start; } .header-actions { flex-direction: column; } }
+.schedule-page {
+  max-width: var(--cf-page-max);
+  margin: 0 auto;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--cf-space-4);
+  margin-bottom: var(--cf-space-4);
+}
+
+.metric-time {
+  color: var(--cf-ink);
+  font-size: var(--cf-text-h3);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.schedule-tip {
+  margin-bottom: var(--cf-space-4);
+}
+
+.task-name {
+  color: var(--cf-ink);
+  font-weight: 600;
+}
+
+.task-description,
+.cron-description,
+.latest-result {
+  margin-top: 5px;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.latest-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--cf-ink-2);
+  font-size: var(--cf-text-small);
+}
+
+.latest-result {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--cf-subtle);
+}
+
+@media (max-width: 1200px) {
+  .overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .overview-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
+@media (min-width: 561px) and (max-width: 900px) {
+  .overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 </style>

@@ -1,73 +1,86 @@
 <template>
   <div class="product-workspace">
-    <el-card shadow="never">
-      <div class="section-heading">
-        <div><h2>筛选商品</h2><p>先缩小范围，再批量导出。填写条件后点击查询。</p></div>
+    <PageHeader
+      eyebrow="PRODUCT WORKSPACE"
+      title="商品列表"
+      description="集中管理采集商品、筛选结果与跨平台导出任务"
+    />
+
+    <DataPanel title="筛选商品" description="先缩小范围，再批量导出。填写条件后点击查询。">
+      <template #actions>
         <div class="saved-filters">
-          <el-select v-model="selectedPreset" clearable placeholder="常用筛选方案" @change="loadPreset"><el-option v-for="p in presets" :key="p.name" :label="p.name" :value="p.name" /></el-select>
+          <el-select v-model="selectedPreset" aria-label="常用筛选方案" clearable placeholder="常用筛选方案" @change="loadPreset"><el-option v-for="p in presets" :key="p.name" :label="p.name" :value="p.name" /></el-select>
           <el-button @click="savePreset">保存方案</el-button><el-button v-if="selectedPreset" text type="danger" @click="removePreset">移除</el-button>
         </div>
-      </div>
+      </template>
       <el-form label-position="top" @submit.prevent="handleSearch">
         <div class="filter-grid">
           <el-form-item label="来源域名 · 精确匹配">
-            <el-select v-model="draft.domains" multiple filterable remote remote-show-suffix allow-create default-first-option
+            <el-select v-model="draft.domains" aria-label="来源域名" multiple filterable remote remote-show-suffix allow-create default-first-option
               :remote-method="searchDomains" :loading="domainLoading" collapse-tags collapse-tags-tooltip clearable
               placeholder="搜索来源域名，或输入完整域名" @visible-change="openDomains">
               <el-option v-for="domain in domainOptions" :key="domain" :label="domain" :value="domain" />
             </el-select>
           </el-form-item>
           <el-form-item label="自定义分类 · 精确匹配">
-            <CustomCategorySelect v-model="draft.customCategories" multiple include-disabled />
+            <CustomCategorySelect v-model="draft.customCategories" aria-label="自定义分类" multiple include-disabled />
           </el-form-item>
-          <el-form-item label="商品分类 · 包含匹配"><el-select v-model="draft.productCategories" multiple filterable allow-create default-first-option collapse-tags collapse-tags-tooltip clearable placeholder="输入分类并按 Enter，可多选" /></el-form-item>
+          <el-form-item label="商品分类 · 包含匹配"><el-select v-model="draft.productCategories" aria-label="商品分类" multiple filterable allow-create default-first-option collapse-tags collapse-tags-tooltip clearable placeholder="输入分类并按 Enter，可多选" /></el-form-item>
           <el-form-item label="商品名称"><div class="name-search">
             <el-select v-model="draft.nameMatch" aria-label="名称匹配方式"><el-option label="开头匹配" value="prefix" /><el-option label="包含匹配" value="contains" /></el-select>
             <el-input v-model="draft.name" clearable placeholder="输入名称关键词" @keyup.enter="handleSearch" />
           </div></el-form-item>
           <el-form-item label="SKU · 开头匹配"><el-input v-model="draft.sku" clearable placeholder="输入完整 SKU 或前缀" @keyup.enter="handleSearch" /></el-form-item>
-          <el-form-item label="产品标签"><el-select v-model="draft.productRoles" multiple clearable placeholder="全部标签"><el-option label="主产品" value="main" /><el-option label="补充产品" value="supplement" /></el-select></el-form-item>
+          <el-form-item label="产品标签"><el-select v-model="draft.productRoles" aria-label="产品标签" multiple clearable placeholder="全部标签"><el-option label="主产品" value="main" /><el-option label="补充产品" value="supplement" /></el-select></el-form-item>
         </div>
         <div v-if="advanced" class="filter-grid advanced-filters">
           <el-form-item label="价格范围（USD）"><div class="price-range"><el-input-number v-model="draft.minPrice" :min="0" :precision="2" :controls="false" placeholder="最低价" /><span>—</span><el-input-number v-model="draft.maxPrice" :min="0" :precision="2" :controls="false" placeholder="最高价" /></div></el-form-item>
           <el-form-item label="采集日期"><el-date-picker v-model="dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" /></el-form-item>
-          <el-form-item label="语言"><el-select v-model="draft.language" clearable filterable allow-create placeholder="全部语言"><el-option v-for="v in ['en','zh','de','fr','es','it','ja']" :key="v" :label="v" :value="v" /></el-select></el-form-item>
+          <el-form-item label="语言"><el-select v-model="draft.language" aria-label="语言" clearable filterable allow-create placeholder="全部语言"><el-option v-for="v in ['en','zh','de','fr','es','it','ja']" :key="v" :label="v" :value="v" /></el-select></el-form-item>
         </div>
         <div class="filter-footer">
           <div><el-button type="primary" :loading="loading" native-type="submit" :icon="Search">查询商品</el-button><el-button @click="resetFilters">重置</el-button><el-button text @click="advanced = !advanced">{{ advanced ? '收起高级筛选' : '价格 / 时间 / 语言' }}</el-button></div>
           <span v-if="dirty" class="pending-hint">筛选已修改，查询后生效</span><span v-else class="filter-tip">开头匹配更适合大数据量；包含匹配建议搭配来源域名</span>
         </div>
       </el-form>
-    </el-card>
-    <el-card class="results-card" shadow="never">
-      <div class="section-heading">
-        <div><h2>商品结果 <span class="result-count">{{ total == null ? '快速浏览' : `${number(total)} 条匹配` }}</span></h2><p>已过滤空图与已识别默认图 · 价格高于 150 USD 调整为 120–150 USD</p></div>
+    </DataPanel>
+
+    <DataPanel class="results-card">
+      <template #header>
+        <div class="results-heading">
+          <h2>商品结果 <span class="result-count">{{ total == null ? '快速浏览' : `${number(total)} 条匹配` }}</span></h2>
+          <p>已过滤空图与已识别默认图 · 价格高于 150 USD 调整为 120–150 USD</p>
+        </div>
+      </template>
+      <template #actions>
         <div class="result-actions">
           <el-button :disabled="loading" :icon="Refresh" @click="refreshResults">刷新</el-button>
           <el-button :loading="counting" :disabled="loading || !!error" @click="countResults">统计匹配数量</el-button>
           <el-button type="primary" :icon="Download" :disabled="loading || !!error || !rows.length" @click="openExport">导出当前结果</el-button>
           <el-badge :value="activeJobs.length" :hidden="!activeJobs.length"><el-button @click="openJobs">导出任务</el-button></el-badge>
         </div>
-      </div>
+      </template>
       <div class="applied-filters"><span>已应用</span><el-tag v-if="!summary.length" type="info" effect="plain">全部商品</el-tag><el-tag v-for="item in summary" :key="item" effect="plain" type="info" :title="item">{{ item }}</el-tag></div>
       <el-alert v-if="dirty" title="导出使用上方“已应用”的条件；未查询的新条件不会影响结果。" type="warning" :closable="false" show-icon />
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
+      <p class="cf-table-hint">左右滑动表格查看更多列</p>
       <el-table ref="tableRef" v-loading="loading" :data="rows" row-key="id" stripe :max-height="640" @selection-change="selectedRows = $event" empty-text="暂无匹配商品，请调整筛选条件">
         <el-table-column v-if="canDelete" type="selection" width="44" />
-        <el-table-column label="商品" min-width="330"><template #default="{row}"><div class="product-cell">
-          <el-image v-if="firstImage(row.images)" :src="firstImage(row.images)" :preview-src-list="[firstImage(row.images)]" preview-teleported fit="cover" lazy class="product-image"><template #error><span class="image-placeholder">无图片</span></template></el-image><span v-else class="image-placeholder">无图片</span>
+        <el-table-column label="商品" min-width="280"><template #default="{row}"><div class="product-cell">
+          <el-image v-if="firstImage(row.images)" :src="firstImage(row.images)" :alt="row.name ? `${row.name} 商品图` : '商品图片'" :preview-src-list="[firstImage(row.images)]" preview-teleported fit="cover" lazy class="product-image"><template #error><span class="image-placeholder">无图片</span></template></el-image><span v-else class="image-placeholder">无图片</span>
           <div class="product-info"><strong :title="row.name">{{ row.name || '未命名商品' }}</strong><span>SKU · {{ row.sku || '—' }}</span><small>ID {{ row.id }}</small></div>
         </div></template></el-table-column>
-        <el-table-column label="分类" min-width="185"><template #default="{row}"><div class="category-cell"><span :title="row.custom_category">{{ row.custom_category || '未分类' }}</span><small :title="row.categories">{{ row.categories || '—' }}</small></div></template></el-table-column>
-        <el-table-column label="价格 / USD" width="110" align="right"><template #default="{row}"><strong>{{ formatPrice(row.regular_price) }}</strong></template></el-table-column>
-        <el-table-column label="产品标签" width="115" align="center"><template #default="{row}"><el-tag :type="row.product_role === 'supplement' ? 'warning' : 'success'" effect="light" round size="small">{{ row.product_role === 'supplement' ? '补充产品' : '主产品' }}</el-tag></template></el-table-column>
-        <el-table-column prop="source_domain" label="来源域名" min-width="190" show-overflow-tooltip /><el-table-column prop="language" label="语言" width="70" />
-        <el-table-column label="采集时间" width="170"><template #default="{row}">{{ dateTime(row.created_at) }}</template></el-table-column>
+        <el-table-column label="分类" min-width="150"><template #default="{row}"><div class="category-cell"><span :title="row.custom_category">{{ row.custom_category || '未分类' }}</span><small :title="row.categories">{{ row.categories || '—' }}</small></div></template></el-table-column>
+        <el-table-column label="价格 / USD" width="100" align="right"><template #default="{row}"><strong>{{ formatPrice(row.regular_price) }}</strong></template></el-table-column>
+        <el-table-column label="产品标签" width="100" align="center"><template #default="{row}"><el-tag :type="row.product_role === 'supplement' ? 'warning' : 'success'" effect="light" round size="small">{{ row.product_role === 'supplement' ? '补充产品' : '主产品' }}</el-tag></template></el-table-column>
+        <el-table-column prop="source_domain" label="来源域名" min-width="160" show-overflow-tooltip /><el-table-column prop="language" label="语言" width="60" />
+        <el-table-column label="采集时间" width="160"><template #default="{row}">{{ dateTime(row.created_at) }}</template></el-table-column>
       </el-table>
       <div class="table-footer"><div class="selection-actions"><template v-if="canDelete"><span>已选 {{ selectedRows.length }} 条</span><el-button type="danger" text :disabled="!selectedRows.length || loading || bulkDeleting" :loading="deleting" @click="deleteSelected">删除所选</el-button><el-button type="danger" plain :disabled="loading || deleting || bulkDeleting || !!error || !rows.length || dirty" :loading="bulkDeleting" :title="dirty ? '请先查询，使筛选条件正式生效' : '按当前已应用筛选每次删除最多 500 条'" @click="deleteFilteredBatch">批量删除筛选结果</el-button></template></div>
         <div class="cursor-pagination"><span>第 {{ pageIndex + 1 }} 页 · 本页 {{ rows.length }} 条</span><el-select v-model="size" aria-label="每页条数" :disabled="loading" @change="refreshResults"><el-option v-for="n in [20,50,100,200]" :key="n" :label="`${n} 条 / 页`" :value="n" /></el-select><el-button :disabled="loading || pageIndex === 0" @click="previousPage">上一页</el-button><el-button :disabled="loading || !hasMore" @click="nextPage">下一页</el-button></div>
       </div>
-    </el-card>
+    </DataPanel>
+
     <el-dialog v-model="exportVisible" title="导出筛选结果" width="min(600px, 94vw)" :close-on-click-modal="false">
       <el-alert title="后台分批生成，可离开此页面。完成后在“导出任务”下载，文件保留 24 小时。" type="info" :closable="false" show-icon />
       <div class="export-scope"><span>导出范围</span><p>{{ exportSummary || '全部商品' }}</p><small>按当前列表的 ID 上界导出；期间已有商品的更新或删除仍可能影响结果。</small></div>
@@ -197,24 +210,23 @@ onMounted(() => { try { const saved = JSON.parse(localStorage.getItem(presetKey(
 onBeforeUnmount(() => { disposed = true; clearTimeout(domainTimer); clearTimeout(pollTimer) })
 </script>
 <style scoped>
-.product-workspace { display:grid; grid-template-columns:minmax(0,1fr); gap:18px; min-width:0; width:100%; }
-.product-workspace > .el-card { min-width:0; }
-.section-heading,.filter-footer,.table-footer,.result-actions,.saved-filters,.cursor-pagination,.job-heading,.job-footer,.jobs-toolbar { display:flex; align-items:center; gap:12px; }
-.section-heading,.filter-footer,.table-footer,.job-heading,.job-footer,.jobs-toolbar { justify-content:space-between; }
-.section-heading { margin-bottom:20px; flex-wrap:wrap; } h2 { margin:0; font-size:17px; color:var(--el-text-color-primary); }
-.section-heading p { margin:7px 0 0; color:var(--el-text-color-secondary); font-size:12px; }.saved-filters .el-select { width:180px; }
+.product-workspace { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; min-width:0; width:100%; }
+.filter-footer,.table-footer,.result-actions,.saved-filters,.cursor-pagination,.job-heading,.job-footer,.jobs-toolbar { display:flex; align-items:center; gap:12px; }
+.filter-footer,.table-footer,.job-heading,.job-footer,.jobs-toolbar { justify-content:space-between; }
+.results-heading h2 { margin:0; font-size:var(--cf-text-h3); font-weight:600; color:var(--cf-ink); }
+.results-heading p { margin:6px 0 0; color:var(--cf-muted); font-size:var(--cf-text-small); }.saved-filters .el-select { width:180px; }
 .filter-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0 20px; }.filter-grid :deep(.el-form-item) { margin-bottom:16px; }
 .filter-grid :deep(.el-select),.filter-grid :deep(.el-date-editor) { width:100%; min-width:0; }
 .name-search,.price-range { display:flex; gap:8px; width:100%; align-items:center; }.name-search .el-select { flex:0 0 112px; }.price-range .el-input-number { width:100%; min-width:0; }
-.advanced-filters { border-top:1px dashed var(--el-border-color-light); padding-top:16px; }.filter-footer { padding-top:8px; flex-wrap:wrap; }
-.filter-tip,.pending-hint,.selection-actions,.cursor-pagination,.jobs-toolbar,.export-note,.job-note { font-size:12px; color:var(--el-text-color-secondary); }.pending-hint { color:var(--el-color-warning-dark-2); }
-.result-count { margin-left:10px; font-size:12px; font-weight:400; color:var(--el-text-color-secondary); }.result-actions { flex-wrap:wrap; gap:8px; }.result-actions .el-button + .el-button { margin-left:0; }
-.applied-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:16px; font-size:12px; color:var(--el-text-color-secondary); }.applied-filters .el-tag { max-width:360px; height:auto; min-height:24px; white-space:normal; overflow-wrap:anywhere; }.results-card :deep(.el-alert) { margin-bottom:12px; }
-.product-cell { display:flex; align-items:center; gap:12px; padding:8px 0; }.product-image,.image-placeholder { width:54px; height:54px; flex-shrink:0; border-radius:8px; }.image-placeholder { display:inline-flex; align-items:center; justify-content:center; background:var(--el-fill-color-light); color:var(--el-text-color-placeholder); font-size:11px; }
-.product-info,.category-cell { min-width:0; display:flex; flex-direction:column; gap:4px; }.product-info strong { font-size:13px; font-weight:500; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }.product-info span,.product-info small,.category-cell small { font-size:11px; color:var(--el-text-color-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.category-cell span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.advanced-filters { border-top:1px dashed var(--cf-line); padding-top:16px; }.filter-footer { padding-top:8px; flex-wrap:wrap; }
+.filter-tip,.pending-hint,.selection-actions,.cursor-pagination,.jobs-toolbar,.export-note,.job-note { font-size:12px; color:var(--cf-muted); }.pending-hint { color:var(--cf-warning-text); }
+.result-count { margin-left:10px; font-size:12px; font-weight:400; color:var(--cf-muted); }.result-actions { flex-wrap:wrap; gap:8px; }.result-actions .el-button + .el-button { margin-left:0; }
+.applied-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:16px; font-size:12px; color:var(--cf-muted); }.applied-filters .el-tag { max-width:360px; height:auto; min-height:24px; white-space:normal; overflow-wrap:anywhere; }.results-card :deep(.el-alert) { margin-bottom:12px; }
+.product-cell { display:flex; align-items:center; gap:12px; padding:8px 0; }.product-image,.image-placeholder { width:54px; height:54px; flex-shrink:0; border-radius:8px; }.image-placeholder { display:inline-flex; align-items:center; justify-content:center; background:var(--cf-surface-sunken); color:var(--cf-subtle); font-size:var(--cf-text-small); }
+.product-info,.category-cell { min-width:0; display:flex; flex-direction:column; gap:4px; }.product-info strong { font-size:var(--cf-text-body); font-weight:500; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }.product-info span,.product-info small,.category-cell small { font-size:var(--cf-text-small); color:var(--cf-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.category-cell span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .table-footer { margin-top:18px; flex-wrap:wrap; }.cursor-pagination { gap:10px; flex-wrap:wrap; }.cursor-pagination .el-select { width:125px; }
-.export-scope { padding:16px; margin:16px 0; background:var(--el-fill-color-light); border-radius:8px; }.export-scope p { margin:8px 0; line-height:1.7; overflow-wrap:anywhere; }.export-scope small { color:var(--el-text-color-secondary); }.export-note { line-height:1.7; }
-.export-job { padding:18px; margin-top:16px; border:1px solid var(--el-border-color-light); border-radius:12px; }.job-scope { font-size:12px; line-height:1.6; color:var(--el-text-color-secondary); overflow-wrap:anywhere; }.job-progress { display:flex; align-items:baseline; gap:8px; margin:16px 0 8px; }.job-progress strong { font-size:24px; }.job-progress span { font-size:12px; color:var(--el-text-color-secondary); }.job-footer { margin-top:16px; }.job-footer small { color:var(--el-text-color-secondary); }.export-job .el-alert { margin-top:12px; }
+.export-scope { padding:16px; margin:16px 0; background:var(--cf-surface-sunken); border-radius:8px; }.export-scope p { margin:8px 0; line-height:1.7; overflow-wrap:anywhere; }.export-scope small { color:var(--cf-muted); }.export-note { line-height:1.7; }
+.export-job { padding:18px; margin-top:16px; border:1px solid var(--cf-line); border-radius:12px; }.job-scope { font-size:12px; line-height:1.6; color:var(--cf-muted); overflow-wrap:anywhere; }.job-progress { display:flex; align-items:baseline; gap:8px; margin:16px 0 8px; }.job-progress strong { font-size:24px; }.job-progress span { font-size:12px; color:var(--cf-muted); }.job-footer { margin-top:16px; }.job-footer small { color:var(--cf-muted); }.export-job .el-alert { margin-top:12px; }
 @media(max-width:1200px) { .filter-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }.filter-tip { flex-basis:100%; } }
-@media(max-width:700px) { .filter-grid { grid-template-columns:1fr; }.saved-filters { flex-wrap:wrap; }.section-heading { align-items:flex-start; }.cursor-pagination { gap:6px; }.filter-footer .el-button { margin-bottom:6px; } }
+@media(max-width:700px) { .filter-grid { grid-template-columns:1fr; }.saved-filters { flex-wrap:wrap; }.cursor-pagination { gap:6px; }.filter-footer .el-button { margin-bottom:6px; } }
 </style>

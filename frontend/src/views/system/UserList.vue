@@ -4,11 +4,19 @@
   编辑模式下用户名不可修改，新增时需填写密码。
 -->
 <template>
-  <el-card>
-    <template #header>
-      用户管理
-      <el-button v-if="canCreate" type="primary" size="small" style="float: right;" @click="openDialog()">新增用户</el-button>
-    </template>
+  <div class="user-page">
+    <PageHeader
+      eyebrow="SYSTEM"
+      title="用户管理"
+      description="管理成员账号、状态、数据归属与角色权限"
+    >
+      <template #actions>
+        <el-button v-if="canCreate" type="primary" @click="openDialog()">新增用户</el-button>
+      </template>
+    </PageHeader>
+
+    <DataPanel :padded="true">
+    <p v-if="isNarrow" class="table-hint">左右滑动表格可查看邮箱、状态与操作列</p>
 
     <el-table :data="tableData" v-loading="loading" stripe>
       <el-table-column prop="id" label="ID" width="60" />
@@ -27,7 +35,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="180" />
-      <el-table-column v-if="canManage" label="操作" width="200" fixed="right">
+      <el-table-column v-if="canManage" label="操作" width="240" :fixed="isNarrow ? false : 'right'">
         <template #default="{ row }">
           <el-button v-if="canUpdate" size="small" @click="openDialog(row)">编辑</el-button>
           <el-button v-if="canAssign" size="small" @click="openRoleDialog(row)">分配角色</el-button>
@@ -37,7 +45,7 @@
     </el-table>
 
     <el-pagination
-      style="margin-top: 16px; justify-content: flex-end;"
+      class="user-pagination"
       v-model:current-page="page" :page-size="size"
       :page-sizes="[10, 20, 50, 100]"
       :total="total" layout="total, sizes, prev, pager, next"
@@ -46,7 +54,7 @@
     />
 
     <!-- 新增/编辑弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新增用户'" width="760px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新增用户'" width="min(760px, 94vw)">
       <el-form :model="form" label-width="120px">
         <el-form-item label="用户名">
           <!-- 编辑时用户名不可修改 -->
@@ -95,7 +103,7 @@
     </el-dialog>
 
     <!-- 分配角色弹窗：checkbox 多选角色 -->
-    <el-dialog v-model="roleDialogVisible" title="分配角色" width="420px">
+    <el-dialog v-model="roleDialogVisible" title="分配角色" width="min(420px, 94vw)">
       <el-checkbox-group v-model="selectedRoles">
           <el-checkbox v-for="r in allRoles" :key="r.id" :value="r.id">{{ r.roleName }}</el-checkbox>
       </el-checkbox-group>
@@ -104,7 +112,8 @@
         <el-button type="primary" :loading="assigning" @click="handleAssignRoles">保存</el-button>
       </template>
     </el-dialog>
-  </el-card>
+    </DataPanel>
+  </div>
 </template>
 
 <script setup>
@@ -115,10 +124,12 @@
  */
 import { computed, ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useMediaQuery } from '@vueuse/core'
 import { getUsers, createUser, updateUser, deleteUser, assignUserRoles, getAllRoles, getUserRoleIds } from '@/api/system'
 import { useUserStore } from '@/store/user'
 
 const userStore = useUserStore()
+const isNarrow = useMediaQuery('(max-width: 900px)')
 const canCreate = computed(() => userStore.hasPermission('system:user:create'))
 const canUpdate = computed(() => userStore.hasPermission('system:user:update'))
 const canDelete = computed(() => userStore.hasPermission('system:user:delete'))
@@ -165,7 +176,7 @@ const sharedFieldGroups = [
     ['订单号', 'order.id'], ['商品信息 / 图片', 'order.product_info'], ['金额', 'order.amount'],
     ['币种', 'order.currency'], ['订单站点', 'order.product_host'], ['分类明细', 'order.category'],
     ['建站类型', 'order.site_tag'], ['支付状态', 'order.pay_status'], ['国家 / 地区', 'order.country'],
-    ['疑似刷单审核状态', 'order.fraud_status'], ['收货邮箱', 'order.shipping_email'], ['收货地址', 'order.shipping_address'],
+    ['平台风控 / 有效状态', 'order.fraud_status'], ['收货邮箱', 'order.shipping_email'], ['收货地址', 'order.shipping_address'],
     ['管理员', 'order.admin_name'], ['用户组', 'order.user_group'], ['创建时间', 'order.create_time'],
   ].map(([label, value]) => ({ label, value })) },
 ]
@@ -317,6 +328,9 @@ onMounted(fetchData)
 </script>
 
 <style scoped>
+.user-page { max-width: var(--cf-page-max); margin: 0 auto; }
+.table-hint { margin-bottom: 12px; color: var(--cf-muted); font-size: var(--cf-text-small); }
+.user-pagination { margin-top: 16px; justify-content: flex-end; flex-wrap: wrap; }
 .field-permissions { display: grid; width: 100%; gap: 14px; }
 .field-permissions section { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; }
 .field-permissions strong { display: block; margin-bottom: 8px; color: var(--el-text-color-primary); }

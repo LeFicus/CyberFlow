@@ -9,6 +9,7 @@
  */
 
 import { createRouter, createWebHistory } from 'vue-router'
+import { readToken, readUserInfo } from '@/utils/authStorage'
 
 /**
  * 路由表配置
@@ -88,11 +89,11 @@ router.onError((error, to) => {
  * @param {Function} next - 放行/重定向函数
  */
 router.beforeEach((to, from, next) => {
-  const token = localStorage.getItem('token')
+  const token = readToken()
   if (to.path !== '/login' && !token) {
     next('/login')
   } else if (to.meta?.perm || to.meta?.perms) {
-    const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}')
+    const userInfo = JSON.parse(readUserInfo() || '{}')
     const permissions = userInfo.permissions || []
     const required = to.meta.perms || [to.meta.perm]
     if (!required.some(permission => permissions.includes(permission))) {

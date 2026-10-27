@@ -1,5 +1,15 @@
 <template>
   <div class="notification-page">
+    <PageHeader
+      eyebrow="SYSTEM"
+      title="通知配置"
+      description="统一管理钉钉、飞书和 Lark 群通知渠道与消息模板"
+    >
+      <template #actions>
+        <el-button v-if="canManage" type="primary" @click="openDialog()">新增机器人</el-button>
+      </template>
+    </PageHeader>
+
     <el-alert
       title="Webhook 与签名密钥会加密保存且不会回显；站点健康总体汇总只发送到已启用的飞书机器人。"
       type="info"
@@ -8,17 +18,8 @@
       class="security-tip"
     />
 
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <div>
-            <span>通知机器人</span>
-            <small>统一管理钉钉、飞书和 Lark 群通知渠道</small>
-          </div>
-          <el-button v-if="canManage" type="primary" @click="openDialog()">新增机器人</el-button>
-        </div>
-      </template>
-
+    <DataPanel>
+      <p class="cf-table-hint">左右滑动表格查看状态与操作列</p>
       <el-table :data="channels" v-loading="loading" stripe empty-text="尚未配置通知机器人">
         <el-table-column label="机器人" min-width="180">
           <template #default="{ row }">
@@ -53,7 +54,7 @@
             <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '已启用' : '已停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="220" :fixed="isNarrow ? false : 'right'">
           <template #default="{ row }">
             <el-button v-if="canTest" link type="success" :loading="testingId === row.id" @click="openTestDialog(row)">发送测试</el-button>
             <el-button v-if="canManage" link type="primary" @click="openDialog(row)">编辑</el-button>
@@ -61,9 +62,9 @@
           </template>
         </el-table-column>
       </el-table>
-    </el-card>
+    </DataPanel>
 
-    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑通知机器人' : '新增通知机器人'" width="600px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑通知机器人' : '新增通知机器人'" width="min(600px, 94vw)" destroy-on-close>
       <el-form label-width="100px">
         <el-form-item label="机器人名称" required>
           <el-input v-model="form.name" maxlength="100" show-word-limit placeholder="例如：运维告警群" />
@@ -115,7 +116,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="testDialogVisible" title="发送测试通知" width="560px" destroy-on-close>
+    <el-dialog v-model="testDialogVisible" title="发送测试通知" width="min(560px, 94vw)" destroy-on-close>
       <el-form label-width="80px">
         <el-form-item label="通知渠道">
           <strong>{{ activeTestChannel?.name }}</strong>
@@ -140,6 +141,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createNotificationChannel,
@@ -152,6 +154,7 @@ import { useUserStore } from '@/store/user'
 import { formatBeijingDateTime } from '@/utils/dateTime'
 
 const userStore = useUserStore()
+const isNarrow = useMediaQuery('(max-width: 900px)')
 const canManage = computed(() => userStore.hasPermission('system:notification:manage'))
 const canTest = computed(() => userStore.hasPermission('system:notification:test'))
 const loading = ref(false)
@@ -321,22 +324,69 @@ onMounted(loadChannels)
 </script>
 
 <style scoped>
-.notification-page { display: grid; gap: 16px; }
-.security-tip { border-radius: 10px; }
-.card-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.card-header > div { display: grid; gap: 4px; }
-.card-header span { font-size: 16px; font-weight: 700; }
-.card-header small, .channel-meta, .field-help, .template-summary { color: var(--el-text-color-secondary); }
-.channel-name { font-weight: 650; }
-.channel-meta { margin-top: 5px; font-size: 12px; }
-.credential-state { display: flex; flex-wrap: wrap; gap: 8px; }
-.field-help { width: 100%; margin-top: 6px; font-size: 12px; line-height: 1.5; }
-.template-summary { overflow: hidden; font-size: 12px; line-height: 1.55; text-overflow: ellipsis; white-space: nowrap; }
-.template-variables code { color: var(--el-color-primary); }
-.template-preview { width: 100%; min-height: 72px; box-sizing: border-box; margin: 8px 0 0; padding: 12px; overflow: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-fill-color-lighter); color: var(--el-text-color-regular); font: inherit; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
-.test-preview { margin-top: 0; }
-@media (max-width: 720px) {
-  .card-header { align-items: flex-start; }
-  :deep(.el-dialog) { width: calc(100vw - 24px) !important; }
+.notification-page {
+  display: grid;
+  max-width: var(--cf-page-max);
+  margin: 0 auto;
+  gap: var(--cf-space-4);
+}
+
+.channel-name {
+  color: var(--cf-ink);
+  font-weight: 600;
+}
+
+.channel-meta {
+  margin-top: 5px;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.credential-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.field-help {
+  width: 100%;
+  margin-top: 6px;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+  line-height: 1.5;
+}
+
+.template-summary {
+  overflow: hidden;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+  line-height: 1.55;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-variables code {
+  color: var(--cf-primary);
+}
+
+.template-preview {
+  width: 100%;
+  min-height: 72px;
+  box-sizing: border-box;
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--cf-line);
+  border-radius: var(--cf-radius-sm);
+  background: var(--cf-surface-sunken);
+  color: var(--cf-ink-2);
+  font: inherit;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.test-preview {
+  margin-top: 0;
 }
 </style>

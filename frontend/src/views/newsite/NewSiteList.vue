@@ -1,36 +1,38 @@
 <template>
-  <el-card class="new-site-page">
-    <template #header>
-      <div class="page-toolbar">
-        <div>
-          <span class="toolbar-title">新站点列表</span>
-          <span class="toolbar-hint">AI 生成站点标题、标语与可注册域名</span>
-        </div>
-        <div class="toolbar-actions">
-          <el-button v-if="canConfigureAi" @click="openAiConfig">文案 AI 配置</el-button>
-          <el-button v-if="canConfigureAi" @click="openImageAiConfig">图像 AI 配置</el-button>
-          <el-button type="primary" @click="openCreate(false)">创建新站点</el-button>
-          <el-button type="success" plain @click="openCreate(true)">批量创建</el-button>
-        </div>
-      </div>
-    </template>
+  <div class="new-site-page">
+    <PageHeader
+      eyebrow="SITE BUILD"
+      title="新站点管理"
+      description="AI 生成站点标题、标语与可注册域名，支持单条或批量创建"
+    >
+      <template #actions>
+        <el-button v-if="canConfigureAi" @click="openAiConfig">文案 AI 配置</el-button>
+        <el-button v-if="canConfigureAi" @click="openImageAiConfig">图像 AI 配置</el-button>
+        <el-button type="primary" @click="openCreate(false)">创建新站点</el-button>
+        <el-button type="success" plain @click="openCreate(true)">批量创建</el-button>
+      </template>
+    </PageHeader>
 
+    <DataPanel>
     <div class="filters">
       <el-input
         v-model="keyword"
         clearable
         placeholder="搜索域名、分类或站点标题"
-        style="width: 280px"
+        class="filter-search"
         @keyup.enter="handleSearch"
         @clear="handleSearch"
       />
-      <el-select v-model="status" clearable placeholder="全部使用状态" style="width: 170px" @change="handleSearch">
+      <el-select v-model="status" aria-label="站点使用状态" clearable placeholder="全部使用状态" class="filter-status" @change="handleSearch">
         <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
       </el-select>
-      <el-button @click="resetFilters">重置</el-button>
-      <el-button type="primary" plain @click="handleSearch">查询</el-button>
+      <div class="filter-actions">
+        <el-button @click="resetFilters">重置</el-button>
+        <el-button type="primary" plain @click="handleSearch">查询</el-button>
+      </div>
     </div>
 
+    <p class="cf-table-hint">左右滑动表格查看状态与操作列</p>
     <el-table v-loading="loading" :data="rows" row-key="id" border stripe>
       <el-table-column prop="domain" label="新域名" min-width="190" fixed="left" />
       <el-table-column prop="customCategory" label="自定义分类" min-width="130" />
@@ -126,7 +128,7 @@
     <el-dialog
       v-model="dialogVisible"
       :title="batchMode ? '批量创建新站点' : '创建新站点'"
-      width="980px"
+      width="min(980px, 96vw)"
       top="5vh"
       :close-on-click-modal="false"
     >
@@ -283,7 +285,8 @@
       :site="activeAssetSite"
       :can-manage="canManageAssets"
     />
-  </el-card>
+    </DataPanel>
+  </div>
 </template>
 
 <script setup>
@@ -623,8 +626,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page-toolbar,
-.toolbar-actions,
+.new-site-page {
+  max-width: var(--cf-page-max);
+  margin: 0 auto;
+}
+
 .filters,
 .create-toolbar,
 .row-heading {
@@ -632,18 +638,11 @@ onMounted(async () => {
   align-items: center;
 }
 
-.page-toolbar,
 .create-toolbar,
 .row-heading {
   justify-content: space-between;
 }
 
-.toolbar-title {
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.toolbar-hint,
 .batch-tip {
   margin-left: 12px;
   color: var(--el-text-color-secondary);
@@ -651,8 +650,22 @@ onMounted(async () => {
 }
 
 .filters {
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 16px;
+}
+
+.filter-search {
+  width: min(280px, 100%);
+}
+
+.filter-status {
+  width: 170px;
+}
+
+.filter-actions {
+  display: flex;
+  gap: var(--cf-space-2);
 }
 
 .source-list {
@@ -783,10 +796,18 @@ onMounted(async () => {
 }
 
 @media (max-width: 900px) {
-  .page-toolbar,
   .filters {
-    align-items: flex-start;
+    align-items: stretch;
     flex-direction: column;
+  }
+
+  .filter-search,
+  .filter-status {
+    width: 100%;
+  }
+
+  .filter-actions {
+    justify-content: flex-start;
   }
 
   .draft-form {

@@ -5,28 +5,26 @@
 -->
 <template>
   <div class="task-history-page">
-    <el-card>
-      <template #header>
-        <div class="history-header">
-          <div>
-            <span>任务历史</span>
-            <small>检索同步记录、追踪实时进度并查看分块日志 · 时间均为北京时间</small>
-          </div>
-          <div class="history-actions">
-            <span class="auto-refresh-label">执行中自动刷新</span>
-            <el-switch v-model="autoRefresh" @change="scheduleAutoRefresh" />
-            <el-button type="primary" size="small" :loading="loading" @click="refreshPage">刷新</el-button>
-          </div>
-        </div>
+    <PageHeader
+      eyebrow="DATA SYNC"
+      title="任务历史"
+      description="检索同步记录、追踪实时进度并查看分块日志 · 时间均为北京时间"
+    >
+      <template #actions>
+        <span class="auto-refresh-label">执行中自动刷新</span>
+        <el-switch v-model="autoRefresh" aria-label="执行中自动刷新" @change="scheduleAutoRefresh" />
+        <el-button type="primary" :loading="loading" @click="refreshPage">刷新</el-button>
       </template>
+    </PageHeader>
 
-      <div class="status-summary">
-        <div><span>正在执行</span><strong class="running-number">{{ overview.active }}</strong></div>
-        <div><span>今日成功</span><strong class="success-number">{{ overview.successToday }}</strong></div>
-        <div><span>今日失败</span><strong :class="{ 'failed-number': overview.failedToday }">{{ overview.failedToday }}</strong></div>
-        <div><span>累计任务</span><strong>{{ overview.total }}</strong></div>
-      </div>
+    <section class="status-summary" aria-label="任务统计">
+      <StatCard label="正在执行" :value="overview.active" note="状态自动刷新" tone="blue" icon="VideoPlay" />
+      <StatCard label="今日成功" :value="overview.successToday" note="已完成的任务" tone="green" icon="CircleCheck" />
+      <StatCard label="今日失败" :value="overview.failedToday" :note="overview.failedToday ? '请查看日志' : '今日运行正常'" tone="red" icon="WarningFilled" />
+      <StatCard label="累计任务" :value="overview.total" note="当前账号可见范围" tone="neutral" icon="Tickets" />
+    </section>
 
+    <DataPanel>
       <div class="filter-toolbar">
         <el-radio-group v-model="taskType" size="small" @change="handleTypeChange" class="task-type-tabs">
           <el-radio-button value="all">全部（{{ counts.all || 0 }}）</el-radio-button>
@@ -37,7 +35,7 @@
           <el-radio-button v-if="userStore.hasPermission('dashboard:product:view')" value="product_crawl">商品（{{ counts.product_crawl || 0 }}）</el-radio-button>
         </el-radio-group>
         <div class="filter-fields">
-          <el-select v-model="statusFilter" placeholder="全部状态" clearable style="width: 128px" @change="handleFilterChange">
+          <el-select v-model="statusFilter" aria-label="任务状态" placeholder="全部状态" clearable style="width: 128px" @change="handleFilterChange">
             <el-option label="等待中" value="PENDING" />
             <el-option label="执行中" value="RUNNING" />
             <el-option label="已暂停" value="PAUSED" />
@@ -50,6 +48,7 @@
       </div>
 
     <!-- 任务历史表格 -->
+      <p class="cf-table-hint">左右滑动表格查看更多列</p>
     <el-table :data="tableData" v-loading="loading" :max-height="640" stripe empty-text="暂无任务记录">
       <el-table-column label="任务" min-width="210">
         <template #default="{ row }">
@@ -74,6 +73,7 @@
       <el-table-column label="进度" min-width="170">
         <template #default="{ row }">
           <el-progress
+            :aria-label="`任务进度 ${row.status === 'SUCCESS' ? 100 : (row.progress || 0)}%`"
             :percentage="row.status === 'SUCCESS' ? 100 : (row.progress || 0)"
             :status="row.status === 'SUCCESS' ? 'success' : row.status === 'FAILED' ? 'exception' : ''"
             :stroke-width="10"
@@ -87,7 +87,7 @@
           <div class="task-meta">耗时 {{ formatDuration(row.durationMs) }}</div>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="160" :fixed="isNarrow ? false : 'right'">
         <template #default="{ row }">
           <el-button
             v-if="userStore.hasPermission('crawler:task:control') && (row.status === 'PENDING' || row.status === 'RUNNING')"
@@ -109,7 +109,7 @@
     </el-table>
 
       <el-pagination
-        style="margin-top: 16px; justify-content: flex-end;"
+        class="history-pagination"
         v-model:current-page="page"
         :page-size="size"
         :page-sizes="[10, 20, 50, 100]"
@@ -118,7 +118,7 @@
         @current-change="fetchData"
         @size-change="handleSizeChange"
       />
-    </el-card>
+    </DataPanel>
 
     <el-drawer
       v-model="logVisible"
@@ -157,6 +157,7 @@
 <script setup>
 import { taskStatus, taskProgressMessage, taskResult } from '@/data/taskPresentation'
 import { ref, nextTick, onMounted, onUnmounted, reactive } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getRecentTasks, getTaskSummary, getTaskOverview, getTaskCrawlLog, downloadTaskCrawlLog, pauseTask, resumeTask, deleteTask } from '@/api/crawler'
 import { useUserStore } from '@/store/user'
@@ -177,6 +178,7 @@ const autoRefresh = ref(true)
 const counts = reactive({ all: 0, site_crawl: 0, site_index: 0, order_crawl: 0, product_crawl: 0, site_health: 0 })
 const overview = reactive({ total: 0, active: 0, successToday: 0, failedToday: 0 })
 const userStore = useUserStore()
+const isNarrow = useMediaQuery('(max-width: 900px)')
 const logVisible = ref(false)
 const logLoading = ref(false)
 const logDownloading = ref(false)
@@ -425,37 +427,138 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.history-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.history-header > div:first-child { display: grid; gap: 4px; }
-.history-header small { color: #8b98ad; font-size: 12px; }
-.history-actions { display: flex; align-items: center; gap: 8px; }
-.auto-refresh-label { color: #7d899c; font-size: 12px; }
-.status-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 18px; padding: 15px 18px; border: 1px solid #edf0f5; border-radius: 8px; background: #f9fbfd; }
-.status-summary > div { padding: 0 18px; border-right: 1px solid #e6eaf0; }
-.status-summary > div:first-child { padding-left: 0; }
-.status-summary > div:last-child { border-right: 0; }
-.status-summary span { display: block; color: #8b98ad; font-size: 12px; }
-.status-summary strong { display: block; margin-top: 6px; color: #25344f; font-size: 23px; }
-.status-summary .running-number { color: #409eff; }
-.status-summary .success-number { color: #16a085; }
-.status-summary .failed-number { color: #f56c6c; }
-.filter-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
-.task-type-tabs { flex-shrink: 0; }
-.filter-fields { display: flex; align-items: center; gap: 8px; }
-.task-id-cell { max-width: 230px; overflow: hidden; color: #34445f; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
-.task-meta { margin-top: 5px; color: #98a3b4; font-size: 11px; }
-.progress-message { display: block; margin-top: 5px; color: #909399; font-size: 12px; }
-.muted { color: #c0c4cc; }
-.log-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
-.log-task-id { margin-left: 10px; color: #606266; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-.live-indicator { margin-left: 12px; color: #e6a23c; font-size: 12px; }
-.log-notice { margin-bottom: 12px; }
-.log-viewer { min-height: 360px; height: calc(100vh - 150px); overflow: auto; border-radius: 6px; background: #111827; }
-.log-viewer pre { min-height: 100%; box-sizing: border-box; margin: 0; padding: 16px; color: #d1d5db; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-@media (max-width: 760px) {
-  .history-header { align-items: flex-start; }
-  .status-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 0; }
-  .status-summary > div:nth-child(2) { border-right: 0; }
-  .filter-fields { width: 100%; flex-wrap: wrap; }
+.task-history-page {
+  max-width: var(--cf-page-max);
+  margin: 0 auto;
+}
+
+.status-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--cf-space-4);
+  margin-bottom: var(--cf-space-4);
+}
+
+.auto-refresh-label {
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.filter-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--cf-space-3);
+  margin-bottom: var(--cf-space-4);
+}
+
+.task-type-tabs {
+  flex-shrink: 0;
+}
+
+.filter-fields {
+  display: flex;
+  align-items: center;
+  gap: var(--cf-space-2);
+}
+
+.task-id-cell {
+  max-width: 230px;
+  overflow: hidden;
+  color: var(--cf-ink-2);
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-meta {
+  margin-top: 5px;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.progress-message {
+  display: block;
+  margin-top: 5px;
+  color: var(--cf-muted);
+  font-size: var(--cf-text-small);
+}
+
+.muted {
+  color: var(--cf-subtle);
+}
+
+.history-pagination {
+  margin-top: var(--cf-space-4);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cf-space-4);
+  margin-bottom: var(--cf-space-3);
+}
+
+.log-task-id {
+  margin-left: 10px;
+  color: var(--cf-ink-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--cf-text-small);
+}
+
+.live-indicator {
+  margin-left: 12px;
+  color: var(--cf-warning-text);
+  font-size: var(--cf-text-small);
+}
+
+.log-notice {
+  margin-bottom: var(--cf-space-3);
+}
+
+.log-viewer {
+  min-height: 360px;
+  height: calc(100vh - 150px);
+  overflow: auto;
+  border-radius: var(--cf-radius-sm);
+  background: var(--cf-nav-bg);
+}
+
+.log-viewer pre {
+  min-height: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 16px;
+  color: var(--cf-nav-text);
+  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .status-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .filter-fields {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .status-summary {
+    grid-template-columns: 1fr;
+  }
+}
+@media (min-width: 561px) and (max-width: 900px) {
+  .status-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>

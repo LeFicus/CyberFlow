@@ -1,0 +1,115 @@
+/**
+ * CyberFlow design tokens v1
+ * Single source of truth for the admin UI. See docs/FRONTEND_UI_TOKENS.md.
+ * Do not hard-code colours, radii, shadows or font sizes in .vue files.
+ */
+
+:root {
+  /* ---- surfaces & lines ---- */
+  --cf-canvas: #f5f7fb;
+  --cf-surface: #ffffff;
+  --cf-surface-sunken: #f8f9fc;
+  --cf-surface-raised: #ffffff;
+  --cf-line: #e6eaf2;
+  --cf-line-soft: #f0f2f6;
+  --cf-line-strong: #d5dbe6;
+
+  /* ---- text ---- */
+  --cf-ink: #131c2e;
+  --cf-ink-2: #46536b;
+  --cf-ink-soft: #46536b;
+  --cf-muted: #5f6b7e;
+  --cf-subtle: #667184;
+  --cf-on-primary: #ffffff;
+
+  /* ---- brand & semantic ---- */
+  --cf-primary: #4f6bed;
+  --cf-primary-hover: #4058d6;
+  --cf-primary-active: #3549bd;
+  --cf-primary-soft: #eef1ff;
+  --cf-primary-soft-strong: #dfe4ff;
+  --cf-accent: #7059e0;
+  --cf-accent-soft: #f3edff;
+
+  --cf-success: #1f9d74;
+  --cf-success-text: #15795a;
+  --cf-success-soft: #eaf9f3;
+  --cf-warning: #c98a2b;
+  --cf-warning-text: #8a5a12;
+  --cf-warning-soft: #fff6e3;
+  --cf-danger: #d14343;
+  --cf-danger-text: #b02a2a;
+  --cf-danger-soft: #fdeeee;
+  --cf-info: #4a6fa5;
+  --cf-info-text: #38577f;
+  --cf-info-soft: #eef4fc;
+
+  /* ---- dark navigation ---- */
+  --cf-nav-bg: #0d1627;
+  --cf-nav-surface: #151f34;
+  --cf-nav-hover: #1b2740;
+  --cf-nav-text: #c7d0e0;
+  --cf-nav-muted: #8493ad;
+  --cf-nav-active-from: #3f5fe0;
+  --cf-nav-active-to: #5a6ff0;
+
+  /* ---- typography ---- */
+  --cf-font-sans: Inter, "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei",
+    system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cf-text-display: 32px;
+  --cf-text-h1: 26px;
+  --cf-text-h2: 20px;
+  --cf-text-h3: 16px;
+  --cf-text-body: 14px;
+  --cf-text-small: 12px;
+  --cf-text-micro: 11px;
+  --cf-leading-tight: 1.25;
+  --cf-leading-normal: 1.6;
+
+  /* ---- spacing ---- */
+  --cf-space-1: 4px;
+  --cf-space-2: 8px;
+  --cf-space-3: 12px;
+  --cf-space-4: 16px;
+  --cf-space-5: 20px;
+  --cf-space-6: 24px;
+  --cf-space-8: 32px;
+  --cf-space-10: 40px;
+  --cf-space-14: 56px;
+
+  /* ---- layout ---- */
+  --cf-page-max: 1440px;
+  --cf-page-x: 32px;
+  --cf-section-gap: 24px;
+  --cf-card-pad: 22px;
+
+  /* ---- radii ---- */
+  --cf-radius-sm: 8px;
+  --cf-radius: 12px;
+  --cf-radius-lg: 16px;
+  --cf-radius-pill: 999px;
+
+  /* ---- elevation ---- */
+  --cf-shadow-sm: 0 1px 2px rgb(16 24 40 / 4%);
+  --cf-shadow-md: 0 8px 24px -12px rgb(16 24 40 / 18%);
+  --cf-shadow-lg: 0 24px 48px -24px rgb(16 24 40 / 28%);
+
+  /* ---- motion ---- */
+  --cf-dur-fast: 120ms;
+  --cf-dur-base: 180ms;
+  --cf-dur-slow: 240ms;
+  --cf-ease: cubic-bezier(.2, .7, .3, 1);
+
+  /* ---- z-index ---- */
+  --cf-z-sticky: 10;
+  --cf-z-topbar: 20;
+  --cf-z-scrim: 30;
+  --cf-z-sidebar: 40;
+  --cf-z-toast: 50;
+
+  /* ---- legacy aliases (kept while older views migrate) ---- */
+  --cf-blue: var(--cf-primary);
+  --cf-blue-dark: var(--cf-primary-hover);
+  --cf-violet: var(--cf-accent);
+  --cf-green: var(--cf-success);
+}

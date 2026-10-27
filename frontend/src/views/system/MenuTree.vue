@@ -3,12 +3,19 @@
   支持菜单/目录/按钮权限的新增、编辑、删除和查看。
 -->
 <template>
-  <el-card>
-    <template #header>
-      <span>菜单管理</span>
-      <el-button v-if="canCreate" type="primary" size="small" style="float: right" @click="openDialog()">新增菜单</el-button>
-    </template>
+  <div class="menu-page">
+    <PageHeader
+      eyebrow="SYSTEM"
+      title="菜单管理"
+      description="维护后台导航结构、菜单类型与权限标识"
+    >
+      <template #actions>
+        <el-button v-if="canCreate" type="primary" @click="openDialog()">新增菜单</el-button>
+      </template>
+    </PageHeader>
 
+    <DataPanel>
+    <p class="cf-table-hint">左右滑动表格查看状态与操作列</p>
     <el-table :data="treeData" v-loading="loading" row-key="id" stripe>
       <el-table-column prop="menuNameDisplay" label="菜单名称" min-width="200" />
       <el-table-column prop="menuType" label="类型" width="100">
@@ -27,7 +34,7 @@
           <el-tag :type="row.status === 1 ? 'success' : 'danger'">{{ row.status === 1 ? '启用' : '禁用' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column v-if="canManage" label="操作" width="160" fixed="right">
+      <el-table-column v-if="canManage" label="操作" width="160" :fixed="isNarrow ? false : 'right'">
         <template #default="{ row }">
           <el-button v-if="canUpdate" size="small" @click="openDialog(row)">编辑</el-button>
           <el-button v-if="canDelete" size="small" type="danger" @click="handleDelete(row)">删除</el-button>
@@ -35,7 +42,7 @@
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑菜单' : '新增菜单'" width="560px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑菜单' : '新增菜单'" width="min(560px, 94vw)">
       <el-form :model="form" label-width="90px">
         <el-form-item label="父级菜单">
           <el-select v-model="form.parentId" style="width: 100%">
@@ -77,16 +84,19 @@
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
-  </el-card>
+    </DataPanel>
+  </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createMenu, deleteMenu, getMenuTree, updateMenu } from '@/api/system'
 import { useUserStore } from '@/store/user'
 
 const userStore = useUserStore()
+const isNarrow = useMediaQuery('(max-width: 900px)')
 const canCreate = computed(() => userStore.hasPermission('system:menu:create'))
 const canUpdate = computed(() => userStore.hasPermission('system:menu:update'))
 const canDelete = computed(() => userStore.hasPermission('system:menu:delete'))
@@ -208,3 +218,11 @@ async function handleDelete(row) {
 
 onMounted(fetchData)
 </script>
+
+
+<style scoped>
+.menu-page {
+  max-width: var(--cf-page-max);
+  margin: 0 auto;
+}
+</style>
