@@ -44,10 +44,6 @@ public interface OrderMapper {
     String DEDUPLICATED_ORDER_KEY_SQL =
             "COALESCE(NULLIF(TRIM(dedupe_key), ''), " + LEGACY_DEDUPLICATED_ORDER_KEY_SQL + ")";
 
-    /** Keep the raw identity stable; exclude unapproved suspicious rows from report counts. */
-    String REPORTABLE_ORDER_KEY_SQL = "CASE WHEN " + OrderFraudSql.ELIGIBLE_SQL +
-            " THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END";
-
     /** Delete every order across both user groups. This endpoint is admin-only. */
     @Delete("DELETE FROM orders")
     int deleteAllOrders();
@@ -83,7 +79,7 @@ public interface OrderMapper {
             "<if test='startDate != null and startDate != &quot;&quot;'> AND o.create_time &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>" +
             "<if test='endDate != null and endDate != &quot;&quot;'> AND o.create_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>" +
             "<if test='siteTag != null'> AND COALESCE(filter_site.site_tag, filter_retired.site_tag, o.site_tag) = #{siteTag}</if>" +
-            "<if test='fraudStatus != null'> AND (" + OrderFraudSql.LIST_STATUS_SQL + ") = #{fraudStatus}</if>" +
+            "<if test='riskStatus != null'> AND (" + OrderStatusSql.LIST_STATUS_SQL + ") = #{riskStatus}</if>" +
             "</where>";
 
     @Select({"<script>", "SELECT COUNT(*)", FILTER_FROM_SQL, FILTER_SQL, "</script>"})
@@ -98,14 +94,14 @@ public interface OrderMapper {
                              @Param("startDate") String startDate,
                              @Param("endDate") String endDate,
                              @Param("siteTag") Integer siteTag,
-                                                 @Param("fraudStatus") String fraudStatus);
+                                                 @Param("riskStatus") String riskStatus);
 
     @Select({"<script>",
             "SELECT o.id, o.amount, o.currency, o.create_time, o.product_host, o.pay_status_text,",
             "o.customer_ip_country, o.shipping_email, o.shipping_address, o.admin_name, o.user_group,",
             "o.theme_name, o.product_category, COALESCE(s.site_tag, r.site_tag, o.site_tag) AS site_tag,",
-            "o.product_info, o.is_valid, " + OrderFraudSql.LIST_STATUS_SQL + " AS fraud_status,",
-            "CASE WHEN o.is_valid = 0 AND (" + OrderFraudSql.LIST_STATUS_SQL + ") IN ('NORMAL','APPROVED') THEN 1 ELSE 0 END AS effective_valid,",
+            "o.product_info, o.is_fraud, o.is_valid, " + OrderStatusSql.LIST_STATUS_SQL + " AS risk_status,",
+            "CASE WHEN o.is_valid = 0 AND o.is_fraud = 0 THEN 1 ELSE 0 END AS effective_valid,",
             "COALESCE(s.cat_names, r.cat_names) AS cat_names FROM",
             "(SELECT o.*", FILTER_FROM_SQL, FILTER_SQL,
             "ORDER BY o.create_time DESC, o.id DESC LIMIT #{offset}, #{size}) o",
@@ -130,7 +126,7 @@ public interface OrderMapper {
                                                  @Param("offset") int offset,
                                                  @Param("size") int size,
                                                  @Param("siteTag") Integer siteTag,
-                                                 @Param("fraudStatus") String fraudStatus);
+                                                 @Param("riskStatus") String riskStatus);
 
     @Select({"<script>",
             "SELECT COUNT(*) AS total_count, COALESCE(SUM(o.amount), 0) AS total_amount,",
@@ -148,22 +144,24 @@ public interface OrderMapper {
                                                 @Param("startDate") String startDate,
                                                 @Param("endDate") String endDate,
                                                 @Param("siteTag") Integer siteTag,
-                                                 @Param("fraudStatus") String fraudStatus);
+                                                 @Param("riskStatus") String riskStatus);
 
     /** Overview metrics use the shared business deduplication fingerprint. */
-    @Select("SELECT COUNT(DISTINCT " + REPORTABLE_ORDER_KEY_SQL + ") AS deduplicated_orders, " +
-            "COUNT(DISTINCT CASE WHEN " + OrderFraudSql.VALID_SQL + " THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_deduplicated_orders, " +
+    @Select("SELECT COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS deduplicated_orders, " +
+            "COUNT(CASE WHEN " + OrderStatusSql.RISK_SQL + " THEN 1 END) AS risk_orders, " +
+            "COUNT(DISTINCT CASE WHEN " + OrderStatusSql.VALID_SQL + " THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_deduplicated_orders, " +
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' " +
-            "THEN " + REPORTABLE_ORDER_KEY_SQL + " END) AS successful_orders, " +
+            "THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount " +
             "FROM orders")
     Map<String, Object> businessSummary();
 
     @Select({"<script>",
-            "SELECT COUNT(DISTINCT " + REPORTABLE_ORDER_KEY_SQL + ") AS deduplicated_orders, " +
-            "COUNT(DISTINCT CASE WHEN " + OrderFraudSql.VALID_SQL + " THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_deduplicated_orders, " +
+            "SELECT COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS deduplicated_orders, " +
+            "COUNT(CASE WHEN " + OrderStatusSql.RISK_SQL + " THEN 1 END) AS risk_orders, " +
+            "COUNT(DISTINCT CASE WHEN " + OrderStatusSql.VALID_SQL + " THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_deduplicated_orders, " +
             "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' " +
-            "THEN " + REPORTABLE_ORDER_KEY_SQL + " END) AS successful_orders, " +
+            "THEN " + DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount " +
             "FROM orders WHERE create_time &gt;= #{startDateTime} AND create_time &lt; #{endDateTime} " +
             "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
@@ -215,7 +213,7 @@ public interface OrderMapper {
      * @param endDate   结束日期（年月日格式）
      * @return 每日订单趋势列表，每组包含 date（日期）、count（订单数）、amount（金额）
      */
-    @Select("SELECT DATE(create_time) as date, COUNT(DISTINCT " + REPORTABLE_ORDER_KEY_SQL + ") as count, " +
+    @Select("SELECT DATE(create_time) as date, COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") as count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) as amount " +
             "FROM orders WHERE create_time >= #{startDateTime} AND create_time < #{endDateTime} " +
             "GROUP BY DATE(create_time) ORDER BY date")
@@ -223,7 +221,7 @@ public interface OrderMapper {
                                          @Param("endDateTime") String endDateTime);
 
     @Select("SELECT DATE(create_time) AS date, " +
-            "COUNT(DISTINCT " + REPORTABLE_ORDER_KEY_SQL + ") AS count, " +
+            "COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS amount " +
             "FROM orders WHERE create_time >= #{startDateTime} AND create_time < #{endDateTime} " +
             "AND (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
@@ -245,7 +243,7 @@ public interface OrderMapper {
     List<Map<String, Object>> countByAdmin();
 
     @Select("SELECT admin_name, " +
-            "COUNT(DISTINCT " + REPORTABLE_ORDER_KEY_SQL + ") AS count, " +
+            "COUNT(DISTINCT " + DEDUPLICATED_ORDER_KEY_SQL + ") AS count, " +
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS amount " +
             "FROM orders WHERE (#{userGroup} IS NULL OR #{userGroup} = '' OR user_group = #{userGroup}) " +
             "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) > 0) " +

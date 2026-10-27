@@ -255,6 +255,8 @@ CREATE TABLE IF NOT EXISTS orders (
     shipping_email      VARCHAR(255),
     shipping_address    JSON,
     is_valid            TINYINT,
+    is_fraud            TINYINT,
+    is_alarm            INT,
     dedupe_key           CHAR(64),
     admin_name          VARCHAR(100),
     user_group          VARCHAR(32) NOT NULL,

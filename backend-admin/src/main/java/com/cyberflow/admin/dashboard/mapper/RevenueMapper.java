@@ -35,12 +35,12 @@ public interface RevenueMapper {
 
     /** Whole-group totals, including paid orders whose administrator is not yet assigned. */
     @Select({"<script>",
-            "SELECT user_group, COUNT(DISTINCT " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + ") AS total_orders,",
-            "COUNT(DISTINCT CASE WHEN " + OrderFraudSql.VALID_SQL + " THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
-            "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' THEN " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + " END) AS successful_orders,",
-            "COUNT(DISTINCT CASE WHEN site_tag = 0 THEN " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + " END) AS standalone_orders,",
-            "COUNT(DISTINCT CASE WHEN site_tag = 1 THEN " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + " END) AS batch_orders,",
-            "COUNT(DISTINCT CASE WHEN site_tag = 2 THEN " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + " END) AS copy_orders,",
+            "SELECT user_group, COUNT(DISTINCT " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + ") AS total_orders,",
+            "COUNT(DISTINCT CASE WHEN " + OrderStatusSql.VALID_SQL + " THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
+            "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders,",
+            "COUNT(DISTINCT CASE WHEN site_tag = 0 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS standalone_orders,",
+            "COUNT(DISTINCT CASE WHEN site_tag = 1 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS batch_orders,",
+            "COUNT(DISTINCT CASE WHEN site_tag = 2 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS copy_orders,",
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS original_amount",
             "FROM orders WHERE TRIM(COALESCE(user_group, '')) &lt;&gt; ''",
             "AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
@@ -53,7 +53,7 @@ public interface RevenueMapper {
 
     @Select({"<script>",
             "SELECT user_group, COALESCE(NULLIF(TRIM(customer_ip_country), ''), '未知') AS customer_country,",
-            "COUNT(DISTINCT " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + ") AS order_count",
+            "COUNT(DISTINCT " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + ") AS order_count",
             "FROM orders WHERE TRIM(COALESCE(user_group, '')) &lt;&gt; ''",
             "AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
             "<if test='startDate != null and startDate != &quot;&quot;'> AND create_time &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>",
@@ -64,12 +64,12 @@ public interface RevenueMapper {
                                                       @Param("endDate") String endDate);
 
     @Select({"<script>",
-            "SELECT admin_name, user_group, COUNT(DISTINCT " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + ") AS total_orders,",
-            "COUNT(DISTINCT CASE WHEN " + OrderFraudSql.VALID_SQL + " THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
-            "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' THEN " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + " END) AS successful_orders,",
-            "COUNT(DISTINCT CASE WHEN site_tag = 0 THEN " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + " END) AS standalone_orders,",
-            "COUNT(DISTINCT CASE WHEN site_tag = 1 THEN " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + " END) AS batch_orders,",
-            "COUNT(DISTINCT CASE WHEN site_tag = 2 THEN " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + " END) AS copy_orders,",
+            "SELECT admin_name, user_group, COUNT(DISTINCT " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + ") AS total_orders,",
+            "COUNT(DISTINCT CASE WHEN " + OrderStatusSql.VALID_SQL + " THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
+            "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders,",
+            "COUNT(DISTINCT CASE WHEN site_tag = 0 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS standalone_orders,",
+            "COUNT(DISTINCT CASE WHEN site_tag = 1 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS batch_orders,",
+            "COUNT(DISTINCT CASE WHEN site_tag = 2 THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS copy_orders,",
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS original_amount,",
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' AND site_tag = 1 THEN amount ELSE 0 END), 0) AS batch_site_amount",
             "FROM orders WHERE TRIM(COALESCE(admin_name, '')) &lt;&gt; ''",
@@ -89,7 +89,7 @@ public interface RevenueMapper {
 
     @Select({"<script>",
             "SELECT admin_name, user_group, COALESCE(NULLIF(TRIM(customer_ip_country), ''), '未知') AS customer_country,",
-            "COUNT(DISTINCT " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + ") AS order_count",
+            "COUNT(DISTINCT " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + ") AS order_count",
             "FROM orders WHERE TRIM(COALESCE(admin_name, '')) &lt;&gt; ''",
             "AND TRIM(COALESCE(user_group, '')) &lt;&gt; '' AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
             "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) &gt; 0 " +
@@ -110,7 +110,7 @@ public interface RevenueMapper {
             "COUNT(valid_sites.product_host) AS valid_ordered_site_count",
             "FROM " + HISTORICAL_SITES_SQL + " s LEFT JOIN (",
             "SELECT DISTINCT " + OrderMapper.NORMALIZED_PRODUCT_HOST_SQL + " AS product_host FROM orders",
-            "WHERE " + OrderFraudSql.VALID_SQL + " AND TRIM(COALESCE(product_host, '')) &lt;&gt; ''",
+            "WHERE " + OrderStatusSql.VALID_SQL + " AND TRIM(COALESCE(product_host, '')) &lt;&gt; ''",
             "<if test='startDate != null and startDate != &quot;&quot;'> AND create_time &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>",
             "<if test='endDate != null and endDate != &quot;&quot;'> AND create_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>",
             ") valid_sites ON LOWER(CASE WHEN LEFT(TRIM(s.site_domain), 4) = 'www.'",
@@ -136,7 +136,7 @@ public interface RevenueMapper {
             "FROM (SELECT DISTINCT admin_name, user_group,",
             OrderMapper.NORMALIZED_PRODUCT_HOST_SQL + " AS normalized_host,",
             OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " AS order_identity",
-            "FROM orders WHERE " + OrderFraudSql.ELIGIBLE_SQL + " AND TRIM(COALESCE(admin_name, '')) &lt;&gt; ''",
+            "FROM orders WHERE TRIM(COALESCE(admin_name, '')) &lt;&gt; ''",
             "AND TRIM(COALESCE(user_group, '')) &lt;&gt; '' AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
             "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) &gt; 0 " +
             "<if test='teacherSuffixes != null and !teacherSuffixes.isEmpty()'> OR " +
@@ -160,7 +160,7 @@ public interface RevenueMapper {
             "FROM (SELECT DISTINCT user_group,",
             OrderMapper.NORMALIZED_PRODUCT_HOST_SQL + " AS normalized_host,",
             OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " AS order_identity",
-            "FROM orders WHERE " + OrderFraudSql.ELIGIBLE_SQL + " AND TRIM(COALESCE(user_group, '')) &lt;&gt; ''",
+            "FROM orders WHERE TRIM(COALESCE(user_group, '')) &lt;&gt; ''",
             "AND (#{userGroup} IS NULL OR user_group = #{userGroup})",
             "<if test='startDate != null and startDate != &quot;&quot;'> AND create_time &gt;= CONCAT(#{startDate}, ' 00:00:00')</if>",
             "<if test='endDate != null and endDate != &quot;&quot;'> AND create_time &lt; DATE_ADD(#{endDate}, INTERVAL 1 DAY)</if>",
@@ -188,9 +188,9 @@ public interface RevenueMapper {
                                            @Param("siteCreatedMonth") String siteCreatedMonth);
 
     @Select({"<script>", "SELECT " + OrderMapper.NORMALIZED_PRODUCT_HOST_SQL + " AS product_host,",
-            "COUNT(DISTINCT " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + ") AS total_orders,",
-            "COUNT(DISTINCT CASE WHEN " + OrderFraudSql.VALID_SQL + " THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
-            "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' THEN " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + " END) AS successful_orders,",
+            "COUNT(DISTINCT " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + ") AS total_orders,",
+            "COUNT(DISTINCT CASE WHEN " + OrderStatusSql.VALID_SQL + " THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS valid_orders,",
+            "COUNT(DISTINCT CASE WHEN pay_status_text = '已支付' THEN " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + " END) AS successful_orders,",
             "COALESCE(SUM(CASE WHEN pay_status_text = '已支付' THEN amount ELSE 0 END), 0) AS successful_amount",
             "FROM orders WHERE TRIM(COALESCE(product_host, '')) &lt;&gt; ''",
             "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) &gt; 0 " +
@@ -207,7 +207,7 @@ public interface RevenueMapper {
 
     @Select({"<script>", "SELECT " + OrderMapper.NORMALIZED_PRODUCT_HOST_SQL + " AS product_host,",
             "COALESCE(NULLIF(TRIM(customer_ip_country), ''), '未知') AS customer_country,",
-            "COUNT(DISTINCT " + OrderMapper.REPORTABLE_ORDER_KEY_SQL + ") AS order_count",
+            "COUNT(DISTINCT " + OrderMapper.DEDUPLICATED_ORDER_KEY_SQL + ") AS order_count",
             "FROM orders WHERE TRIM(COALESCE(product_host, '')) &lt;&gt; ''",
             "AND (#{ownerName} IS NULL OR FIND_IN_SET(admin_name, #{ownerName}) &gt; 0 " +
             "<if test='teacherSuffixes != null and !teacherSuffixes.isEmpty()'> OR " +

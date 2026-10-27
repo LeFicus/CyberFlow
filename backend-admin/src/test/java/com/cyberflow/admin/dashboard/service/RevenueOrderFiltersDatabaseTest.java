@@ -1,7 +1,6 @@
 package com.cyberflow.admin.dashboard.service;
 
 import com.cyberflow.admin.dashboard.mapper.OrderMapper;
-import com.cyberflow.admin.dashboard.mapper.OrderFraudReviewMapper;
 import com.cyberflow.admin.dashboard.mapper.RevenueMapper;
 import org.apache.ibatis.datasource.unpooled.UnpooledDataSource;
 import org.apache.ibatis.mapping.Environment;
@@ -44,7 +43,6 @@ class RevenueOrderFiltersDatabaseTest {
                 System.getenv("CYBERFLOW_TEST_DB_PASSWORD"));
         var configuration = new Configuration(new Environment("test", new JdbcTransactionFactory(), datasource));
         configuration.addMapper(OrderMapper.class);
-        configuration.addMapper(OrderFraudReviewMapper.class);
         configuration.addMapper(RevenueMapper.class);
         var session = new SqlSessionFactoryBuilder().build(configuration).openSession(true);
         String schema = "cyberflow_report_test_" + UUID.randomUUID().toString().replace("-", "");
@@ -70,7 +68,7 @@ class RevenueOrderFiltersDatabaseTest {
                         "create_time DATETIME, product_host VARCHAR(255), pay_status_text VARCHAR(50), " +
                         "customer_ip_country VARCHAR(100), shipping_email VARCHAR(255), shipping_address JSON, " +
                         "admin_name VARCHAR(100), user_group VARCHAR(32), theme_name VARCHAR(100), " +
-                        "product_category VARCHAR(100), site_tag INT, product_info JSON, is_valid INT, dedupe_key VARCHAR(64)) " +
+                        "product_category VARCHAR(100), site_tag INT, product_info JSON, is_valid INT, is_fraud INT DEFAULT 0, dedupe_key VARCHAR(64)) " +
                         "CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci");
                 sql.executeUpdate("INSERT INTO site_info VALUES " +
                         "('live.test','alice','A',1,JSON_ARRAY('家居','家居','户外'),NULL,'2026-09-15','2026-10-01')," +
@@ -157,192 +155,129 @@ class RevenueOrderFiltersDatabaseTest {
             assertEquals(2L, ((Number) shorterHome.get("order_count")).longValue());
         }
     }
-    private void fraudFixtures(Fixture fixture) throws Exception {
+    private void platformFixtures(Fixture fixture) throws Exception {
         try (var sql = fixture.session().getConnection().createStatement()) {
-            sql.executeUpdate("UPDATE orders SET is_valid=1");
-            sql.executeUpdate("INSERT INTO orders (id,amount,currency,create_time,product_host,pay_status_text," +
-                    "shipping_email,admin_name,user_group,site_tag,is_valid,dedupe_key) VALUES " +
-                    "(101,10,'USD','2026-10-12','live.test','支付失败',' Alice.Smith.12345@GMAIL.COM ','alice','A',1,0,'risk')," +
-                    "(102,10,'USD','2026-10-12','live.test','支付失败','alice.smith.12345@gmail.com','alice','A',1,0,'risk')," +
-                    "(103,10,'USD','2026-10-12','plain.test','支付失败','alice.smith@gmail.com','alice','A',0,0,'normal')," +
-                    "(104,10,'USD','2026-10-12','live.test','已支付','alice.smith.98765@gmail.com','alice','A',1,1,'invalid')," +
-                    "(101,10,'USD','2026-10-12','live.test','支付失败','alice.smith.12345@gmail.com','alice','B',1,0,'other-group')," +
-                    "(106,10,'USD','2026-10-12','plain.test','已支付',NULL,'alice','A',0,1,'invalid-normal')," +
-                    "(107,10,'USD','2026-10-12','plain.test','支付失败','alice.smith.12345@gmail.com.example','alice','A',0,0,'normal2')");
+            sql.executeUpdate("INSERT INTO site_info VALUES ('flag.test','alice','A',1,JSON_ARRAY('平台分类'),NULL,'2026-10-01','2026-10-01')," +
+                    "('unknown-flag.test','alice','A',1,JSON_ARRAY('未同步分类'),NULL,'2026-10-01','2026-10-01')");
+            sql.executeUpdate("INSERT INTO orders (id,user_group,admin_name,product_host,shipping_email,is_valid,is_fraud,dedupe_key,create_time,site_tag) VALUES " +
+                    "(101,'A','alice','flag.test','first.last.1@gmail.com',0,0,'platform-normal','2026-10-12',1)," +
+                    "(102,'A','alice','flag.test','normal@example.com',0,1,'platform-risk','2026-10-12',1)," +
+                    "(103,'A','alice','flag.test','first.last.12345@gmail.com',1,1,'platform-risk2','2026-10-12',1)," +
+                    "(104,'A','alice','flag.test','invalid@example.com',1,0,'platform-invalid','2026-10-12',1)," +
+                    "(105,'A','alice','unknown-flag.test','unknown@example.com',0,NULL,'platform-unknown','2026-10-12',1)," +
+                    "(106,'A','alice','flag.test','first.last.1@gmail.com',0,0,'platform-normal','2026-10-12',1)," +
+                    "(107,'A','alice','flag.test','unknown-valid@example.com',NULL,0,'platform-unknown-valid','2026-10-12',1)," +
+                    "(108,'A','alice','flag.test',NULL,0,0,'platform-no-email','2026-10-12',1)," +
+                    "(109,'A','alice','flag.test','normal@example.com',0,1,'platform-risk','2026-10-12',1)," +
+                    "(101,'B','alice','flag.test','other@example.com',0,1,'platform-other-group','2026-10-12',1)");
+            sql.executeUpdate("INSERT INTO order_fraud_reviews (user_group,order_id,email,decision,reviewer,note) " +
+                    "VALUES ('A',102,'normal@example.com','APPROVED','old-reviewer','旧审核通过不能覆盖支付平台风控')");
         }
     }
 
     @Test
-    void fraudReviewsGateEveryValidMetricAndPreserveOriginalValidityAndDeduplication() throws Exception {
+    void platformFlagsReplaceEmailRulesAndLocalReviewsAcrossReports() throws Exception {
         try (var fixture = fixture()) {
-            fraudFixtures(fixture);
             var orders = fixture.getMapper(OrderMapper.class);
             var revenue = fixture.getMapper(RevenueMapper.class);
-            var reviews = fixture.getMapper(OrderFraudReviewMapper.class);
-            var service = new OrderFraudReviewService(reviews);
-            assertEquals(2L, ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue());
-            assertEquals(2L, ((Number) revenue.groupOrderStats("A", null, null).get(0).get("valid_orders")).longValue());
-            assertEquals(2L, ((Number) revenue.adminOrderStats("A", null, List.of(), null, null).get(0).get("valid_orders")).longValue());
-            assertEquals(0L, ((Number) revenue.revenueOrdersByDomain(null, null, null, List.of()).stream()
-                    .filter(row -> row.get("product_host").equals("live.test")).findFirst().orElseThrow().get("valid_orders")).longValue());
-            assertEquals(1L, ((Number) revenue.adminSiteStats("A", null, List.of(), null, null).get(0).get("valid_ordered_site_count")).longValue());
-
-            service.review("A", 101, "alice.smith.12345@gmail.com", "APPROVED", "核实无异常", "review-admin");
-            assertEquals(3L, ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue());
-            assertEquals(3L, ((Number) revenue.groupOrderStats("A", null, null).get(0).get("valid_orders")).longValue());
-            assertEquals(3L, ((Number) revenue.adminOrderStats("A", null, List.of(), null, null).get(0).get("valid_orders")).longValue());
-            assertEquals(1L, ((Number) revenue.revenueOrdersByDomain(null, null, null, List.of()).stream()
-                    .filter(row -> row.get("product_host").equals("live.test")).findFirst().orElseThrow().get("valid_orders")).longValue());
-            assertEquals(2L, ((Number) revenue.adminSiteStats("A", null, List.of(), null, null).get(0).get("valid_ordered_site_count")).longValue());
-            service.review("A", 102, "alice.smith.12345@gmail.com", "APPROVED", "重复订单核实", "review-admin");
-            service.review("A", 104, "alice.smith.98765@gmail.com", "APPROVED", "仅解除刷单限制", "review-admin");
-            assertEquals(3L, ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue());
-            service.review("A", 101, "alice.smith.12345@gmail.com", "REJECTED", "重新核查异常", "review-admin");
-            service.review("A", 102, "alice.smith.12345@gmail.com", "PENDING", "需要重新核查", "review-admin");
-            assertEquals(2L, ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue());
-            assertEquals(2, reviews.history("A", 101).size());
-            assertEquals("REJECTED", reviews.history("A", 101).get(0).get("decision"));
-            assertEquals("review-admin", reviews.history("A", 101).get(0).get("reviewer"));
+            long originalSites = ((Number) revenue.adminSiteStats("A", null, List.of(), null, null).get(0).get("valid_ordered_site_count")).longValue();
+            platformFixtures(fixture);
+            fixture.session().clearCache();
+            var summary = orders.businessSummary();
+            assertEquals(14L, ((Number) summary.get("deduplicated_orders")).longValue());
+            assertEquals(7L, ((Number) summary.get("valid_deduplicated_orders")).longValue());
+            // The risk card is a raw order count, including repeated risk identities.
+            assertEquals(4L, ((Number) summary.get("risk_orders")).longValue());
+            var scoped = orders.businessSummaryByGroup("2026-10-01", "2026-11-01", "A", "alice");
+            assertEquals(12L, ((Number) scoped.get("deduplicated_orders")).longValue());
+            assertEquals(6L, ((Number) scoped.get("valid_deduplicated_orders")).longValue());
+            assertEquals(3L, ((Number) scoped.get("risk_orders")).longValue());
+            var group = revenue.groupOrderStats("A", null, null).get(0);
+            assertEquals(12L, ((Number) group.get("total_orders")).longValue());
+            assertEquals(6L, ((Number) group.get("valid_orders")).longValue());
+            assertEquals(12L, List.of("standalone_orders", "batch_orders", "copy_orders").stream()
+                    .mapToLong(key -> ((Number) group.get(key)).longValue()).sum());
+            assertEquals(6L, ((Number) revenue.adminOrderStats("A", null, List.of(), null, null).get(0).get("valid_orders")).longValue());
+            var domain = revenue.revenueOrdersByDomain(null, null, null, List.of()).stream()
+                    .filter(row -> row.get("product_host").equals("flag.test")).findFirst().orElseThrow();
+            assertEquals(7L, ((Number) domain.get("total_orders")).longValue());
+            assertEquals(2L, ((Number) domain.get("valid_orders")).longValue());
+            assertEquals(originalSites + 1, ((Number) revenue.adminSiteStats("A", null, List.of(), null, null).get(0).get("valid_ordered_site_count")).longValue());
+            var category = revenue.groupOrderCategoryStats("A", null, null).stream()
+                    .filter(row -> row.get("category_name").equals("平台分类")).findFirst().orElseThrow();
+            assertEquals(6L, ((Number) category.get("order_count")).longValue());
+            assertEquals(1L, ((Number) category.get("ordered_site_count")).longValue());
+            assertTrue(revenue.adminOrderCategoryStats("A", null, List.of(), null, null).stream()
+                    .anyMatch(row -> row.get("category_name").equals("未同步分类")));
+            assertEquals(14L, orders.orderTrend("2026-10-01", "2026-11-01").stream()
+                    .mapToLong(row -> ((Number) row.get("count")).longValue()).sum());
+            assertEquals(16L, orders.countOrders());
         }
     }
 
     @Test
-    void reviewFiltersMatchRowsTotalsAndSummariesAndEmailChangesNeedNewReview() throws Exception {
+    void platformRiskFiltersMatchRowsCountsAndSummariesAndRefreshChangesStatistics() throws Exception {
         try (var fixture = fixture()) {
-            fraudFixtures(fixture);
+            platformFixtures(fixture);
             var orders = fixture.getMapper(OrderMapper.class);
-            var service = new OrderFraudReviewService(fixture.getMapper(OrderFraudReviewMapper.class));
-            for (String state : List.of("NORMAL", "PENDING", "APPROVED", "REJECTED")) {
-                var rows = orders.listOrdersFiltered(null, null, "A", null, null, null, null, null, null, null, 0, 50, null, state);
-                long count = orders.countOrdersFiltered(null, null, "A", null, null, null, null, null, null, null, null, state);
-                var summary = orders.summarizeOrdersFiltered(null, null, "A", null, null, null, null, null, null, null, null, state);
+            for (String state : List.of("RISK", "NORMAL", "UNKNOWN")) {
+                var rows = orders.listOrdersFiltered(null, null, null, null, null, null, null, null, null, null, 0, 50, null, state);
+                long count = orders.countOrdersFiltered(null, null, null, null, null, null, null, null, null, null, null, state);
+                var totals = orders.summarizeOrdersFiltered(null, null, null, null, null, null, null, null, null, null, null, state);
                 assertEquals(count, rows.size());
-                assertEquals(count, ((Number) summary.get("total_count")).longValue());
-                assertTrue(rows.stream().allMatch(row -> row.get("fraud_status").equals(state)));
-                if (state.equals("PENDING")) assertEquals(3L, count);
+                assertEquals(count, ((Number) totals.get("total_count")).longValue());
+                assertTrue(rows.stream().allMatch(row -> row.get("risk_status").equals(state)));
+                assertEquals(state.equals("RISK") ? 4L : state.equals("NORMAL") ? 11L : 1L, count);
+                if (!state.equals("NORMAL")) assertTrue(rows.stream().allMatch(row -> ((Number) row.get("effective_valid")).intValue() == 0));
             }
-            service.review("A", 101, "alice.smith.12345@gmail.com", "APPROVED", "核实通过", "admin");
-            // A fresh platform upsert leaves the separate review table intact.
             try (var sql = fixture.session().getConnection().createStatement()) {
-                sql.executeUpdate("UPDATE orders SET pay_status_text='支付异常' WHERE user_group='A' AND id=101");
-            }
-            assertEquals(1L, orders.countOrdersFiltered(null, null, "A", null, null, null, null, null, null, null, null, "APPROVED"));
-            assertEquals(1L, orders.countOrdersFiltered(null, null, "B", null, null, null, null, null, null, null, null, "PENDING"));
-            try (var sql = fixture.session().getConnection().createStatement()) {
-                sql.executeUpdate("UPDATE orders SET shipping_email='changed.name.12345@gmail.com' WHERE user_group='A' AND id=101");
+                sql.executeUpdate("UPDATE orders SET is_fraud=1 WHERE user_group='A' AND id IN (101,106)");
             }
             fixture.session().clearCache();
-            assertEquals(0L, orders.countOrdersFiltered(null, null, "A", null, null, null, null, null, null, null, null, "APPROVED"));
-            assertEquals(2L, ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue());
-            assertThrows(IllegalArgumentException.class, () -> service.review("A", 101, "alice.smith.12345@gmail.com", "APPROVED", "过期页面", "admin"));
+            assertEquals(14L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
+            assertEquals(6L, ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue());
+            assertEquals(6L, ((Number) orders.businessSummary().get("risk_orders")).longValue());
         }
     }
-
     @Test
-    void suspectedOrdersAreExcludedFromDeduplicatedTotalsTrendsTypesAndCategorySitesUntilApproved() throws Exception {
+    void groupBTodays77RawOrdersAre34Deduplicated25ValidAnd32RiskOrders() throws Exception {
         try (var fixture = fixture()) {
-            fraudFixtures(fixture);
-            var orders = fixture.getMapper(OrderMapper.class);
-            var revenue = fixture.getMapper(RevenueMapper.class);
-            var service = new OrderFraudReviewService(fixture.getMapper(OrderFraudReviewMapper.class));
-            try (var sql = fixture.session().getConnection().createStatement()) {
-                sql.executeUpdate("INSERT INTO site_info VALUES ('pending.test','alice','A',2,JSON_ARRAY('待审专属分类'),NULL,'2026-10-01','2026-10-01')");
-                sql.executeUpdate("INSERT INTO orders (id,user_group,admin_name,product_host,shipping_email,is_valid,dedupe_key,create_time,site_tag) " +
-                        "VALUES (108,'A','alice','pending.test','pending.person.12345@gmail.com',0,'pending-only','2026-10-12',2)");
-            }
-            assertEquals(14L, orders.countOrders());
-            assertEquals(9L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
-            assertEquals(8L, ((Number) orders.businessSummaryByGroup("2026-10-01", "2026-11-01", "A", null)
-                    .get("deduplicated_orders")).longValue());
-            assertEquals(9L, orders.orderTrend("2026-10-01", "2026-11-01").stream()
-                    .mapToLong(row -> ((Number) row.get("count")).longValue()).sum());
-            assertEquals(8L, orders.orderTrendByGroup("2026-10-01", "2026-11-01", "A", "alice").stream()
-                    .mapToLong(row -> ((Number) row.get("count")).longValue()).sum());
-            assertEquals(9L, orders.countByAdminForGroup(null, null).stream()
-                    .mapToLong(row -> ((Number) row.get("count")).longValue()).sum());
-            var group = revenue.groupOrderStats("A", null, null).get(0);
-            assertEquals(8L, ((Number) group.get("total_orders")).longValue());
-            assertEquals(8L, List.of("standalone_orders", "batch_orders", "copy_orders").stream()
-                    .mapToLong(key -> ((Number) group.get(key)).longValue()).sum());
-            assertEquals(8L, ((Number) revenue.adminOrderStats("A", null, List.of(), null, null).get(0).get("total_orders")).longValue());
-            assertTrue(revenue.groupOrderCategoryStats("A", null, null).stream().noneMatch(row -> row.get("category_name").equals("待审专属分类")));
-            assertTrue(revenue.adminOrderCategoryStats("A", null, List.of(), null, null).stream().noneMatch(row -> row.get("category_name").equals("待审专属分类")));
-            assertEquals(0L, ((Number) revenue.revenueOrdersByDomain(null, null, null, List.of()).stream()
-                    .filter(row -> row.get("product_host").equals("pending.test")).findFirst().orElseThrow().get("total_orders")).longValue());
-            assertEquals(9L, revenue.groupOrderCountryStats(null, null, null).stream()
-                    .mapToLong(row -> ((Number) row.get("order_count")).longValue()).sum());
-            assertEquals(8L, revenue.adminOrderCountryStats("A", null, List.of(), null, null).stream()
-                    .mapToLong(row -> ((Number) row.get("order_count")).longValue()).sum());
-            assertEquals(9L, revenue.revenueOrderCountriesByDomain(null, null, null, List.of()).stream()
-                    .mapToLong(row -> ((Number) row.get("order_count")).longValue()).sum());
-
-            service.review("A", 101, "alice.smith.12345@gmail.com", "APPROVED", "核实无异常", "admin");
-            assertEquals(10L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
-            service.review("A", 102, "alice.smith.12345@gmail.com", "APPROVED", "重复订单已核实", "admin");
-            assertEquals(10L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
-            // Approval restores ordinary deduplication even if the upstream validity flag is invalid.
-            service.review("A", 104, "alice.smith.98765@gmail.com", "APPROVED", "解除刷单限制", "admin");
-            assertEquals(11L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
-            assertEquals(3L, ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue());
-            service.review("A", 108, "pending.person.12345@gmail.com", "APPROVED", "分类站点已核实", "admin");
-            var category = revenue.groupOrderCategoryStats("A", null, null).stream()
-                    .filter(row -> row.get("category_name").equals("待审专属分类")).findFirst().orElseThrow();
-            assertEquals(1L, ((Number) category.get("order_count")).longValue());
-            assertEquals(1L, ((Number) category.get("ordered_site_count")).longValue());
-            service.review("A", 108, "pending.person.12345@gmail.com", "REJECTED", "复核确认异常", "admin");
-            assertEquals(11L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
-            assertTrue(revenue.groupOrderCategoryStats("A", null, null).stream().noneMatch(row -> row.get("category_name").equals("待审专属分类")));
-            service.review("A", 101, "alice.smith.12345@gmail.com", "PENDING", "复核", "admin");
-            service.review("A", 102, "alice.smith.12345@gmail.com", "REJECTED", "确认异常", "admin");
-            assertEquals(10L, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
-            assertEquals(14L, orders.countOrders());
-        }
-    }
-
-    @Test
-    void numericEmailSuffixHasNoFixedLengthAndUsesTheSameReviewAndStatisticsPolicy() throws Exception {
-        try (var fixture = fixture()) {
-            var orders = fixture.getMapper(OrderMapper.class);
-            var service = new OrderFraudReviewService(fixture.getMapper(OrderFraudReviewMapper.class));
-            long initialDeduplicated = ((Number) orders.businessSummary().get("deduplicated_orders")).longValue();
-            long initialValid = ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue();
-            var suspicious = List.of("first.last.1@gmail.com", "first.last.12@gmail.com",
-                    "first.last.1234@gmail.com", "first.last.12345@gmail.com", "first.last.123456@gmail.com",
-                    "first.last.123456789012@gmail.com", "first.last." + "1".repeat(64) + "@gmail.com",
-                    " First.Last.007@GMAIL.COM ");
-            var normal = List.of("first.last@gmail.com", "first.last.@gmail.com", "first.last.12a@gmail.com",
-                    "first.last.12@hotmail.com", "first.last.12@gmail.com.example", "first.middle.last.12@gmail.com");
-            var samples = new ArrayList<>(suspicious);
-            samples.addAll(normal);
             try (var insert = fixture.session().getConnection().prepareStatement(
-                    "INSERT INTO orders (id,user_group,admin_name,product_host,shipping_email,is_valid,dedupe_key,create_time) " +
-                            "VALUES (?,'A','alice','pattern.test',?,0,?,'2026-10-12')")) {
-                for (int index = 0; index < samples.size(); index++) {
-                    insert.setInt(1, 200 + index);
-                    insert.setString(2, samples.get(index));
-                    insert.setString(3, "variable-digits-" + index);
+                    "INSERT INTO orders (id,user_group,admin_name,product_host,shipping_email,is_valid,is_fraud,dedupe_key,create_time,site_tag) " +
+                            "VALUES (?,'B','bob','b-today.test',?,?,?,?,'2026-10-27 10:00:00',0)")) {
+                for (int index = 0; index < 77; index++) {
+                    boolean risk = index < 32;
+                    boolean valid = index >= 32 && index < 73;
+                    int identity = risk ? index % 9 : valid ? 8 + (index - 32) % 25 : new int[]{8, 9, 10, 33}[index - 73];
+                    insert.setInt(1, 1000 + index);
+                    insert.setString(2, "customer" + identity + "@example.test");
+                    insert.setInt(3, valid ? 0 : 1);
+                    insert.setInt(4, risk ? 1 : 0);
+                    insert.setString(5, "b-today-" + identity);
                     insert.executeUpdate();
                 }
             }
-            fixture.session().clearCache();
-            var rows = orders.listOrdersFiltered(null, null, "A", "pattern.test", null, null, null,
-                    null, null, null, 0, 50, null, null);
-            assertEquals(samples.size(), rows.size());
-            for (var row : rows) {
-                boolean hit = suspicious.contains(row.get("shipping_email"));
-                assertEquals(hit ? "PENDING" : "NORMAL", row.get("fraud_status"));
-                assertEquals(hit ? 0 : 1, ((Number) row.get("effective_valid")).intValue());
-            }
-            assertEquals(suspicious.size(), orders.countOrdersFiltered(null, null, "A", "pattern.test", null, null, null,
-                    null, null, null, null, "PENDING"));
-            assertEquals(initialDeduplicated + normal.size(), ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
-            assertEquals(initialValid + normal.size(), ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue());
-            service.review("A", 200, suspicious.get(0), "APPROVED", "一位数字邮箱已核实", "admin");
-            service.review("A", 206, suspicious.get(6), "APPROVED", "长数字邮箱已核实", "admin");
-            assertEquals(initialDeduplicated + normal.size() + 2, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
-            assertEquals(initialValid + normal.size() + 2, ((Number) orders.businessSummary().get("valid_deduplicated_orders")).longValue());
-            service.review("A", 200, suspicious.get(0), "REJECTED", "重新核实为异常", "admin");
-            assertEquals(initialDeduplicated + normal.size() + 1, ((Number) orders.businessSummary().get("deduplicated_orders")).longValue());
+            var orders = fixture.getMapper(OrderMapper.class);
+            var revenue = fixture.getMapper(RevenueMapper.class);
+            var summary = orders.businessSummaryByGroup("2026-10-27", "2026-10-28", "B", null);
+            assertEquals(34L, ((Number) summary.get("deduplicated_orders")).longValue());
+            assertEquals(25L, ((Number) summary.get("valid_deduplicated_orders")).longValue());
+            assertEquals(32L, ((Number) summary.get("risk_orders")).longValue());
+            assertEquals(77L, orders.countOrdersFiltered(null, null, "B", null, null, null, null,
+                    null, "2026-10-27", "2026-10-27", null, null));
+            var group = revenue.groupOrderStats("B", "2026-10-27", "2026-10-27").get(0);
+            assertEquals(34L, ((Number) group.get("total_orders")).longValue());
+            assertEquals(25L, ((Number) group.get("valid_orders")).longValue());
+            assertEquals(34L, ((Number) group.get("standalone_orders")).longValue());
+            var category = revenue.groupOrderCategoryStats("B", "2026-10-27", "2026-10-27").get(0);
+            assertEquals(34L, ((Number) category.get("order_count")).longValue());
+            var person = revenue.adminOrderStats("B", "bob", List.of(), "2026-10-27", "2026-10-27").get(0);
+            assertEquals(34L, ((Number) person.get("total_orders")).longValue());
+            var domain = revenue.revenueOrdersByDomain("2026-10-27", "2026-10-27", "bob", List.of()).get(0);
+            assertEquals(34L, ((Number) domain.get("total_orders")).longValue());
+            assertEquals(25L, ((Number) domain.get("valid_orders")).longValue());
+            assertEquals(34L, orders.orderTrendByGroup("2026-10-27", "2026-10-28", "B", "bob").stream()
+                    .mapToLong(row -> ((Number) row.get("count")).longValue()).sum());
         }
     }
 

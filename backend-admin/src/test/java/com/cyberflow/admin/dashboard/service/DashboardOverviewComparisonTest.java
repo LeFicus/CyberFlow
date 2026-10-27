@@ -30,9 +30,9 @@ class DashboardOverviewComparisonTest {
         when(scopes.current()).thenReturn(DataScope.all());
         when(products.countProductsByGroup(isNull(), isNull())).thenReturn(0L);
         when(orders.businessSummaryByGroup(any(), any(), isNull(), isNull()))
-                .thenReturn(Map.of("deduplicated_orders", 4L, "valid_deduplicated_orders", 3L, "successful_orders", 3L, "successful_amount", new BigDecimal("40")))
-                .thenReturn(Map.of("deduplicated_orders", 6L, "valid_deduplicated_orders", 5L, "successful_orders", 5L, "successful_amount", new BigDecimal("60")))
-                .thenReturn(Map.of("deduplicated_orders", 120L, "valid_deduplicated_orders", 110L, "successful_amount", new BigDecimal("300")))
+                .thenReturn(Map.of("risk_orders", 2L, "deduplicated_orders", 4L, "valid_deduplicated_orders", 3L, "successful_orders", 3L, "successful_amount", new BigDecimal("40")))
+                .thenReturn(Map.of("risk_orders", 3L, "deduplicated_orders", 6L, "valid_deduplicated_orders", 5L, "successful_orders", 5L, "successful_amount", new BigDecimal("60")))
+                .thenReturn(Map.of("risk_orders", 12L, "deduplicated_orders", 120L, "valid_deduplicated_orders", 110L, "successful_amount", new BigDecimal("300")))
                 .thenReturn(Map.of("deduplicated_orders", 100L));
 
         DashboardService service = new DashboardService(sites, orders,
@@ -41,6 +41,9 @@ class DashboardOverviewComparisonTest {
 
         Map<String, Object> overview = service.getOverview(null);
 
+        assertEquals(2L, overview.get("today_risk_orders"));
+        assertEquals(3L, overview.get("yesterday_risk_orders"));
+        assertEquals(12L, overview.get("month_risk_orders"));
         assertEquals(6L, overview.get("yesterday_deduplicated_orders"));
         assertEquals(5L, overview.get("yesterday_valid_deduplicated_orders"));
         assertEquals(5L, overview.get("yesterday_successful_orders"));

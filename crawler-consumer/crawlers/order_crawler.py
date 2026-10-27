@@ -137,6 +137,12 @@ class AsyncOrderCrawler:
                 last = payload.get("last_page")
                 if isinstance(last, int):
                     return int(current) < last
+                count, size = payload.get("count"), payload.get("page_size", self.page_size)
+                try:
+                    if count is not None and int(size) > 0:
+                        return page * int(size) < int(count)
+                except (TypeError, ValueError):
+                    pass
         return item_count >= self.page_size
 
     def _order_id(self, item: dict) -> int:

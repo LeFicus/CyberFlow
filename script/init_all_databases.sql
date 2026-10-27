@@ -486,6 +486,8 @@ CREATE TABLE IF NOT EXISTS orders (
     shipping_email        VARCHAR(255) COMMENT '收货邮箱',
     shipping_address      JSON COMMENT '支付平台原始收货地址',
     is_valid              TINYINT COMMENT '支付平台有效标记；0 为有效',
+    is_fraud              TINYINT COMMENT '风控标记；由支付平台 is_alarm 归一化为0或1',
+    is_alarm              INT COMMENT '支付平台原始风控返回码；0为正常，非0为风控',
     dedupe_key             CHAR(64) COMMENT '邮箱或收货地址关联后的去重键',
     admin_name            VARCHAR(100) COMMENT '店铺管理员',
     user_group            VARCHAR(32) NOT NULL COMMENT '订单所属站点分组',

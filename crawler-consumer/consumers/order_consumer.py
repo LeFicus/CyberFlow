@@ -110,13 +110,13 @@ class OrderConsumer(BaseConsumer):
             )
             await self.repo.update_task_progress(task_id, 35, "正在拉取增量订单")
             records, new_cursor = await crawler.run(username, password, since_order_id)
+            await self.repo.wait_for_task_control(task_id)
             await self.append_task_log(self.repo, task_id, f"订单拉取完成：获取 {len(records)} 条，新的游标={new_cursor}")
 
             # 将订单写入数据库，同时关联 site_info 表
             await self.repo.update_task_progress(task_id, 75, f"正在保存 {len(records)} 条订单")
             await self.append_task_log(self.repo, task_id, f"开始保存 {len(records)} 条订单及商品详情")
             saved_count = await self._save_orders(records, user_group)
-
             await self.repo.update_cursor(f"order_crawler_{user_group}", new_cursor)
             duration_ms = int((time.monotonic() - start) * 1000)
             await self.repo.update_task_status(
@@ -127,7 +127,7 @@ class OrderConsumer(BaseConsumer):
                                 {"max_order_id": new_cursor}, duration_ms)
             await self.append_task_log(
                 self.repo, task_id,
-                f"订单爬取成功：保存 {saved_count} 条，耗时 {duration_ms} ms",
+                f"订单同步成功：保存 {saved_count} 条新增订单，耗时 {duration_ms} ms",
             )
             logger.success(f"✅ Order crawl done: fetched={len(records)}, saved={saved_count}, cursor={new_cursor}")
 
@@ -216,8 +216,8 @@ class OrderConsumer(BaseConsumer):
                         """INSERT INTO orders (id, amount, currency, create_time, product_host,
                            pay_status_text, card_number, customer_ip_country, shipping_email,
                            shipping_address, is_valid, admin_name, user_group, theme_name,
-                           product_category, site_tag, product_info)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           product_category, site_tag, product_info, is_alarm, is_fraud)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                            ON DUPLICATE KEY UPDATE
                            amount=VALUES(amount), currency=VALUES(currency),
                            create_time=VALUES(create_time), product_host=VALUES(product_host),
@@ -230,6 +230,8 @@ class OrderConsumer(BaseConsumer):
                                ELSE shipping_address
                            END,
                            is_valid=COALESCE(VALUES(is_valid), is_valid),
+                           is_alarm=COALESCE(VALUES(is_alarm), is_alarm),
+                           is_fraud=COALESCE(VALUES(is_fraud), is_fraud),
                            admin_name=COALESCE(NULLIF(VALUES(admin_name), ''), admin_name),
                            user_group=VALUES(user_group),
                            theme_name=COALESCE(NULLIF(VALUES(theme_name), ''), theme_name),
@@ -245,14 +247,45 @@ class OrderConsumer(BaseConsumer):
                          r.get("pay_status_text"),
                          r.get("cardNumber") or r.get("card_no") or r.get("card_number"),
                          customer_country, shipping_email, shipping_address,
-                         self._optional_int(r.get("is_valid")), admin_name, effective_user_group,
-                         theme_name, product_category, site_tag, product_info),
+                         self._platform_flag(r.get("is_valid")), admin_name, effective_user_group,
+                         theme_name, product_category, site_tag, product_info,
+                         self._platform_alarm_code(r.get("is_alarm")),
+                         self._risk_flag(r.get("is_alarm"))),
                     )
                     saved_count += 1
                 for group, order_day in sorted(affected_days):
                     await refresh_dedupe_keys(cur, group, order_day)
         logger.info(f"💾 Order save complete: saved={saved_count}, site_matched={site_matched}")
         return saved_count
+
+    @staticmethod
+    def _platform_alarm_code(value):
+        if value is None or value == "":
+            return None
+        text = str(value).strip()
+        if not text.isascii() or not text.isdigit() or int(text) > 2147483647:
+            raise ValueError("支付平台风控返回码必须为非负整数或空值")
+        return int(text)
+
+    @staticmethod
+    def _risk_flag(value):
+        """is_alarm is the platform risk signal; is_fraud in the API is unrelated.
+
+        For example, 10009 carries 'Risk Control limit Type-#9'. Store the raw
+        code and normalize nonzero codes to the existing local risk flag.
+        """
+        code = OrderConsumer._platform_alarm_code(value)
+        return None if code is None else int(code != 0)
+
+    @staticmethod
+    def _platform_flag(value):
+        if value is None or value == "":
+            return None
+        if isinstance(value, bool):
+            return int(value)
+        if str(value).strip() in ("0", "1"):
+            return int(str(value).strip())
+        raise ValueError("支付平台风控/有效标记必须为 0、1 或空值")
 
     @staticmethod
     def _normalize_domain(value) -> str:

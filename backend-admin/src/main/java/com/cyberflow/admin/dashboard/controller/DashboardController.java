@@ -122,9 +122,9 @@ public class DashboardController {
                                               @RequestParam(required = false) String currency,
                                               @RequestParam(required = false) String country,
                                               @RequestParam(required = false) Integer siteTag,
-                                              @RequestParam(required = false) String fraudStatus) {
+                                              @RequestParam(required = false) String riskStatus) {
         return Result.ok(dashboardService.getOrders(page, size, orderId, startDate, endDate,
-                adminName, userGroup, domain, payStatus, currency, country, siteTag, fraudStatus));
+                adminName, userGroup, domain, payStatus, currency, country, siteTag, riskStatus));
     }
 
     /** Delete all orders across both user groups. Restricted to administrators. */

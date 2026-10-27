@@ -70,7 +70,7 @@
           :disabled="total === 0"
           :loading="clearingOrders"
           @click="handleClearAllOrders"
-        >清空全部状态</el-button>
+        >清空全部订单</el-button>
       </el-form-item>
     </el-form>
     <!-- 统计摘要 -->
@@ -290,13 +290,13 @@ function resetFilters() {
   fetchData()
 }
 
-/** 管理员清空全部状态，清空范围不受当前筛选条件影响。 */
+/** 管理员清空全部订单，清空范围不受当前筛选条件影响。 */
 async function handleClearAllOrders() {
   if (!isAdmin.value || total.value === 0) return
   try {
     await ElMessageBox.confirm(
       `将永久删除全部 ${total.value.toLocaleString('en-US')} 条订单（包含当前数据库全部站点分组），该操作不可恢复，确定继续吗？`,
-      '清空全部状态',
+      '清空全部订单',
       { type: 'warning', confirmButtonText: '确认清空', cancelButtonText: '取消' },
     )
   } catch {

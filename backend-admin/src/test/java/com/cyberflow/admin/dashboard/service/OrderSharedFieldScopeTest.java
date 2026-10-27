@@ -50,7 +50,7 @@ class OrderSharedFieldScopeTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void fraudFilteringCannotInferSharedRowsWithoutTheReviewStatusGrant(boolean granted) {
+    void riskFilteringCannotInferSharedRowsWithoutThePlatformStatusGrant(boolean granted) {
         OrderMapper orders = mock(OrderMapper.class);
         DataScopeService scopes = mock(DataScopeService.class);
         Set<String> fields = granted ? Set.of("order.amount", "order.fraud_status") : Set.of("order.amount");
@@ -58,9 +58,9 @@ class OrderSharedFieldScopeTest {
         DashboardService service = new DashboardService(
                 mock(SiteInfoMapper.class), orders, mock(SiteIndexingHistoryMapper.class),
                 mock(EcommerceProductMapper.class), mock(StringRedisTemplate.class), scopes);
-        service.getOrders(1, 20, null, null, null, null, null, null, null, null, null, null, "PENDING");
+        service.getOrders(1, 20, null, null, null, null, null, null, null, null, null, null, "RISK");
         verify(orders).countOrdersFiltered(any(), any(), any(), any(), any(), any(), any(),
-                eq(granted ? "A-本人,A-成员" : "A-本人"), any(), any(), any(), eq("PENDING"));
+                eq(granted ? "A-本人,A-成员" : "A-本人"), any(), any(), any(), eq("RISK"));
     }
 
     @Test

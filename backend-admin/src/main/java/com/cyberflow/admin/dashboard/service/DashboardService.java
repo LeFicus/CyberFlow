@@ -97,6 +97,9 @@ public class DashboardService {
         overview.put("successful_amount", today.getOrDefault("successful_amount", 0.0));
         overview.put("total_orders", today.getOrDefault("deduplicated_orders", 0L));
         overview.put("period", "TODAY");
+        overview.put("today_risk_orders", today.getOrDefault("risk_orders", 0L));
+        overview.put("yesterday_risk_orders", yesterday.getOrDefault("risk_orders", 0L));
+        overview.put("month_risk_orders", month.getOrDefault("risk_orders", 0L));
         overview.put("today_orders", today.getOrDefault("successful_orders", 0L));
         overview.put("today_deduplicated_orders", today.getOrDefault("deduplicated_orders", 0L));
         overview.put("today_valid_deduplicated_orders", today.getOrDefault("valid_deduplicated_orders", 0L));
@@ -215,29 +218,29 @@ public class DashboardService {
      */
     public Map<String, Object> getOrders(int page, int size, String orderId, String startDate,
                                           String endDate, String adminName, String rawUserGroup, String domain,
-                                          String payStatus, String currency, String country, Integer siteTag, String fraudStatus) {
+                                          String payStatus, String currency, String country, Integer siteTag, String riskStatus) {
         if (siteTag != null && (siteTag < 0 || siteTag > 2)) {
             throw new IllegalArgumentException("建站类型必须为单独建站、批量建站或复制站");
         }
-        if (fraudStatus != null && fraudStatus.isBlank()) fraudStatus = null;
-        if (fraudStatus != null && !Set.of("NORMAL", "PENDING", "APPROVED", "REJECTED").contains(fraudStatus)) {
-            throw new IllegalArgumentException("疑似刷单审核状态无效");
+        if (riskStatus != null && riskStatus.isBlank()) riskStatus = null;
+        if (riskStatus != null && !Set.of("NORMAL", "RISK", "UNKNOWN").contains(riskStatus)) {
+            throw new IllegalArgumentException("平台风控状态无效");
         }
         String userGroup = normalizeUserGroup(rawUserGroup);
         var scope = dataScopeService.current();
         boolean includeShared = scope.administrator() || sharedOrderFiltersAllowed(
-                scope, orderId, startDate, endDate, adminName, userGroup, domain, payStatus, currency, country, siteTag, fraudStatus);
+                scope, orderId, startDate, endDate, adminName, userGroup, domain, payStatus, currency, country, siteTag, riskStatus);
         String ownerName = scope.administrator() ? null
                 : includeShared ? scope.ownerFilterFor("order.") : scope.ownOwnerFilter();
         int offset = (page - 1) * size;
         long total = orderMapper.countOrdersFiltered(orderId, adminName, userGroup, domain, payStatus,
-                currency, country, ownerName, startDate, endDate, siteTag, fraudStatus);
+                currency, country, ownerName, startDate, endDate, siteTag, riskStatus);
         List<Map<String, Object>> list = new ArrayList<>(orderMapper.listOrdersFiltered(
                 orderId, adminName, userGroup, domain, payStatus, currency, country,
-                ownerName, startDate, endDate, offset, size, siteTag, fraudStatus));
+                ownerName, startDate, endDate, offset, size, siteTag, riskStatus));
         Map<String, Object> summary = new LinkedHashMap<>(orderMapper.summarizeOrdersFiltered(
                 orderId, adminName, userGroup, domain, payStatus, currency, country,
-                ownerName, startDate, endDate, siteTag, fraudStatus));
+                ownerName, startDate, endDate, siteTag, riskStatus));
         if (!scope.administrator()) {
             list.forEach(row -> {
                 if (!scope.owns(Objects.toString(row.get("admin_name"), ""))) {
@@ -266,7 +269,7 @@ public class DashboardService {
     private static boolean sharedOrderFiltersAllowed(
             DataScope scope, String orderId, String startDate, String endDate,
             String adminName, String userGroup, String domain, String payStatus, String currency, String country,
-            Integer siteTag, String fraudStatus) {
+            Integer siteTag, String riskStatus) {
         if (!scope.includesSharedOwners("order.")) return false;
         return permittedFilter(scope, orderId, "order.id")
                 && permittedFilter(scope, adminName, "order.admin_name")
@@ -276,7 +279,7 @@ public class DashboardService {
                 && permittedFilter(scope, currency, "order.currency")
                 && permittedFilter(scope, country, "order.country")
                 && (siteTag == null || scope.canViewSharedField("order.site_tag"))
-                && (fraudStatus == null || scope.canViewSharedField("order.fraud_status"))
+                && (riskStatus == null || scope.canViewSharedField("order.fraud_status"))
                 && permittedFilter(scope, startDate, "order.create_time")
                 && permittedFilter(scope, endDate, "order.create_time");
     }
