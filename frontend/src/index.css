@@ -3,6 +3,7 @@
  * Order matters: tokens → reset/primitives → Element Plus bridge.
  */
 
+@import "./styles/fonts.css";
 @import "./styles/tokens.css";
 @import "./styles/base.css";
 @import "./styles/element-overrides.css";

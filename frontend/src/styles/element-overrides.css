@@ -5,6 +5,7 @@
  */
 
 :root {
+  --el-font-family: var(--cf-font-sans);
   --el-color-primary: var(--cf-primary);
   --el-color-primary-light-3: #7186f2;
   --el-color-primary-light-5: #9aabf6;

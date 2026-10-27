@@ -60,6 +60,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { PieChart } from 'echarts/charts'
 import { TooltipComponent } from 'echarts/components'
 import { siteTagLabel, siteTagType } from '@/utils/sitePresentation'
+import { CHART_FONT_FAMILY } from '@/utils/chartFont'
 
 use([CanvasRenderer, PieChart, TooltipComponent])
 
@@ -81,6 +82,7 @@ const categoryItems = computed(() => props.categoryBreakdown
   }))
   .filter(item => item.order_count > 0))
 const categoryChartOption = computed(() => ({
+  textStyle: { fontFamily: CHART_FONT_FAMILY },
   color: chartColors,
   tooltip: {
     trigger: 'item',

@@ -54,8 +54,9 @@
   --cf-nav-active-to: #5a6ff0;
 
   /* ---- typography ---- */
-  --cf-font-sans: Inter, "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei",
-    system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cf-font-sans: "CyberFlow Sans", Inter, "PingFang SC", "HarmonyOS Sans SC",
+    "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cf-font-mono: "CyberFlow Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --cf-text-display: 32px;
   --cf-text-h1: 26px;
   --cf-text-h2: 20px;

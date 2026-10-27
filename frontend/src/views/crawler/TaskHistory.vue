@@ -467,7 +467,7 @@ onUnmounted(() => {
   max-width: 230px;
   overflow: hidden;
   color: var(--cf-ink-2);
-  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 12px/1.4 var(--cf-font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -506,7 +506,7 @@ onUnmounted(() => {
 .log-task-id {
   margin-left: 10px;
   color: var(--cf-ink-2);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--cf-font-mono);
   font-size: var(--cf-text-small);
 }
 
@@ -534,7 +534,7 @@ onUnmounted(() => {
   margin: 0;
   padding: 16px;
   color: var(--cf-nav-text);
-  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font: 12px/1.6 var(--cf-font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

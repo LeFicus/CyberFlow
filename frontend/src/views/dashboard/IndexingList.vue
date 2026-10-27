@@ -158,6 +158,7 @@ import { clearAllSites, exportSiteIndexes, getOrdersByDomain, getSiteIndexes, ge
 import { useUserStore } from '@/store/user'
 import { useSiteGroups } from '@/composables/useSiteGroups'
 import { formatSiteCategories } from '@/utils/sitePresentation'
+import { CHART_FONT_FAMILY } from '@/utils/chartFont'
 
 use([CanvasRenderer, LineChart, GridComponent, LegendComponent, TooltipComponent])
 const route = useRoute()
@@ -340,6 +341,7 @@ function normalizeDomain(value) {
   return String(value || '').replace(/^https?:\/\//i, '').replace(/\/.*$/, '')
 }
 const indexChartOption = computed(() => ({
+  textStyle: { fontFamily: CHART_FONT_FAMILY },
   tooltip: { trigger: 'axis' },
   legend: { data: ['Google 收录', '商品数'] },
   grid: { left: 16, right: 18, top: 42, bottom: 12, containLabel: true },

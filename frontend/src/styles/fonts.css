@@ -1,0 +1,46 @@
+/**
+ * Self-hosted brand fonts.
+ *
+ * "CyberFlow Sans" is a two-face family:
+ * - Inter supplies Latin letters, digits and punctuation
+ * - Noto Sans SC (GB2312 subset) supplies Chinese glyphs
+ *
+ * Keep the unicode ranges disjoint so the browser downloads only the
+ * subset that the page actually needs.
+ */
+
+@font-face {
+  font-family: "CyberFlow Sans";
+  src: url("../assets/fonts/InterVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+0000-00FF,
+    U+0100-017F,
+    U+2000-206F,
+    U+20A0-20CF,
+    U+2100-214F,
+    U+2190-21FF,
+    U+2200-22FF;
+}
+
+@font-face {
+  font-family: "CyberFlow Sans";
+  src: url("../assets/fonts/NotoSansSC-GB2312.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+3000-303F,
+    U+4E00-9FFF,
+    U+FF00-FFEF;
+}
+
+@font-face {
+  font-family: "CyberFlow Mono";
+  src: url("../assets/fonts/JetBrainsMono.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
